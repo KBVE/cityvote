@@ -1,16 +1,15 @@
-[gd_resource type="TileSet" load_steps=15 format=3 uid="uid://bx8m3oap2q5r7"]
+[gd_resource type="TileSet" load_steps=21 format=3 uid="uid://btomuwwwpp4bh"]
 
-[ext_resource type="Texture2D" uid="uid://crbtmtl4kw8ik" path="res://nodes/map/hex/grassland0/grassland0.png" id="1_grassland0"]
+[ext_resource type="Texture2D" uid="uid://dtpbgbppdcyak" path="res://nodes/map/hex/grassland0/grassland0.png" id="1_grassland0"]
 [ext_resource type="Texture2D" uid="uid://dun424nmdbfwn" path="res://nodes/map/hex/grassland1/grassland1.png" id="2_grassland1"]
-[ext_resource type="Texture2D" path="res://nodes/map/hex/grassland2/grassland2.png" id="3_grassland2"]
-[ext_resource type="Texture2D" path="res://nodes/map/hex/grassland3/grassland3.png" id="4_grassland3"]
-[ext_resource type="Texture2D" uid="uid://w8x9y0z1a2b3c" path="res://nodes/map/hex/water/water.png" id="5_water"]
-[ext_resource type="Material" uid="uid://b8k9l0m1n2o3p" path="res://shader/water_material.tres" id="6_water_material"]
-[ext_resource type="Texture2D" path="res://nodes/map/hex/grassland4/grassland4.png" id="7_grassland4"]
+[ext_resource type="Texture2D" uid="uid://c5m6n7o8qaq0r" path="res://nodes/map/hex/grassland2/grassland2.png" id="3_grassland2"]
+[ext_resource type="Texture2D" uid="uid://cac36s06swa1" path="res://nodes/map/hex/grassland3/grassland3.png" id="4_grassland3"]
+[ext_resource type="Texture2D" uid="uid://dwww1qfrg1xbi" path="res://nodes/map/hex/water/water.png" id="5_water"]
+[ext_resource type="Texture2D" uid="uid://1ynl24d8jkx" path="res://nodes/map/hex/grassland4/grassland4.png" id="7_grassland4"]
 [ext_resource type="Texture2D" uid="uid://da3bw5my02p8u" path="res://nodes/map/hex/grassland5/grassland5.png" id="8_grassland5"]
 [ext_resource type="Texture2D" uid="uid://c1d2e3f4g5h6" path="res://nodes/map/hex/grassland_city1/grassland_city1.png" id="9_city1"]
 [ext_resource type="Texture2D" uid="uid://c2d3e4f5g6h7" path="res://nodes/map/hex/grassland_city2/grassland_city2.png" id="10_city2"]
-[ext_resource type="Texture2D" uid="uid://v1w2x3y4z5a6" path="res://nodes/map/hex/grassland_village1/grassland_village1.png" id="11_village1"]
+[ext_resource type="Texture2D" uid="uid://v1w2x3y405a6" path="res://nodes/map/hex/grassland_village1/grassland_village1.png" id="11_village1"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_grassland0"]
 texture = ExtResource("1_grassland0")

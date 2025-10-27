@@ -25,7 +25,7 @@ func _ready():
 
 	super._ready()
 
-func _process(delta):
+func _process(_delta):
 	# Example: rotate to face mouse (for testing)
 	# Uncomment to test rotation:
 	# var mouse_pos = get_global_mouse_position()

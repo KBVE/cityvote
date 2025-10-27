@@ -6,6 +6,10 @@ extends Node2D
 @onready var crt_filter: ColorRect = $CRTFilter
 @onready var camera: Camera2D = $SubViewport/Camera2D
 @onready var hex_map = $SubViewport/Hex
+#; TEST
+@onready var play_hand = $SubViewport/PlayHand
+@onready var tile_info = $SubViewport/TileInfo
+#; TEST
 
 var camera_speed = 300.0
 var zoom_speed = 0.1
@@ -23,6 +27,7 @@ var camera_max_bounds = Vector2(1200, 1050)  # Right/bottom edge of land area
 var is_dragging = false
 var drag_start_mouse_pos = Vector2.ZERO
 var drag_start_camera_pos = Vector2.ZERO
+var manual_camera_panning_enabled = true  # Controlled by card signals
 
 #### TEST ####
 # Viking ship testing
@@ -45,6 +50,33 @@ func _ready():
 	#### TEST ####
 	# Spawn a few test viking ships on water tiles
 	_spawn_test_vikings()
+
+	#; TEST
+	# Connect hex_map to play_hand for card placement
+	play_hand.hex_map = hex_map
+	# Connect camera to play_hand for auto-follow
+	play_hand.camera = camera
+	# Connect hex_map to tile_info for tile hover display
+	tile_info.hex_map = hex_map
+
+	# Connect card signals to control camera panning
+	play_hand.card_picked_up.connect(_on_card_picked_up)
+	play_hand.card_placed.connect(_on_card_placed)
+	play_hand.card_cancelled.connect(_on_card_cancelled)
+	#; TEST
+
+# === Card Signal Handlers ===
+func _on_card_picked_up() -> void:
+	manual_camera_panning_enabled = false
+	print("Camera panning disabled - card picked up")
+
+func _on_card_placed() -> void:
+	manual_camera_panning_enabled = true
+	print("Camera panning enabled - card placed")
+
+func _on_card_cancelled() -> void:
+	manual_camera_panning_enabled = true
+	print("Camera panning enabled - card cancelled")
 
 func _calculate_camera_bounds():
 	# Debug: Find the 4 corner water tiles and print their world positions
@@ -116,22 +148,23 @@ func _process(delta):
 		var new_pos = drag_start_camera_pos - mouse_delta
 		camera.position = _clamp_camera_position(new_pos)
 
-	# Camera panning with arrow keys or WASD (only when not dragging)
-	if not is_dragging:
-		var direction = Vector2.ZERO
+	#; TEST
+	# Camera panning with arrow keys or WASD (works even when dragging a card!)
+	var direction = Vector2.ZERO
 
-		if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
-			direction.x += 1
-		if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
-			direction.x -= 1
-		if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
-			direction.y += 1
-		if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
-			direction.y -= 1
+	if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
+		direction.x += 1
+	if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
+		direction.x -= 1
+	if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
+		direction.y += 1
+	if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
+		direction.y -= 1
 
-		if direction != Vector2.ZERO:
-			var new_pos = camera.position + direction.normalized() * camera_speed * delta / camera.zoom.x
-			camera.position = _clamp_camera_position(new_pos)
+	if direction != Vector2.ZERO:
+		var new_pos = camera.position + direction.normalized() * camera_speed * delta / camera.zoom.x
+		camera.position = _clamp_camera_position(new_pos)
+	#; TEST
 
 	#### TEST ####
 	# Move vikings periodically
@@ -141,15 +174,17 @@ func _process(delta):
 		_move_test_vikings()
 
 func _input(event):
-	# Handle mouse drag panning (left/right/middle mouse button)
+	# Handle mouse drag panning (only when manual panning is enabled)
 	if event is InputEventMouseButton:
-		# Start dragging with left, right, or middle mouse button
-		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
-			if event.pressed:
+		var allowed_buttons = [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]
+
+		if event.button_index in allowed_buttons:
+			# Only allow drag panning when manual camera panning is enabled
+			if event.pressed and manual_camera_panning_enabled:
 				is_dragging = true
 				drag_start_mouse_pos = event.position
 				drag_start_camera_pos = camera.position
-			else:
+			elif not event.pressed:
 				is_dragging = false
 
 		# Zoom with mouse wheel
@@ -184,7 +219,11 @@ func _spawn_test_vikings():
 			if source_id == 4:  # Water tile
 				water_tiles.append(tile_coords)
 
+	print("=== VIKING SPAWN ===")
+	print("Found ", water_tiles.size(), " water tiles")
+
 	if water_tiles.size() < 3:
+		print("Not enough water tiles to spawn vikings")
 		return
 
 	# Spawn 3 vikings on random water tiles
@@ -216,15 +255,27 @@ func _spawn_test_vikings():
 
 			# Store viking and its current tile
 			test_vikings.append({"ship": viking, "tile": random_tile})
+			print("Spawned viking ", i, " at tile ", random_tile, " world pos ", world_pos)
+		else:
+			print("Failed to acquire viking ", i, " from Cluster")
+
+	print("Total vikings spawned: ", test_vikings.size())
 
 func _move_test_vikings():
+	print("=== MOVING VIKINGS ===")
+	print("Total vikings to move: ", test_vikings.size())
+
 	# Move each viking to an adjacent water tile
-	for viking_data in test_vikings:
+	for i in range(test_vikings.size()):
+		var viking_data = test_vikings[i]
 		var viking = viking_data["ship"]
 		var current_tile = viking_data["tile"]
 
+		print("Viking ", i, " at tile ", current_tile, " is_moving: ", viking.is_moving)
+
 		# Skip if still moving
 		if viking.is_moving:
+			print("  Skipping - still moving")
 			continue
 
 		# Get adjacent hex tiles (6 directions for hex grid)
@@ -250,6 +301,8 @@ func _move_test_vikings():
 					if not occupied_tiles.has(check_tile) or occupied_tiles[check_tile] == viking:
 						adjacent_water_tiles.append(check_tile)
 
+		print("  Found ", adjacent_water_tiles.size(), " adjacent water tiles")
+
 		if adjacent_water_tiles.size() > 0:
 			# Move to random adjacent water tile
 			var new_tile = adjacent_water_tiles[randi() % adjacent_water_tiles.size()]
@@ -266,6 +319,9 @@ func _move_test_vikings():
 
 			# Update stored tile
 			viking_data["tile"] = new_tile
+			print("  Moving to tile ", new_tile, " at pos ", new_pos)
+		else:
+			print("  No adjacent water tiles found - cannot move")
 
 # Clamp camera position within bounds
 # TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping

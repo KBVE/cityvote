@@ -1,18 +1,44 @@
-[gd_scene load_steps=12 format=3 uid="uid://b0v1xvyqj8y3h"]
+[gd_scene load_steps=15 format=3 uid="uid://b0v1xvyqj8y3h"]
 
-[ext_resource type="Script" path="res://view/main/main.gd" id="1_main"]
-[ext_resource type="PackedScene" uid="uid://c8n2x3m9k4p1j" path="res://nodes/map/hex/hex.tscn" id="2_hex"]
-[ext_resource type="Shader" path="res://shader/crt.gdshader" id="3_crt"]
-[ext_resource type="Shader" path="res://shader/godrays.gdshader" id="4_godrays"]
-[ext_resource type="Shader" path="res://shader/fog_of_war.gdshader" id="5_fog"]
+[ext_resource type="Script" uid="uid://dm4b85w81o2cn" path="res://view/main/main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://c8n2x3nak4p1j" path="res://nodes/map/hex/hex.tscn" id="2_hex"]
+[ext_resource type="Shader" uid="uid://bsqdm8lw8oxis" path="res://shader/crt.gdshader" id="3_crt"]
+[ext_resource type="Shader" uid="uid://foef4n8nqebi" path="res://shader/godrays.gdshader" id="4_godrays"]
+[ext_resource type="Shader" uid="uid://ct8veipovl0f5" path="res://shader/fog_of_war.gdshader" id="5_fog"]
+[ext_resource type="PackedScene" uid="uid://dq8h7k5nan2p4" path="res://view/hand/play_hand.tscn" id="6_hand"]
+[ext_resource type="PackedScene" uid="uid://c7n9m5p8q2r4t" path="res://view/hud/tile_info.tscn" id="7_tile_info"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_godrays"]
 frequency = 0.5
 fractal_octaves = 3
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_godrays"]
-seamless = true
 noise = SubResource("FastNoiseLite_godrays")
+seamless = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_godrays"]
+shader = ExtResource("4_godrays")
+shader_parameter/blend_mode = 0
+shader_parameter/noiseTex = SubResource("NoiseTexture2D_godrays")
+shader_parameter/angle = -0.3
+shader_parameter/position = -0.2
+shader_parameter/spread = 0.6
+shader_parameter/cutoff = 0.1
+shader_parameter/falloff = 0.4
+shader_parameter/edge_fade = 0.3
+shader_parameter/speed = 0.15
+shader_parameter/ray1_density = 12.0
+shader_parameter/ray2_density = 40.0
+shader_parameter/ray2_intensity = 0.2
+shader_parameter/ray_color = Color(1, 0.95, 0.7, 0.35)
+shader_parameter/hdr = false
+shader_parameter/seed = 5.0
+shader_parameter/pixelSizeScale = 3.0
+shader_parameter/quantize_colors = true
+shader_parameter/color_levels = 6
+shader_parameter/dither = false
+shader_parameter/dither_strength = 0.5
+shader_parameter/opacity = 0.6
 
 [sub_resource type="Gradient" id="Gradient_godrays"]
 colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1)
@@ -24,42 +50,6 @@ height = 720
 fill_from = Vector2(0.5, 1)
 fill_to = Vector2(0.5, 0)
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_godrays"]
-shader = ExtResource("4_godrays")
-shader_parameter/blend_mode = 0
-shader_parameter/angle = -0.3
-shader_parameter/position = -0.2
-shader_parameter/spread = 0.5
-shader_parameter/cutoff = 0.1
-shader_parameter/falloff = 0.2
-shader_parameter/edge_fade = 0.15
-shader_parameter/speed = 0.3
-shader_parameter/ray1_density = 8.0
-shader_parameter/ray2_density = 30.0
-shader_parameter/ray2_intensity = 0.3
-shader_parameter/ray_color = Color(1, 0.95, 0.7, 0.4)
-shader_parameter/hdr = false
-shader_parameter/seed = 5.0
-shader_parameter/pixelSizeScale = 2.0
-shader_parameter/quantize_colors = true
-shader_parameter/color_levels = 4
-shader_parameter/dither = false
-shader_parameter/dither_strength = 0.5
-shader_parameter/opacity = 0.6
-shader_parameter/noiseTex = SubResource("NoiseTexture2D_godrays")
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_fog"]
-shader = ExtResource("5_fog")
-shader_parameter/fog_color = Color(0.05, 0.05, 0.08, 1)
-shader_parameter/fog_intensity = 0.5
-shader_parameter/inner_radius = 0.7
-shader_parameter/outer_radius = 1.0
-shader_parameter/softness = 0.6
-shader_parameter/enable_noise = true
-shader_parameter/noise_strength = 0.15
-shader_parameter/noise_speed = 0.05
-shader_parameter/noise_texture = SubResource("NoiseTexture2D_godrays")
-
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_crt"]
 shader = ExtResource("3_crt")
 shader_parameter/mask_type = 1
@@ -68,13 +58,39 @@ shader_parameter/color_offset = 0.002
 shader_parameter/mask_brightness = 1.0
 shader_parameter/aspect = 0.5625
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fog_border"]
+shader = ExtResource("5_fog")
+shader_parameter/fog_color = Color(0.02, 0.02, 0.05, 1)
+shader_parameter/fog_intensity = 1.0
+shader_parameter/density = 1.0
+shader_parameter/inner_radius = 0.55
+shader_parameter/outer_radius = 1.0
+shader_parameter/edge_thickness = 0.7
+shader_parameter/noise_texture = SubResource("NoiseTexture2D_godrays")
+shader_parameter/cloud_speed = Vector2(0.01, 0.005)
+shader_parameter/cloud_scale = 2.0
+shader_parameter/turbulence = 0.5
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fog_atmosphere"]
+shader = ExtResource("5_fog")
+shader_parameter/fog_color = Color(0.08, 0.08, 0.12, 1)
+shader_parameter/fog_intensity = 0.6
+shader_parameter/density = 0.4
+shader_parameter/inner_radius = 0.3
+shader_parameter/outer_radius = 0.9
+shader_parameter/edge_thickness = 0.3
+shader_parameter/noise_texture = SubResource("NoiseTexture2D_godrays")
+shader_parameter/cloud_speed = Vector2(0.02, 0.012)
+shader_parameter/cloud_scale = 1.2
+shader_parameter/turbulence = 0.3
+
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 
 [node name="SubViewport" type="SubViewport" parent="."]
+gui_embed_subwindows = true
 size = Vector2i(1280, 720)
 render_target_update_mode = 4
-gui_embed_subwindows = true
 
 [node name="Hex" parent="SubViewport" instance=ExtResource("2_hex")]
 
@@ -86,8 +102,11 @@ texture = SubResource("GradientTexture2D_godrays")
 
 [node name="Camera2D" type="Camera2D" parent="SubViewport"]
 position = Vector2(640, 540)
-enabled = true
 zoom = Vector2(2, 2)
+
+[node name="PlayHand" parent="SubViewport" instance=ExtResource("6_hand")]
+
+[node name="TileInfo" parent="SubViewport" instance=ExtResource("7_tile_info")]
 
 [node name="CRTFilter" type="ColorRect" parent="."]
 material = SubResource("ShaderMaterial_crt")
@@ -100,9 +119,22 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="FogOfWar" type="ColorRect" parent="."]
+[node name="FogBorder" type="ColorRect" parent="."]
+z_index = 2
+material = SubResource("ShaderMaterial_fog_border")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 1280.0
+offset_bottom = 720.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(1, 1, 1, 1)
+mouse_filter = 2
+
+[node name="FogAtmosphere" type="ColorRect" parent="."]
 z_index = 1
-material = SubResource("ShaderMaterial_fog")
+material = SubResource("ShaderMaterial_fog_atmosphere")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
