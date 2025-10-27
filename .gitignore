@@ -1,0 +1,55 @@
+COMMAND.md
+logs.txt
+logs_archive.txt
+
+# Godot 4+ specific ignores
+.godot/
+.nomedia
+
+# Godot-specific ignores
+.import/
+export.cfg
+export_credentials.cfg
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# DSTore
+*/.DS_Store
+.DS_Store
+
+# Ignore all Rust build outputs by default
+/rust/target/**
+
+# Allow the dirs we need to reach the files we want to keep
+!/rust/target/debug/
+!/rust/target/release/
+!/rust/target/wasm32-unknown-emscripten/
+!/rust/target/wasm32-unknown-emscripten/debug/
+!/rust/target/wasm32-unknown-emscripten/release/
+
+# Re-ignore everything inside those dirs...
+/rust/target/debug/**
+/rust/target/release/**
+/rust/target/wasm32-unknown-emscripten/debug/**
+/rust/target/wasm32-unknown-emscripten/release/**
+
+# ...except the exact binaries Godot references
+!/rust/target/**/libgodo.so
+!/rust/target/**/godo.dll
+!/rust/target/**/libgodo.dylib
+!/rust/target/**/godo.wasm
+
+# If you still want to explicitly ignore these per your note:
+# (harmless since the directories above are already ignored)
+rust/target/debug/.fingerprint/
+rust/target/debug/build/
+rust/target/debug/deps/
+rust/target/debug/examples/
+rust/target/debug/incremental/
+rust/target/debug/.cargo-lock
