@@ -1,0 +1,36 @@
+[gd_resource type="TileSet" load_steps=7 format=3 uid="uid://bx8m3oap2q5r7"]
+
+[ext_resource type="Texture2D" uid="uid://crbtmtl4kw8ik" path="res://nodes/map/hex/grassland0/grassland0.png" id="1_grassland0"]
+[ext_resource type="Texture2D" uid="uid://dun424nmdbfwn" path="res://nodes/map/hex/grassland1/grassland1.png" id="2_grassland1"]
+[ext_resource type="Texture2D" path="res://nodes/map/hex/grassland2/grassland2.png" id="3_grassland2"]
+[ext_resource type="Texture2D" path="res://nodes/map/hex/grassland3/grassland3.png" id="4_grassland3"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_grassland0"]
+texture = ExtResource("1_grassland0")
+texture_region_size = Vector2i(32, 48)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_grassland1"]
+texture = ExtResource("2_grassland1")
+texture_region_size = Vector2i(32, 48)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_grassland2"]
+texture = ExtResource("3_grassland2")
+texture_region_size = Vector2i(32, 48)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_grassland3"]
+texture = ExtResource("4_grassland3")
+texture_region_size = Vector2i(32, 48)
+0:0/0 = 0
+
+[resource]
+tile_shape = 3
+tile_layout = 5
+tile_offset_axis = 1
+tile_size = Vector2i(32, 28)
+sources/0 = SubResource("TileSetAtlasSource_grassland0")
+sources/1 = SubResource("TileSetAtlasSource_grassland1")
+sources/2 = SubResource("TileSetAtlasSource_grassland2")
+sources/3 = SubResource("TileSetAtlasSource_grassland3")
