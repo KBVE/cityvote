@@ -10,7 +10,13 @@ var tile_type_to_source = {
 	"grassland0": 0,
 	"grassland1": 1,
 	"grassland2": 2,
-	"grassland3": 3
+	"grassland3": 3,
+	"water": 4,
+	"grassland4": 5,
+	"grassland5": 6,
+	"city1": 7,
+	"city2": 8,
+	"village1": 9
 }
 
 # Preload tile textures for highlight
@@ -18,7 +24,13 @@ var tile_textures = {
 	0: preload("res://nodes/map/hex/grassland0/grassland0.png"),
 	1: preload("res://nodes/map/hex/grassland1/grassland1.png"),
 	2: preload("res://nodes/map/hex/grassland2/grassland2.png"),
-	3: preload("res://nodes/map/hex/grassland3/grassland3.png")
+	3: preload("res://nodes/map/hex/grassland3/grassland3.png"),
+	4: preload("res://nodes/map/hex/water/water.png"),
+	5: preload("res://nodes/map/hex/grassland4/grassland4.png"),
+	6: preload("res://nodes/map/hex/grassland5/grassland5.png"),
+	7: preload("res://nodes/map/hex/grassland_city1/grassland_city1.png"),
+	8: preload("res://nodes/map/hex/grassland_city2/grassland_city2.png"),
+	9: preload("res://nodes/map/hex/grassland_village1/grassland_village1.png")
 }
 
 # Map data - stores tile type names
@@ -33,16 +45,43 @@ func _ready():
 	_render_tiles()
 
 func _generate_test_map():
-	# Create a 10x10 test grid with all 4 tile types
-	var tile_types = ["grassland0", "grassland1", "grassland2", "grassland3"]
-	for y in range(10):
+	# Create a 30x30 map with larger water border and varied content
+	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
+	var map_width = 30
+	var map_height = 30
+	var water_margin = 8  # Thicker water border
+
+	# Initialize with water everywhere first
+	for y in range(map_height):
 		var row = []
-		for x in range(10):
-			# Use different patterns to show all tiles
-			var tile_index = (x + y * 2) % 4
-			var tile_type = tile_types[tile_index]
-			row.append(tile_type)
+		for x in range(map_width):
+			row.append("water")
 		map_data.append(row)
+
+	# Fill land area with random grasslands
+	for y in range(water_margin, map_height - water_margin):
+		for x in range(water_margin, map_width - water_margin):
+			var grassland = grassland_types[randi() % grassland_types.size()]
+			map_data[y][x] = grassland
+
+	# Place special tiles (1 of each city, 1 village)
+	var land_width = map_width - water_margin * 2
+	var land_height = map_height - water_margin * 2
+
+	# Place city1 (upper left quadrant)
+	var city1_x = water_margin + randi() % (land_width / 2)
+	var city1_y = water_margin + randi() % (land_height / 2)
+	map_data[city1_y][city1_x] = "city1"
+
+	# Place city2 (lower right quadrant)
+	var city2_x = water_margin + land_width / 2 + randi() % (land_width / 2)
+	var city2_y = water_margin + land_height / 2 + randi() % (land_height / 2)
+	map_data[city2_y][city2_x] = "city2"
+
+	# Place village1 (center area)
+	var village_x = water_margin + land_width / 4 + randi() % (land_width / 2)
+	var village_y = water_margin + land_height / 4 + randi() % (land_height / 2)
+	map_data[village_y][village_x] = "village1"
 
 func _render_tiles():
 	# Render tiles using TileMap API
@@ -85,16 +124,18 @@ func _update_highlight():
 	var source_id = tile_map.get_cell_source_id(0, hovered_tile)
 
 	if source_id != -1:
-		# Valid tile - show highlight with correct texture
-		hex_highlight.visible = true
-
 		# Update texture to match the hovered tile
 		if source_id in tile_textures:
+			# Valid tile with loaded texture - show highlight
+			hex_highlight.visible = true
 			hex_highlight.texture = tile_textures[source_id]
 
-		# Convert tile coords back to world position
-		var world_pos = tile_map.to_global(tile_map.map_to_local(hovered_tile))
-		hex_highlight.global_position = world_pos
+			# Convert tile coords back to world position
+			var world_pos = tile_map.to_global(tile_map.map_to_local(hovered_tile))
+			hex_highlight.global_position = world_pos
+		else:
+			# Tile exists but texture not loaded yet (cities/villages) - hide highlight
+			hex_highlight.visible = false
 	else:
 		# No tile - hide highlight
 		hex_highlight.visible = false

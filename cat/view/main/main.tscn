@@ -1,14 +1,39 @@
-[gd_scene load_steps=3 format=3 uid="uid://b0v1xvyqj8y3h"]
+[gd_scene load_steps=5 format=3 uid="uid://b0v1xvyqj8y3h"]
 
 [ext_resource type="Script" path="res://view/main/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://c8n2x3m9k4p1j" path="res://nodes/map/hex/hex.tscn" id="2_hex"]
+[ext_resource type="Shader" path="res://shader/crt.gdshader" id="3_crt"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_crt"]
+shader = ExtResource("3_crt")
+shader_parameter/mask_type = 1
+shader_parameter/curve = 0.1
+shader_parameter/color_offset = 0.002
+shader_parameter/mask_brightness = 1.0
+shader_parameter/aspect = 0.5625
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 
-[node name="Hex" parent="." instance=ExtResource("2_hex")]
+[node name="SubViewport" type="SubViewport" parent="."]
+size = Vector2i(1280, 720)
+render_target_update_mode = 4
+gui_embed_subwindows = true
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Hex" parent="SubViewport" instance=ExtResource("2_hex")]
+
+[node name="Camera2D" type="Camera2D" parent="SubViewport"]
 position = Vector2(160, 140)
 enabled = true
 zoom = Vector2(2, 2)
+
+[node name="CRTFilter" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_crt")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 1280.0
+offset_bottom = 720.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
