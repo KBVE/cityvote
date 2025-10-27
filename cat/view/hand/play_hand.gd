@@ -18,10 +18,14 @@ var hex_map = null
 # Reference to camera for auto-follow
 var camera: Camera2D = null
 
+# Camera bounds (set from main scene)
+var camera_min_bounds: Vector2 = Vector2.ZERO
+var camera_max_bounds: Vector2 = Vector2.ZERO
+
 # Camera auto-follow settings
 var camera_follow_enabled: bool = true
-var camera_follow_speed: float = 5.0  # How fast camera follows cursor
-var camera_edge_threshold: float = 150.0  # Distance from center before camera starts following
+var camera_follow_speed: float = 3.0  # How fast camera follows cursor (lower = smoother)
+var camera_edge_threshold: float = 250.0  # Distance from center before camera starts following (larger = more flexible)
 
 # Current hand of cards
 var hand: Array[Dictionary] = []
@@ -51,6 +55,9 @@ var held_card_source_index: int = -1
 var preview_ghost: Sprite2D = null  # Visual proxy that follows cursor
 var preview_ghost_target_tile: Vector2i = Vector2i(-1, -1)  # Current tile under ghost
 var ghost_scale: float = 0.8  # Ghost is slightly transparent/smaller
+var ghost_alpha_moving: float = 0.15  # Super transparent while moving
+var ghost_alpha_snapped: float = 0.85  # More visible when snapped to tile
+var ghost_fade_speed: float = 8.0  # How fast the ghost fades in/out
 
 func _ready() -> void:
 	deck = PlayingDeck.new()
@@ -160,7 +167,7 @@ func _on_card_gui_input(event: InputEvent, card: Control) -> void:
 
 func _process(delta: float) -> void:
 	if card_state == CardState.HELD or card_state == CardState.PREVIEW:
-		_update_preview_ghost()
+		_update_preview_ghost(delta)
 		_update_camera_follow(delta)
 
 func _input(event: InputEvent) -> void:
@@ -207,7 +214,7 @@ func _event_pick_card(card: Control) -> void:
 	# Transition to HELD state
 	card_state = CardState.HELD
 
-	# Emit signal to disable manual camera panning
+	# Emit signal (for future use if needed)
 	card_picked_up.emit()
 
 	print("State: IDLE → HELD")
@@ -246,11 +253,11 @@ func _create_preview_ghost() -> void:
 
 	preview_ghost = Sprite2D.new()
 	preview_ghost.texture = held_card.get_child(0).texture
-	preview_ghost.modulate = Color(1, 1, 1, 0.7)  # Semi-transparent
+	preview_ghost.modulate = Color(1, 1, 1, ghost_alpha_moving)  # Start super transparent
 	preview_ghost.scale = Vector2(ghost_scale, ghost_scale)
 	hex_map.add_child(preview_ghost)
 
-func _update_preview_ghost() -> void:
+func _update_preview_ghost(delta: float) -> void:
 	if preview_ghost == null or hex_map == null:
 		return
 
@@ -270,7 +277,10 @@ func _update_preview_ghost() -> void:
 		# Transition to PREVIEW state if hovering valid tile
 		if card_state == CardState.HELD:
 			card_state = CardState.PREVIEW
-			preview_ghost.modulate = Color(0.8, 1, 0.8, 0.9)  # Green tint when valid
+
+		# Fade in ghost when snapped to valid tile (green tint)
+		var target_color = Color(0.8, 1, 0.8, ghost_alpha_snapped)
+		preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
 	else:
 		# Invalid tile - follow mouse freely
 		preview_ghost.position = mouse_world_pos
@@ -279,7 +289,10 @@ func _update_preview_ghost() -> void:
 		# Transition back to HELD if not over valid tile
 		if card_state == CardState.PREVIEW:
 			card_state = CardState.HELD
-			preview_ghost.modulate = Color(1, 1, 1, 0.7)  # Normal when invalid
+
+		# Fade out ghost when moving (super transparent)
+		var target_color = Color(1, 1, 1, ghost_alpha_moving)
+		preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
 
 func _destroy_preview_ghost() -> void:
 	if preview_ghost != null:
@@ -297,20 +310,37 @@ func _update_camera_follow(delta: float) -> void:
 	# Get camera center in world coordinates
 	var camera_center = camera.get_screen_center_position()
 
-	# Calculate distance from camera center to mouse
-	var distance_from_center = mouse_world_pos.distance_to(camera_center)
+	# Calculate offset from camera center to mouse
+	var offset = mouse_world_pos - camera_center
+	var distance_from_center = offset.length()
 
-	# Only follow if mouse is beyond threshold (edge of screen area)
+	# Only follow if mouse is beyond threshold
 	if distance_from_center > camera_edge_threshold:
-		# Calculate target position (move camera toward mouse)
-		var direction = (mouse_world_pos - camera_center).normalized()
-		var target_offset = direction * (distance_from_center - camera_edge_threshold)
+		# Calculate how far beyond threshold we are
+		var overshoot = distance_from_center - camera_edge_threshold
 
-		# Smoothly interpolate camera position
-		var new_camera_pos = camera.position + target_offset * camera_follow_speed * delta
+		# Normalize the offset to get direction
+		var direction = offset.normalized()
 
-		# Clamp to map bounds (use main scene's bounds if available)
-		camera.position = new_camera_pos
+		# Target position: move camera to bring mouse back to threshold distance
+		var target_camera_pos = camera.position + direction * overshoot
+
+		# Smoothly interpolate using lerp for buttery smooth movement
+		var new_pos = camera.position.lerp(target_camera_pos, camera_follow_speed * delta)
+
+		# Debug: Check if clamping is blocking movement
+		var pre_clamp_pos = new_pos
+
+		# Clamp to camera bounds (if bounds are set)
+		if camera_min_bounds != Vector2.ZERO or camera_max_bounds != Vector2.ZERO:
+			new_pos.x = clamp(new_pos.x, camera_min_bounds.x, camera_max_bounds.x)
+			new_pos.y = clamp(new_pos.y, camera_min_bounds.y, camera_max_bounds.y)
+
+		# Debug: Print when bounds are clamping
+		if pre_clamp_pos != new_pos:
+			print("Camera clamped! Pre: ", pre_clamp_pos, " Post: ", new_pos, " Bounds: ", camera_min_bounds, " to ", camera_max_bounds)
+
+		camera.position = new_pos
 
 # ===================================================================
 # CARD PLACEMENT

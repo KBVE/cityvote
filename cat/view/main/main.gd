@@ -44,18 +44,17 @@ func _ready():
 	# Enable viewport to handle input events
 	subviewport.handle_input_locally = false
 
-	# Calculate camera bounds based on actual tilemap
+	# Calculate camera bounds based on actual tilemap (must be done first!)
 	_calculate_camera_bounds()
-
-	#### TEST ####
-	# Spawn a few test viking ships on water tiles
-	_spawn_test_vikings()
 
 	#; TEST
 	# Connect hex_map to play_hand for card placement
 	play_hand.hex_map = hex_map
 	# Connect camera to play_hand for auto-follow
 	play_hand.camera = camera
+	# Pass camera bounds to play_hand for proper clamping (after bounds are calculated)
+	play_hand.camera_min_bounds = camera_min_bounds
+	play_hand.camera_max_bounds = camera_max_bounds
 	# Connect hex_map to tile_info for tile hover display
 	tile_info.hex_map = hex_map
 
@@ -65,18 +64,20 @@ func _ready():
 	play_hand.card_cancelled.connect(_on_card_cancelled)
 	#; TEST
 
+	#### TEST ####
+	# Spawn a few test viking ships on water tiles
+	_spawn_test_vikings()
+
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:
-	manual_camera_panning_enabled = false
-	print("Camera panning disabled - card picked up")
+	# Keep manual panning enabled - auto-follow and manual work together
+	print("Card picked up - auto-follow active, manual drag still available")
 
 func _on_card_placed() -> void:
-	manual_camera_panning_enabled = true
-	print("Camera panning enabled - card placed")
+	print("Card placed")
 
 func _on_card_cancelled() -> void:
-	manual_camera_panning_enabled = true
-	print("Camera panning enabled - card cancelled")
+	print("Card cancelled")
 
 func _calculate_camera_bounds():
 	# Debug: Find the 4 corner water tiles and print their world positions
@@ -113,15 +114,17 @@ func _calculate_camera_bounds():
 	# Map spans X: -1160 to 1192, Y: 14 to 1386
 	# Land area centered at X: 16, Y: 350 to 1050
 
-	# Account for viewport size (at zoom 2, viewport shows 640x360 area)
-	var viewport_half_size = Vector2(320, 180)
+	# Account for viewport size (dynamically based on actual viewport and zoom)
+	var viewport_size = Vector2(subviewport.size)  # Convert Vector2i to Vector2
+	var viewport_half_size = (viewport_size / camera.zoom) / 2.0
+	print("Viewport size: ", viewport_size, " Zoom: ", camera.zoom, " Half size in world: ", viewport_half_size)
 
-	# Set bounds to allow viewing the entire land area plus some water
-	# Add generous margins so you can see all land tiles
-	var min_world_x = -1160.0 + 200  # Left water edge with padding
-	var max_world_x = 1192.0 - 200   # Right water edge with padding
-	var min_world_y = 14.0 + 150     # Top water edge with padding
-	var max_world_y = 1386.0 - 150   # Bottom water edge with padding
+	# Set bounds to allow viewing the entire map (water included)
+	# Use minimal padding so camera can reach all tiles
+	var min_world_x = -1160.0 + 100  # Left water edge with small padding
+	var max_world_x = 1192.0 - 100   # Right water edge with small padding
+	var min_world_y = 14.0 + 50      # Top water edge with small padding
+	var max_world_y = 1386.0 - 50    # Bottom water edge with small padding
 
 	camera_min_bounds = Vector2(min_world_x, min_world_y) + viewport_half_size
 	camera_max_bounds = Vector2(max_world_x, max_world_y) - viewport_half_size
@@ -174,17 +177,17 @@ func _process(delta):
 		_move_test_vikings()
 
 func _input(event):
-	# Handle mouse drag panning (only when manual panning is enabled)
+	# Handle mouse drag panning (works alongside auto-follow)
+	# Left-click drag works for camera since card placement uses double-click
 	if event is InputEventMouseButton:
 		var allowed_buttons = [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]
 
 		if event.button_index in allowed_buttons:
-			# Only allow drag panning when manual camera panning is enabled
-			if event.pressed and manual_camera_panning_enabled:
+			if event.pressed:
 				is_dragging = true
 				drag_start_mouse_pos = event.position
 				drag_start_camera_pos = camera.position
-			elif not event.pressed:
+			else:
 				is_dragging = false
 
 		# Zoom with mouse wheel
