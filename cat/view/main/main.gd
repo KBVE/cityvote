@@ -12,6 +12,13 @@ var zoom_speed = 0.1
 var min_zoom = 0.5
 var max_zoom = 4.0
 
+# Camera bounds (keep camera within land area, away from water border)
+# Map is 50x50 tiles at ~32x28 tile size = ~1600x1400 world coords
+# Water border is 12 tiles (~384 pixels), land area tiles (12,12) to (38,38)
+# Land area in world coords: ~(384, 336) to (~1216, ~1064)
+var camera_min_bounds = Vector2(400, 350)  # Left/top edge of land area
+var camera_max_bounds = Vector2(1200, 1050)  # Right/bottom edge of land area
+
 # Drag panning variables
 var is_dragging = false
 var drag_start_mouse_pos = Vector2.ZERO
@@ -32,9 +39,65 @@ func _ready():
 	# Enable viewport to handle input events
 	subviewport.handle_input_locally = false
 
+	# Calculate camera bounds based on actual tilemap
+	_calculate_camera_bounds()
+
 	#### TEST ####
 	# Spawn a few test viking ships on water tiles
 	_spawn_test_vikings()
+
+func _calculate_camera_bounds():
+	# Debug: Find the 4 corner water tiles and print their world positions
+	# Top-left corner water tile (should be around 0,0)
+	var top_left_tile = Vector2i(0, 0)
+	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
+
+	# Top-right corner water tile
+	var top_right_tile = Vector2i(49, 0)
+	var top_right_world = hex_map.tile_map.map_to_local(top_right_tile)
+
+	# Bottom-left corner water tile
+	var bottom_left_tile = Vector2i(0, 49)
+	var bottom_left_world = hex_map.tile_map.map_to_local(bottom_left_tile)
+
+	# Bottom-right corner water tile
+	var bottom_right_tile = Vector2i(49, 49)
+	var bottom_right_world = hex_map.tile_map.map_to_local(bottom_right_tile)
+
+	print("=== CORNER WATER TILES ===")
+	print("Top-Left (0,0): ", top_left_world)
+	print("Top-Right (49,0): ", top_right_world)
+	print("Bottom-Left (0,49): ", bottom_left_world)
+	print("Bottom-Right (49,49): ", bottom_right_world)
+
+	# Also print the land area corners (12,12) and (37,37)
+	var land_top_left = hex_map.tile_map.map_to_local(Vector2i(12, 12))
+	var land_bottom_right = hex_map.tile_map.map_to_local(Vector2i(37, 37))
+	print("=== LAND AREA ===")
+	print("Land Top-Left (12,12): ", land_top_left)
+	print("Land Bottom-Right (37,37): ", land_bottom_right)
+
+	# Based on actual corner coordinates:
+	# Map spans X: -1160 to 1192, Y: 14 to 1386
+	# Land area centered at X: 16, Y: 350 to 1050
+
+	# Account for viewport size (at zoom 2, viewport shows 640x360 area)
+	var viewport_half_size = Vector2(320, 180)
+
+	# Set bounds to allow viewing the entire land area plus some water
+	# Add generous margins so you can see all land tiles
+	var min_world_x = -1160.0 + 200  # Left water edge with padding
+	var max_world_x = 1192.0 - 200   # Right water edge with padding
+	var min_world_y = 14.0 + 150     # Top water edge with padding
+	var max_world_y = 1386.0 - 150   # Bottom water edge with padding
+
+	camera_min_bounds = Vector2(min_world_x, min_world_y) + viewport_half_size
+	camera_max_bounds = Vector2(max_world_x, max_world_y) - viewport_half_size
+
+	print("=== CAMERA ===")
+	print("Camera bounds: ", camera_min_bounds, " to ", camera_max_bounds)
+	print("Camera starting position: ", camera.position)
+	print("Usable camera area width: ", camera_max_bounds.x - camera_min_bounds.x)
 
 func _unhandled_input(event):
 	# Forward input events to the SubViewport
@@ -50,7 +113,8 @@ func _process(delta):
 	if is_dragging:
 		var current_mouse_pos = get_viewport().get_mouse_position()
 		var mouse_delta = (current_mouse_pos - drag_start_mouse_pos) / camera.zoom.x
-		camera.position = drag_start_camera_pos - mouse_delta
+		var new_pos = drag_start_camera_pos - mouse_delta
+		camera.position = _clamp_camera_position(new_pos)
 
 	# Camera panning with arrow keys or WASD (only when not dragging)
 	if not is_dragging:
@@ -66,7 +130,8 @@ func _process(delta):
 			direction.y -= 1
 
 		if direction != Vector2.ZERO:
-			camera.position += direction.normalized() * camera_speed * delta / camera.zoom.x
+			var new_pos = camera.position + direction.normalized() * camera_speed * delta / camera.zoom.x
+			camera.position = _clamp_camera_position(new_pos)
 
 	#### TEST ####
 	# Move vikings periodically
@@ -112,8 +177,8 @@ func _spawn_test_vikings():
 	var water_tiles: Array = []
 
 	# Collect all water tile coordinates
-	for x in range(30):
-		for y in range(30):
+	for x in range(50):
+		for y in range(50):
 			var tile_coords = Vector2i(x, y)
 			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
 			if source_id == 4:  # Water tile
@@ -178,7 +243,7 @@ func _move_test_vikings():
 			var check_tile = current_tile + offset
 
 			# Check if tile is within bounds and is water
-			if check_tile.x >= 0 and check_tile.x < 30 and check_tile.y >= 0 and check_tile.y < 30:
+			if check_tile.x >= 0 and check_tile.x < 50 and check_tile.y >= 0 and check_tile.y < 50:
 				var source_id = hex_map.tile_map.get_cell_source_id(0, check_tile)
 				if source_id == 4:  # Water tile
 					# Check if tile is not occupied by another ship
@@ -201,3 +266,11 @@ func _move_test_vikings():
 
 			# Update stored tile
 			viking_data["tile"] = new_tile
+
+# Clamp camera position within bounds
+# TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping
+func _clamp_camera_position(pos: Vector2) -> Vector2:
+	return Vector2(
+		clamp(pos.x, camera_min_bounds.x, camera_max_bounds.x),
+		clamp(pos.y, camera_min_bounds.y, camera_max_bounds.y)
+	)
