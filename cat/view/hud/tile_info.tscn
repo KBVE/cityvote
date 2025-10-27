@@ -59,3 +59,25 @@ text = "Type: --"
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
 text = "World: --"
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 4
+theme_override_styles/separator = SubResource("StyleBoxFlat_panel")
+
+[node name="CardLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 12
+text = "Card: --"
+
+[node name="CardGhost" type="TextureRect" parent="."]
+layout_mode = 2
+offset_left = 60.0
+offset_top = -110.0
+offset_right = 150.0
+offset_bottom = -20.0
+pivot_offset = Vector2(45, 45)
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5

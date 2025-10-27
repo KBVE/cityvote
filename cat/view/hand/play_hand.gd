@@ -358,7 +358,16 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	placed_card.texture = held_card.get_child(0).texture
 	placed_card.position = world_pos
 	placed_card.scale = Vector2(0.15, 0.15)  # Downscale to fit tile
+
+	# Check if placed on water tile and apply wave shader
+	var tile_type = hex_map.get_tile_type_at_coords(tile_coords)
+	if tile_type == "water":
+		_apply_wave_shader(placed_card)
+
 	hex_map.add_child(placed_card)
+
+	# Register card with hex map
+	hex_map.place_card_on_tile(tile_coords, placed_card, held_card_data.suit, held_card_data.value)
 
 	# Remove card from hand
 	held_card.queue_free()
@@ -399,6 +408,20 @@ func clear_hand_display() -> void:
 # Shuffle and redraw the hand
 func redraw_hand() -> void:
 	draw_initial_hand()
+
+# Apply wave shader to sprite (for water tiles)
+func _apply_wave_shader(sprite: Sprite2D) -> void:
+	# Create shader material from Cache with parameters
+	var shader_material = Cache.create_shader_material("with_wave", {
+		"wave_speed": 0.8,
+		"wave_amplitude": 2.0,  # Small vertical bob
+		"sway_amplitude": 1.5,  # Subtle horizontal sway
+		"wave_frequency": 1.5,
+		"rotation_amount": 1.0  # Slight rocking
+	})
+
+	if shader_material:
+		sprite.material = shader_material
 
 # Get card name as string (for debugging)
 func get_card_name(suit: int, value: int) -> String:

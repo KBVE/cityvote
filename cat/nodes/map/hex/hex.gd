@@ -36,6 +36,9 @@ var tile_textures = {
 # Map data - stores tile type names
 var map_data = []
 
+# Card data - stores cards placed on tiles
+var card_data: Dictionary = {}  # tile_coords -> {sprite, suit, value}
+
 # Current hovered tile coordinates
 var hovered_tile: Vector2i = Vector2i(-1, -1)
 
@@ -69,18 +72,18 @@ func _generate_test_map():
 	var land_height = map_height - water_margin * 2
 
 	# Place city1 (upper left quadrant)
-	var city1_x = water_margin + randi() % (land_width / 2)
-	var city1_y = water_margin + randi() % (land_height / 2)
+	var city1_x = water_margin + randi() % int(land_width / 2.0)
+	var city1_y = water_margin + randi() % int(land_height / 2.0)
 	map_data[city1_y][city1_x] = "city1"
 
 	# Place city2 (lower right quadrant)
-	var city2_x = water_margin + land_width / 2 + randi() % (land_width / 2)
-	var city2_y = water_margin + land_height / 2 + randi() % (land_height / 2)
+	var city2_x = water_margin + int(land_width / 2.0) + randi() % int(land_width / 2.0)
+	var city2_y = water_margin + int(land_height / 2.0) + randi() % int(land_height / 2.0)
 	map_data[city2_y][city2_x] = "city2"
 
 	# Place village1 (center area)
-	var village_x = water_margin + land_width / 4 + randi() % (land_width / 2)
-	var village_y = water_margin + land_height / 4 + randi() % (land_height / 2)
+	var village_x = water_margin + int(land_width / 4.0) + randi() % int(land_width / 2.0)
+	var village_y = water_margin + int(land_height / 4.0) + randi() % int(land_height / 2.0)
 	map_data[village_y][village_x] = "village1"
 
 func _render_tiles():
@@ -139,3 +142,21 @@ func _update_highlight():
 	else:
 		# No tile - hide highlight
 		hex_highlight.visible = false
+
+# Register a card placed on a tile
+func place_card_on_tile(tile_coords: Vector2i, card_sprite: Sprite2D, suit: int, value: int) -> void:
+	card_data[tile_coords] = {
+		"sprite": card_sprite,
+		"suit": suit,
+		"value": value
+	}
+
+# Get card data at tile coordinates
+func get_card_at_tile(tile_coords: Vector2i) -> Dictionary:
+	if card_data.has(tile_coords):
+		return card_data[tile_coords]
+	return {}
+
+# Check if tile has a card
+func has_card_at_tile(tile_coords: Vector2i) -> bool:
+	return card_data.has(tile_coords)

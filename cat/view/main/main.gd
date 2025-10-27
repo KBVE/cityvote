@@ -3,12 +3,15 @@ extends Node2D
 # Main shell scene for camera panning and scene display
 
 @onready var subviewport: SubViewport = $SubViewport
+@onready var viewport_display: TextureRect = $ViewportDisplay
 @onready var crt_filter: ColorRect = $CRTFilter
+@onready var fog_border: ColorRect = $FogBorder
+@onready var smoke_atmosphere: ColorRect = $SmokeAtmosphere
 @onready var camera: Camera2D = $SubViewport/Camera2D
 @onready var hex_map = $SubViewport/Hex
 #; TEST
 @onready var play_hand = $SubViewport/PlayHand
-@onready var tile_info = $SubViewport/TileInfo
+@onready var tile_info = $TileInfo
 #; TEST
 
 var camera_speed = 300.0
@@ -29,6 +32,9 @@ var drag_start_mouse_pos = Vector2.ZERO
 var drag_start_camera_pos = Vector2.ZERO
 var manual_camera_panning_enabled = true  # Controlled by card signals
 
+# CRT effect toggle
+var crt_effect = false  # Set to true to enable CRT shader
+
 #### TEST ####
 # Viking ship testing
 var test_vikings: Array = []
@@ -37,9 +43,19 @@ var viking_move_interval: float = 2.0
 var occupied_tiles: Dictionary = {}  # Track which tiles have ships
 
 func _ready():
-	# Setup CRT shader viewport texture
+	# Get viewport texture
 	var viewport_texture = subviewport.get_texture()
+
+	# Always display the viewport on the base TextureRect
+	viewport_display.texture = viewport_texture
+
+	# Setup CRT shader viewport texture
 	crt_filter.material.set_shader_parameter("tex", viewport_texture)
+
+	# Enable/disable CRT effect and fog layers
+	crt_filter.visible = crt_effect
+	fog_border.visible = crt_effect
+	smoke_atmosphere.visible = crt_effect
 
 	# Enable viewport to handle input events
 	subviewport.handle_input_locally = false
@@ -250,6 +266,9 @@ func _spawn_test_vikings():
 			viking.position = world_pos
 			viking.occupied_tiles = occupied_tiles  # Share reference
 
+			# Apply wave shader to viking (they're on water!)
+			_apply_wave_shader_to_viking(viking)
+
 			# Set random initial direction
 			viking.set_direction(randi() % 16)
 
@@ -268,7 +287,7 @@ func _move_test_vikings():
 	print("=== MOVING VIKINGS ===")
 	print("Total vikings to move: ", test_vikings.size())
 
-	# Move each viking to an adjacent water tile
+	# Move each viking using pathfinding
 	for i in range(test_vikings.size()):
 		var viking_data = test_vikings[i]
 		var viking = viking_data["ship"]
@@ -281,35 +300,48 @@ func _move_test_vikings():
 			print("  Skipping - still moving")
 			continue
 
-		# Get adjacent hex tiles (6 directions for hex grid)
-		var adjacent_offsets = [
-			Vector2i(1, 0),   # East
-			Vector2i(-1, 0),  # West
-			Vector2i(0, 1),   # South-East (staggered)
-			Vector2i(0, -1),  # North-West (staggered)
-			Vector2i(1, -1),  # North-East
-			Vector2i(-1, 1),  # South-West
-		]
+		# Find a random destination within range using pathfinding
+		var destination = Pathfinding.find_random_destination(
+			current_tile,
+			hex_map,
+			occupied_tiles,
+			viking,
+			1,  # min_distance
+			3   # max_distance
+		)
 
-		# Find adjacent water tiles that are unoccupied
-		var adjacent_water_tiles: Array = []
-		for offset in adjacent_offsets:
-			var check_tile = current_tile + offset
+		# If no destination found or same as current, try adjacent tiles
+		if destination == current_tile:
+			var adjacent_tiles = Pathfinding.find_valid_adjacent_water_tiles(
+				current_tile,
+				hex_map,
+				occupied_tiles,
+				viking
+			)
 
-			# Check if tile is within bounds and is water
-			if check_tile.x >= 0 and check_tile.x < 50 and check_tile.y >= 0 and check_tile.y < 50:
-				var source_id = hex_map.tile_map.get_cell_source_id(0, check_tile)
-				if source_id == 4:  # Water tile
-					# Check if tile is not occupied by another ship
-					if not occupied_tiles.has(check_tile) or occupied_tiles[check_tile] == viking:
-						adjacent_water_tiles.append(check_tile)
+			if adjacent_tiles.size() > 0:
+				destination = adjacent_tiles[randi() % adjacent_tiles.size()]
+			else:
+				print("  No valid tiles found - cannot move")
+				continue
 
-		print("  Found ", adjacent_water_tiles.size(), " adjacent water tiles")
+		# Find path to destination
+		var path = Pathfinding.find_path(
+			current_tile,
+			destination,
+			hex_map,
+			occupied_tiles,
+			viking
+		)
 
-		if adjacent_water_tiles.size() > 0:
-			# Move to random adjacent water tile
-			var new_tile = adjacent_water_tiles[randi() % adjacent_water_tiles.size()]
+		if path.size() > 0:
+			# Move to first tile in path
+			var new_tile = path[0]
 			var new_pos = hex_map.tile_map.map_to_local(new_tile)
+
+			print("  Current viking pos: ", viking.position, " Target pos: ", new_pos)
+			var direction_vec = new_pos - viking.position
+			print("  Direction vector: ", direction_vec, " Length: ", direction_vec.length(), " Angle: ", rad_to_deg(direction_vec.angle()))
 
 			# Free up current tile
 			occupied_tiles.erase(current_tile)
@@ -322,9 +354,9 @@ func _move_test_vikings():
 
 			# Update stored tile
 			viking_data["tile"] = new_tile
-			print("  Moving to tile ", new_tile, " at pos ", new_pos)
+			print("  Moving to tile ", new_tile, " at pos ", new_pos, " (path length: ", path.size(), ")")
 		else:
-			print("  No adjacent water tiles found - cannot move")
+			print("  No path found - cannot move")
 
 # Clamp camera position within bounds
 # TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping
@@ -333,3 +365,20 @@ func _clamp_camera_position(pos: Vector2) -> Vector2:
 		clamp(pos.x, camera_min_bounds.x, camera_max_bounds.x),
 		clamp(pos.y, camera_min_bounds.y, camera_max_bounds.y)
 	)
+
+# Apply wave shader to viking ships
+func _apply_wave_shader_to_viking(viking: Node2D) -> void:
+	# Create shader material from Cache with parameters
+	var shader_material = Cache.create_shader_material("with_wave", {
+		"wave_speed": 0.6,
+		"wave_amplitude": 1.5,  # Gentle bobbing
+		"sway_amplitude": 1.0,  # Subtle sway
+		"wave_frequency": 1.2,
+		"rotation_amount": 0.8  # Slight rocking
+	})
+
+	# Apply to the sprite child
+	if shader_material:
+		var sprite = viking.get_node("Sprite2D")
+		if sprite:
+			sprite.material = shader_material

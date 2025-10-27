@@ -34,8 +34,24 @@ func set_direction(new_direction: int):
 
 # Update sprite based on current direction
 func _update_sprite():
-	if direction >= 0 and direction < ship_sprites.size():
-		sprite.texture = ship_sprites[direction]
+	if direction >= 0 and direction < 16:
+		# Check if using AtlasTexture (for shader-based atlas)
+		if sprite.texture and sprite.texture is AtlasTexture:
+			var atlas_tex = sprite.texture as AtlasTexture
+			# Calculate which cell in the 4x4 atlas (each cell is 64x64)
+			var col = direction % 4
+			var row = direction / 4
+			atlas_tex.region = Rect2(col * 64, row * 64, 64, 64)
+			print("Ship direction updated to: ", direction, " (atlas region: ", atlas_tex.region, ")")
+		elif sprite.material and sprite.material is ShaderMaterial:
+			# Fallback: shader-based direction (not used with AtlasTexture approach)
+			var shader_mat = sprite.material as ShaderMaterial
+			shader_mat.set_shader_parameter("direction", direction)
+			print("Ship direction updated to: ", direction, " (via shader)")
+		elif direction < ship_sprites.size():
+			# Fallback to texture swapping if no shader
+			sprite.texture = ship_sprites[direction]
+			print("Ship direction updated to: ", direction, " sprite: ", ship_sprites[direction].resource_path if ship_sprites[direction] else "null")
 
 # Convert angle in degrees to direction index (0-15)
 func angle_to_direction(angle_degrees: float) -> int:
@@ -44,10 +60,15 @@ func angle_to_direction(angle_degrees: float) -> int:
 	if angle_degrees < 0:
 		angle_degrees += 360.0
 
-	# Convert to direction index (0 = north = -90 degrees)
-	# Counter-clockwise: 0=N, 1=NNW, 2=NW, 3=WNW, 4=W, etc.
-	var adjusted_angle = angle_degrees + 90.0  # Adjust so 0 degrees = North
-	var direction_index = int(round(adjusted_angle / 22.5)) % 16
+	# In Godot: 0° = East, 90° = South, 180° = West, 270° = North (clockwise from East)
+	# Our sprites: 0=N, 4=W, 8=S, 12=E (counter-clockwise from North, in steps of 22.5°)
+
+	# Convert Godot angle to our direction system:
+	# Godot 0°(E) → our 12(E), Godot 90°(S) → our 8(S), Godot 180°(W) → our 4(W), Godot 270°(N) → our 0(N)
+	# Formula: direction = (12 - (angle / 22.5)) % 16
+	var direction_index = (12 - int(round(angle_degrees / 22.5))) % 16
+	if direction_index < 0:
+		direction_index += 16
 
 	return direction_index
 
@@ -58,7 +79,10 @@ func vector_to_direction(vec: Vector2) -> int:
 
 # Start moving to a target position
 func move_to(target_pos: Vector2):
+	print("move_to() called - is_moving: ", is_moving, " current pos: ", position, " target: ", target_pos)
+
 	if is_moving:
+		print("  Already moving, ignoring")
 		return  # Already moving
 
 	move_start_pos = position
@@ -70,6 +94,7 @@ func move_to(target_pos: Vector2):
 	var direction_vec = target_pos - position
 	if direction_vec.length() > 0:
 		target_direction = vector_to_direction(direction_vec)
+		print("  Setting target direction to: ", target_direction, " (from angle: ", rad_to_deg(direction_vec.angle()), ")")
 
 func _process(delta):
 	# Smooth rotation interpolation
@@ -83,9 +108,9 @@ func _process(delta):
 			else:
 				dir_diff += 16
 
-		# Interpolate direction
-		var step = rotation_speed * delta
-		if abs(dir_diff) < step:
+		# Interpolate direction (ensure at least 1 step per frame)
+		var step = max(1.0, rotation_speed * delta)
+		if abs(dir_diff) <= step:
 			direction = target_direction
 		else:
 			direction = int(direction + sign(dir_diff) * step) % 16
