@@ -8,6 +8,7 @@ extends Node2D
 @onready var fog_border: ColorRect = $FogBorder
 @onready var smoke_atmosphere: ColorRect = $SmokeAtmosphere
 @onready var camera: Camera2D = $SubViewport/Camera2D
+@onready var water_background: ColorRect = $SubViewport/WaterBackground
 @onready var hex_map = $SubViewport/Hex
 #; TEST
 @onready var play_hand = $SubViewport/PlayHand
@@ -160,6 +161,12 @@ func _unhandled_input(event):
 		subviewport.push_input(cloned_event, true)
 
 func _process(delta):
+	# Keep water background centered on camera and scale it with zoom
+	# Offset by half the size to center it (ColorRect draws from top-left)
+	var zoom_scale = 1.0 / camera.zoom.x
+	water_background.position = camera.position - Vector2(640, 360) * zoom_scale
+	water_background.scale = Vector2(zoom_scale, zoom_scale)
+
 	# Handle drag panning
 	if is_dragging:
 		var current_mouse_pos = get_viewport().get_mouse_position()
@@ -284,20 +291,14 @@ func _spawn_test_vikings():
 	print("Total vikings spawned: ", test_vikings.size())
 
 func _move_test_vikings():
-	print("=== MOVING VIKINGS ===")
-	print("Total vikings to move: ", test_vikings.size())
-
 	# Move each viking using pathfinding
 	for i in range(test_vikings.size()):
 		var viking_data = test_vikings[i]
 		var viking = viking_data["ship"]
 		var current_tile = viking_data["tile"]
 
-		print("Viking ", i, " at tile ", current_tile, " is_moving: ", viking.is_moving)
-
 		# Skip if still moving
 		if viking.is_moving:
-			print("  Skipping - still moving")
 			continue
 
 		# Find a random destination within range using pathfinding
@@ -306,8 +307,8 @@ func _move_test_vikings():
 			hex_map,
 			occupied_tiles,
 			viking,
-			1,  # min_distance
-			3   # max_distance
+			3,  # min_distance - encourage longer movements
+			10  # max_distance - much larger range for more natural paths
 		)
 
 		# If no destination found or same as current, try adjacent tiles
@@ -322,8 +323,7 @@ func _move_test_vikings():
 			if adjacent_tiles.size() > 0:
 				destination = adjacent_tiles[randi() % adjacent_tiles.size()]
 			else:
-				print("  No valid tiles found - cannot move")
-				continue
+				continue  # No valid tiles found
 
 		# Find path to destination
 		var path = Pathfinding.find_path(
@@ -339,10 +339,6 @@ func _move_test_vikings():
 			var new_tile = path[0]
 			var new_pos = hex_map.tile_map.map_to_local(new_tile)
 
-			print("  Current viking pos: ", viking.position, " Target pos: ", new_pos)
-			var direction_vec = new_pos - viking.position
-			print("  Direction vector: ", direction_vec, " Length: ", direction_vec.length(), " Angle: ", rad_to_deg(direction_vec.angle()))
-
 			# Free up current tile
 			occupied_tiles.erase(current_tile)
 
@@ -354,9 +350,6 @@ func _move_test_vikings():
 
 			# Update stored tile
 			viking_data["tile"] = new_tile
-			print("  Moving to tile ", new_tile, " at pos ", new_pos, " (path length: ", path.size(), ")")
-		else:
-			print("  No path found - cannot move")
 
 # Clamp camera position within bounds
 # TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping

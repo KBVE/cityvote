@@ -48,9 +48,5 @@ void fragment() {
 	);
 
 	// Sample the texture at the adjusted UV
-	vec4 tex_color = texture(TEXTURE, cell_uv);
-
-	// Debug: tint based on direction to verify parameter is working
-	float debug_tint = float(direction) / 15.0;
-	COLOR = vec4(tex_color.rgb * vec3(1.0, 1.0 - debug_tint * 0.5, 1.0 - debug_tint * 0.5), tex_color.a);
+	COLOR = texture(TEXTURE, cell_uv);
 }

@@ -48,11 +48,11 @@ func _ready():
 	_render_tiles()
 
 func _generate_test_map():
-	# Create a 50x50 map with larger water border and varied content
+	# Create a 50x50 map with water extending to edges and small central land area
 	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
 	var map_width = 50
 	var map_height = 50
-	var water_margin = 12  # Thicker water border
+	var water_margin = 3  # Minimal margin - land is small island in center
 
 	# Initialize with water everywhere first
 	for y in range(map_height):

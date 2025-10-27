@@ -9,15 +9,6 @@
 [node name="Hex" type="Node2D"]
 script = ExtResource("1_hex")
 
-[node name="Ocean" type="ColorRect" parent="."]
-z_index = -1
-offset_left = -1400.0
-offset_top = -200.0
-offset_right = 1600.0
-offset_bottom = 1600.0
-material = ExtResource("5_water_material")
-color = Color(1, 1, 1, 1)
-
 [node name="TileMap" type="TileMap" parent="."]
 tile_set = ExtResource("2_tileset")
 format = 2

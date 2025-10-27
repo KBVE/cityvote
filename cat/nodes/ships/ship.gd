@@ -17,10 +17,10 @@ var is_moving: bool = false
 var move_start_pos: Vector2 = Vector2.ZERO
 var move_target_pos: Vector2 = Vector2.ZERO
 var move_progress: float = 0.0
-var move_speed: float = 2.0  # Takes 0.5 seconds to move one tile
+var move_speed: float = 3.0  # Faster movement - 0.33 seconds per tile
 
 # Rotation state
-var rotation_speed: float = 8.0  # How fast to interpolate between directions
+var rotation_speed: float = 12.0  # Faster, smoother rotation to track velocity changes
 
 # Reference to other ships for collision detection
 var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
@@ -42,16 +42,13 @@ func _update_sprite():
 			var col = direction % 4
 			var row = direction / 4
 			atlas_tex.region = Rect2(col * 64, row * 64, 64, 64)
-			print("Ship direction updated to: ", direction, " (atlas region: ", atlas_tex.region, ")")
 		elif sprite.material and sprite.material is ShaderMaterial:
 			# Fallback: shader-based direction (not used with AtlasTexture approach)
 			var shader_mat = sprite.material as ShaderMaterial
 			shader_mat.set_shader_parameter("direction", direction)
-			print("Ship direction updated to: ", direction, " (via shader)")
 		elif direction < ship_sprites.size():
 			# Fallback to texture swapping if no shader
 			sprite.texture = ship_sprites[direction]
-			print("Ship direction updated to: ", direction, " sprite: ", ship_sprites[direction].resource_path if ship_sprites[direction] else "null")
 
 # Convert angle in degrees to direction index (0-15)
 func angle_to_direction(angle_degrees: float) -> int:
@@ -79,10 +76,7 @@ func vector_to_direction(vec: Vector2) -> int:
 
 # Start moving to a target position
 func move_to(target_pos: Vector2):
-	print("move_to() called - is_moving: ", is_moving, " current pos: ", position, " target: ", target_pos)
-
 	if is_moving:
-		print("  Already moving, ignoring")
 		return  # Already moving
 
 	move_start_pos = position
@@ -90,14 +84,37 @@ func move_to(target_pos: Vector2):
 	move_progress = 0.0
 	is_moving = true
 
-	# Set target direction based on movement vector
+	# Set initial target direction based on movement vector
 	var direction_vec = target_pos - position
 	if direction_vec.length() > 0:
 		target_direction = vector_to_direction(direction_vec)
-		print("  Setting target direction to: ", target_direction, " (from angle: ", rad_to_deg(direction_vec.angle()), ")")
 
 func _process(delta):
-	# Smooth rotation interpolation
+	# Smooth movement interpolation
+	if is_moving:
+		var old_progress = move_progress
+		move_progress += delta * move_speed
+
+		if move_progress >= 1.0:
+			# Movement complete
+			position = move_target_pos
+			is_moving = false
+			move_progress = 1.0
+		else:
+			# Lerp position with ease-in-out
+			var t = ease(move_progress, -2.0)  # Ease in-out
+			var old_t = ease(old_progress, -2.0)
+			var new_pos = move_start_pos.lerp(move_target_pos, t)
+			var old_pos = move_start_pos.lerp(move_target_pos, old_t)
+
+			# Calculate actual velocity direction from position change
+			var velocity = new_pos - old_pos
+			if velocity.length_squared() > 0.01:  # Only update if moving significantly
+				target_direction = vector_to_direction(velocity)
+
+			position = new_pos
+
+	# Smooth rotation interpolation toward target direction
 	if direction != target_direction:
 		var dir_diff = target_direction - direction
 
@@ -118,17 +135,3 @@ func _process(delta):
 				direction += 16
 
 		_update_sprite()
-
-	# Smooth movement interpolation
-	if is_moving:
-		move_progress += delta * move_speed
-
-		if move_progress >= 1.0:
-			# Movement complete
-			position = move_target_pos
-			is_moving = false
-			move_progress = 1.0
-		else:
-			# Lerp position with ease-in-out
-			var t = ease(move_progress, -2.0)  # Ease in-out
-			position = move_start_pos.lerp(move_target_pos, t)
