@@ -1,4 +1,4 @@
-# Rust Thread → Godot Toast Test
+# Rust Thread → Godot Toast Test - Perfect
 
 This demonstrates using Rust threads with `crossbeam_queue::SegQueue` to send messages to Godot.
 
