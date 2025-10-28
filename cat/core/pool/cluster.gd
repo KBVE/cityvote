@@ -24,6 +24,10 @@ func _setup_pools():
 	var viking_scene = preload("res://nodes/ships/viking/viking.tscn")
 	register_pool("viking", viking_scene, 20)
 
+	# Jezza raptor NPC pool
+	var jezza_scene = preload("res://nodes/npc/dino/jezza/jezza.tscn")
+	register_pool("jezza", jezza_scene, 10)
+
 	# Add more pools here as needed
 	# register_pool("city", city_scene, 10)
 	# register_pool("unit", unit_scene, 50)

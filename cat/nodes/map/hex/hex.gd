@@ -48,11 +48,10 @@ func _ready():
 	_render_tiles()
 
 func _generate_test_map():
-	# Create a rectangular map (60x50) to fill hex parallelogram viewport
+	# Create map using global MapConfig constants
 	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
-	var map_width = 60  # Wider to fill horizontal gaps
-	var map_height = 50
-	var land_inset = 7  # Water border around central land island
+	var map_width = MapConfig.MAP_WIDTH
+	var map_height = MapConfig.MAP_HEIGHT
 
 	# Initialize with water everywhere first
 	for y in range(map_height):
@@ -61,30 +60,59 @@ func _generate_test_map():
 			row.append("water")
 		map_data.append(row)
 
-	# Fill land area with random grasslands (centered island with water border)
-	for y in range(land_inset, map_height - land_inset):
-		for x in range(land_inset, map_width - land_inset):
-			var grassland = grassland_types[randi() % grassland_types.size()]
-			map_data[y][x] = grassland
+	# Create organic island using distance from center with noise
+	var center_x = map_width / 2.0
+	var center_y = map_height / 2.0
+	var base_radius = MapConfig.ISLAND_BASE_RADIUS
 
-	# Place special tiles (1 of each city, 1 village)
-	var land_width = map_width - land_inset * 2
-	var land_height = map_height - land_inset * 2
+	for y in range(map_height):
+		for x in range(map_width):
+			# Distance from center
+			var dx = x - center_x
+			var dy = y - center_y
+			var distance = sqrt(dx * dx + dy * dy)
 
-	# Place city1 (upper left quadrant)
-	var city1_x = land_inset + randi() % int(land_width / 2.0)
-	var city1_y = land_inset + randi() % int(land_height / 2.0)
-	map_data[city1_y][city1_x] = "city1"
+			# Add noise for irregular coastline
+			# Use position-based pseudo-random for consistent generation
+			var noise = sin(x * 0.5 + y * 0.3) * 3.0 + cos(x * 0.3 - y * 0.4) * 2.5
 
-	# Place city2 (lower right quadrant)
-	var city2_x = land_inset + int(land_width / 2.0) + randi() % int(land_width / 2.0)
-	var city2_y = land_inset + int(land_height / 2.0) + randi() % int(land_height / 2.0)
-	map_data[city2_y][city2_x] = "city2"
+			# Create some peninsulas and bays
+			var angle = atan2(dy, dx)
+			var peninsula_noise = sin(angle * float(MapConfig.PENINSULA_COUNT)) * 4.0
 
-	# Place village1 (center area)
-	var village_x = land_inset + int(land_width / 4.0) + randi() % int(land_width / 2.0)
-	var village_y = land_inset + int(land_height / 4.0) + randi() % int(land_height / 2.0)
-	map_data[village_y][village_x] = "village1"
+			# Combined radius with noise
+			var effective_radius = base_radius + noise + peninsula_noise
+
+			# If within radius, make it land
+			if distance < effective_radius:
+				var grassland = grassland_types[randi() % grassland_types.size()]
+				map_data[y][x] = grassland
+
+	# Place special tiles on land (find valid land tiles first)
+	var land_tiles = []
+	for y in range(map_height):
+		for x in range(map_width):
+			if map_data[y][x] != "water":
+				land_tiles.append(Vector2i(x, y))
+
+	if land_tiles.size() >= 3:
+		# Place city1 (northern part of island)
+		var north_tiles = land_tiles.filter(func(t): return t.y < map_height / 3)
+		if north_tiles.size() > 0:
+			var city1_tile = north_tiles[randi() % north_tiles.size()]
+			map_data[city1_tile.y][city1_tile.x] = "city1"
+
+		# Place city2 (southern part of island)
+		var south_tiles = land_tiles.filter(func(t): return t.y > map_height * 2 / 3)
+		if south_tiles.size() > 0:
+			var city2_tile = south_tiles[randi() % south_tiles.size()]
+			map_data[city2_tile.y][city2_tile.x] = "city2"
+
+		# Place village1 (center of island)
+		var center_tiles = land_tiles.filter(func(t): return abs(t.y - center_y) < map_height / 4 and abs(t.x - center_x) < map_width / 4)
+		if center_tiles.size() > 0:
+			var village_tile = center_tiles[randi() % center_tiles.size()]
+			map_data[village_tile.y][village_tile.x] = "village1"
 
 func _render_tiles():
 	# Render tiles using TileMap API

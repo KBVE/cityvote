@@ -43,8 +43,8 @@ func _process(_delta: float) -> void:
 	# Convert to tile coordinates
 	var tile_coords = hex_map.tile_map.local_to_map(mouse_world_pos)
 
-	# Check if tile is valid (within bounds)
-	if tile_coords.x >= 0 and tile_coords.x < 50 and tile_coords.y >= 0 and tile_coords.y < 50:
+	# Check if tile is valid using MapConfig
+	if MapConfig.is_tile_in_bounds(tile_coords):
 		# Valid tile - show info
 		visible = true
 		update_tile_info(tile_coords, mouse_world_pos)

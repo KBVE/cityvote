@@ -13,6 +13,7 @@ extends Node2D
 #; TEST
 @onready var play_hand = $SubViewport/PlayHand
 @onready var tile_info = $TileInfo
+@onready var topbar_uiux = $TopbarUIUX
 #; TEST
 
 var camera_speed = 300.0
@@ -42,6 +43,11 @@ var test_vikings: Array = []
 var viking_move_timer: float = 0.0
 var viking_move_interval: float = 2.0
 var occupied_tiles: Dictionary = {}  # Track which tiles have ships
+
+# Jezza NPC testing
+var test_jezzas: Array = []
+var jezza_move_timer: float = 0.0
+var jezza_move_interval: float = 3.0  # Move every 3 seconds
 
 func _ready():
 	# Get viewport texture
@@ -74,6 +80,8 @@ func _ready():
 	play_hand.camera_max_bounds = camera_max_bounds
 	# Connect hex_map to tile_info for tile hover display
 	tile_info.hex_map = hex_map
+	# Connect camera to topbar for CityVote button
+	topbar_uiux.camera = camera
 
 	# Connect card signals to control camera panning
 	play_hand.card_picked_up.connect(_on_card_picked_up)
@@ -83,16 +91,22 @@ func _ready():
 
 	#### TEST ####
 	# Initialize Rust pathfinding map cache
-	print("Initializing Rust pathfinding map cache...")
+	print("Initializing Rust ship pathfinding map cache...")
 	get_node("/root/ShipPathfindingBridge").init_map(hex_map)
+
+	print("Initializing Rust NPC pathfinding map cache...")
+	get_node("/root/NpcPathfindingBridge").init_map(hex_map)
 
 	# Spawn a few test viking ships on water tiles
 	_spawn_test_vikings()
 
+	# Spawn test Jezza raptor on land tiles
+	_spawn_test_jezza()
+
 	# Test toast notification
 	Toast.show_toast("Welcome to Cat!", 5.0)
 	await get_tree().create_timer(2.0).timeout
-	Toast.show_toast("Vikings spawned successfully", 3.0)
+	Toast.show_toast("Vikings and Jezza spawned!", 3.0)
 
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:
@@ -106,11 +120,11 @@ func _on_card_cancelled() -> void:
 	print("Card cancelled")
 
 func _calculate_camera_bounds():
-	# Calculate bounds by checking all 4 corners to find true extents (60x50 map)
+	# Calculate bounds by checking all 4 corners using MapConfig
 	var top_left_tile = Vector2i(0, 0)
-	var top_right_tile = Vector2i(59, 0)
-	var bottom_left_tile = Vector2i(0, 49)
-	var bottom_right_tile = Vector2i(59, 49)
+	var top_right_tile = Vector2i(MapConfig.MAP_WIDTH - 1, 0)
+	var bottom_left_tile = Vector2i(0, MapConfig.MAP_HEIGHT - 1)
+	var bottom_right_tile = Vector2i(MapConfig.MAP_WIDTH - 1, MapConfig.MAP_HEIGHT - 1)
 
 	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
 	var top_right_world = hex_map.tile_map.map_to_local(top_right_tile)
@@ -190,6 +204,12 @@ func _process(delta):
 		viking_move_timer = 0.0
 		_move_test_vikings()
 
+	# Move Jezza NPCs periodically
+	jezza_move_timer += delta
+	if jezza_move_timer >= jezza_move_interval:
+		jezza_move_timer = 0.0
+		_move_test_jezzas()
+
 func _input(event):
 	# Handle mouse drag panning (works alongside auto-follow)
 	# Left-click drag works for camera since card placement uses double-click
@@ -223,14 +243,22 @@ func _input(event):
 		else:
 			is_dragging = false
 
+	# Handle trackpad pinch-to-zoom (macOS)
+	elif event is InputEventMagnifyGesture:
+		var zoom_delta = (event.factor - 1.0) * 0.5  # Scale down sensitivity
+		var new_zoom = camera.zoom + Vector2(zoom_delta, zoom_delta)
+		new_zoom.x = clamp(new_zoom.x, min_zoom, max_zoom)
+		new_zoom.y = clamp(new_zoom.y, min_zoom, max_zoom)
+		camera.zoom = new_zoom
+
 #### TEST ####
 func _spawn_test_vikings():
 	# Find water tiles and spawn vikings on them
 	var water_tiles: Array = []
 
-	# Collect all water tile coordinates (60x50 map with water margins)
-	for x in range(60):
-		for y in range(50):
+	# Collect all water tile coordinates using MapConfig
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
 			var tile_coords = Vector2i(x, y)
 			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
 			if source_id == 4:  # Water tile
@@ -359,6 +387,88 @@ func _move_test_vikings():
 					)
 		)
 
+func _move_test_jezzas():
+	# Move each Jezza using Rust NPC pathfinding
+	for i in range(test_jezzas.size()):
+		var jezza_data = test_jezzas[i]
+		var jezza = jezza_data["npc"]
+		var current_tile = jezza_data["tile"]
+
+		# Skip if still moving
+		if jezza.is_moving:
+			continue
+
+		# Find a random land destination within range
+		var destination = _find_random_land_destination(current_tile, 3, 8)
+
+		# If no destination found or same as current, skip
+		if destination == current_tile:
+			continue
+
+		# Use Rust NPC pathfinding (async via callback)
+		var npc_id = jezza.get_instance_id()
+		var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
+
+		# Request pathfinding from Rust
+		npc_pathfinding_bridge.request_path(
+			npc_id,
+			current_tile,
+			destination,
+			func(path: Array[Vector2i], success: bool):
+				# Callback when path is found
+				if success and path.size() > 1:
+					# Free up current tile
+					occupied_tiles.erase(current_tile)
+
+					# Capture final destination
+					var final_destination = path[path.size() - 1]
+
+					# Follow the full path calculated by Rust
+					jezza.follow_path(
+						path,
+						hex_map.tile_map,
+						func():  # On path complete
+							# Update occupied tiles
+							occupied_tiles[final_destination] = jezza
+							jezza_data["tile"] = final_destination
+					)
+		)
+
+func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int) -> Vector2i:
+	# Find a random land tile (non-water) within distance range
+	var candidates: Array[Vector2i] = []
+
+	for dx in range(-max_dist, max_dist + 1):
+		for dy in range(-max_dist, max_dist + 1):
+			var test_tile = start + Vector2i(dx, dy)
+
+			# Check if within map bounds
+			if test_tile.x < 0 or test_tile.x >= MapConfig.MAP_WIDTH:
+				continue
+			if test_tile.y < 0 or test_tile.y >= MapConfig.MAP_HEIGHT:
+				continue
+
+			# Check distance
+			var dist = abs(dx) + abs(dy)
+			if dist < min_dist or dist > max_dist:
+				continue
+
+			# Check if land tile (not water, source_id != 4)
+			var source_id = hex_map.tile_map.get_cell_source_id(0, test_tile)
+			if source_id == 4:  # Water
+				continue
+
+			# Check if not occupied
+			if occupied_tiles.has(test_tile):
+				continue
+
+			candidates.append(test_tile)
+
+	if candidates.size() > 0:
+		return candidates[randi() % candidates.size()]
+
+	return start  # No valid destination found
+
 # Clamp camera position within bounds
 # TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping
 func _clamp_camera_position(pos: Vector2) -> Vector2:
@@ -383,3 +493,59 @@ func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 		var sprite = viking.get_node("Sprite2D")
 		if sprite:
 			sprite.material = shader_material
+
+func _spawn_test_jezza():
+	# Find land tiles (non-water) and spawn Jezza
+	var land_tiles: Array = []
+
+	# Collect all land tile coordinates
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
+			var tile_coords = Vector2i(x, y)
+			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+			if source_id != 4:  # Not water = land
+				land_tiles.append(tile_coords)
+
+	print("=== JEZZA SPAWN ===")
+	print("Found ", land_tiles.size(), " land tiles")
+
+	if land_tiles.size() < 3:
+		print("Not enough land tiles to spawn Jezza")
+		return
+
+	# Spawn 3 Jezza raptors on random land tiles
+	for i in range(3):
+		var jezza = Cluster.acquire("jezza")
+		if jezza:
+			# Get random unoccupied land tile
+			var random_tile: Vector2i
+			var attempts = 0
+			while attempts < 100:
+				random_tile = land_tiles[randi() % land_tiles.size()]
+				if not occupied_tiles.has(random_tile):
+					break
+				attempts += 1
+
+			# Convert tile coordinates to world position
+			var world_pos = hex_map.tile_map.map_to_local(random_tile)
+
+			# Set jezza position and add to hex_map
+			hex_map.add_child(jezza)
+			jezza.position = world_pos
+			jezza.occupied_tiles = occupied_tiles  # Share reference
+
+			# Scale is set in jezza.tscn (0.4, 0.4) for performance
+
+			# Set random initial direction
+			jezza.set_direction(randi() % 16)
+
+			# Mark tile as occupied
+			occupied_tiles[random_tile] = jezza
+
+			# Store jezza and its current tile
+			test_jezzas.append({"npc": jezza, "tile": random_tile})
+			print("Spawned Jezza ", i, " at tile ", random_tile, " world pos ", world_pos)
+		else:
+			print("Failed to acquire Jezza ", i, " from Cluster")
+
+	print("Total Jezza raptors spawned: 3")

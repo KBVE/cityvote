@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+MapConfig="*res://core/map_config.gd"
 Cache="*res://core/cache.gd"
 Pathfinding="*res://core/pathfinding.gd"
 Cluster="*res://core/pool/cluster.gd"
@@ -24,6 +25,7 @@ Toast="*res://view/hud/toast/toast_manager.gd"
 CardDeck="*res://core/card_deck.gd"
 RustToastBridge="*res://core/rust_toast_bridge.gd"
 ShipPathfindingBridge="*res://core/ship_pathfinding_bridge.gd"
+NpcPathfindingBridge="*res://core/npc_pathfinding_bridge.gd"
 
 [display]
 

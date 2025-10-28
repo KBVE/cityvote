@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3 uid="uid://jezza_raptor"]
+
+[ext_resource type="Script" path="res://nodes/npc/dino/jezza/jezza.gd" id="1"]
+[ext_resource type="Texture2D" path="res://nodes/npc/dino/jezza/jezza_atlas.png" id="2"]
+
+[node name="Jezza" type="Node2D"]
+scale = Vector2(0.4, 0.4)
+script = ExtResource("1")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2")

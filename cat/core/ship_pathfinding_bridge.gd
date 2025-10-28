@@ -27,8 +27,6 @@ func _ready() -> void:
 	# Start worker threads (2 threads for pathfinding)
 	pathfinding_bridge.start_workers(2)
 
-	print("ShipPathfindingBridge: Ready! Workers started.")
-
 func _process(delta: float) -> void:
 	# Incremental map sync
 	sync_timer += delta
@@ -60,10 +58,10 @@ func init_map(hex_map: Node) -> void:
 
 	var tiles: Array[Dictionary] = []
 
-	# Get all tiles from hex map
+	# Get all tiles from hex map using MapConfig
 	var tile_map = hex_map.tile_map
-	for x in range(50):  # Assuming 50x50 map
-		for y in range(50):
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
 			var tile_coords = Vector2i(x, y)
 			var source_id = tile_map.get_cell_source_id(0, tile_coords)
 
@@ -151,4 +149,3 @@ func get_stats() -> Dictionary:
 func _exit_tree() -> void:
 	if pathfinding_bridge:
 		pathfinding_bridge.stop_workers()
-		print("ShipPathfindingBridge: Workers stopped.")

@@ -7,6 +7,18 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use crate::ui::toast;
 
+/// Map configuration constants (must match MapConfig in GDScript)
+///
+/// IMPORTANT: These values MUST be kept in sync with:
+/// - cat/core/map_config.gd (GDScript autoload)
+///
+/// Current map size: 80x65 = 5,200 tiles
+pub mod map_config {
+    pub const MAP_WIDTH: i32 = 80;
+    pub const MAP_HEIGHT: i32 = 65;
+    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 5200
+}
+
 /// Tile types for pathfinding
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TileType {
@@ -161,6 +173,12 @@ impl Ord for AStarNode {
     }
 }
 
+/// Check if coordinate is within map bounds
+fn is_in_bounds(coord: HexCoord) -> bool {
+    let (q, r) = coord;
+    q >= 0 && q < map_config::MAP_WIDTH && r >= 0 && r < map_config::MAP_HEIGHT
+}
+
 /// Hex distance (Manhattan distance on hex grid)
 fn hex_distance(a: HexCoord, b: HexCoord) -> f32 {
     let (q1, r1) = a;
@@ -168,7 +186,7 @@ fn hex_distance(a: HexCoord, b: HexCoord) -> f32 {
     ((q1 - q2).abs() + (r1 - r2).abs() + ((q1 + r1) - (q2 + r2)).abs()) as f32 / 2.0
 }
 
-/// Get hex neighbors (6 directions)
+/// Get hex neighbors (6 directions) - only returns valid in-bounds neighbors
 fn hex_neighbors(coord: HexCoord) -> Vec<HexCoord> {
     let (q, r) = coord;
     vec![
@@ -179,12 +197,35 @@ fn hex_neighbors(coord: HexCoord) -> Vec<HexCoord> {
         (q + 1, r - 1),
         (q - 1, r + 1),
     ]
+    .into_iter()
+    .filter(|&neighbor| is_in_bounds(neighbor))
+    .collect()
 }
 
 /// A* pathfinding on hex grid
 fn find_path_astar(request: &PathRequest) -> PathResult {
     let start = request.start;
     let goal = request.goal;
+
+    // Validate coordinates are in bounds
+    if !is_in_bounds(start) {
+        toast::send_message(format!("Ship pathfinding: start coord {:?} out of bounds!", start));
+        return PathResult {
+            ship_id: request.ship_id,
+            path: vec![],
+            success: false,
+            cost: 0.0,
+        };
+    }
+    if !is_in_bounds(goal) {
+        toast::send_message(format!("Ship pathfinding: goal coord {:?} out of bounds!", goal));
+        return PathResult {
+            ship_id: request.ship_id,
+            path: vec![],
+            success: false,
+            cost: 0.0,
+        };
+    }
 
     // Check if start and goal are walkable
     if !is_tile_walkable(start) || !is_tile_walkable(goal) {
@@ -327,6 +368,19 @@ fn pathfinding_worker() {
 /// Public API: Initialize map cache with full map data
 pub fn init_map_cache(tiles: Vec<(HexCoord, TileType)>) {
     godot_print!("Pathfinding: Initializing map cache with {} tiles", tiles.len());
+
+    // Validate tile count matches expected map size
+    let expected_tiles = map_config::MAP_TOTAL_TILES;
+    if tiles.len() != expected_tiles {
+        godot_error!(
+            "Pathfinding: Map size mismatch! Expected {} tiles ({}x{}), got {}",
+            expected_tiles,
+            map_config::MAP_WIDTH,
+            map_config::MAP_HEIGHT,
+            tiles.len()
+        );
+    }
+
     MAP_CACHE.clear();
     for (coord, tile_type) in tiles {
         MAP_CACHE.insert(coord, tile_type);
