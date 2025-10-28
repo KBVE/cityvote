@@ -1,0 +1,102 @@
+extends Node
+
+## Card Atlas Helper
+## Provides utilities for working with the card atlas system
+
+# Card atlas layout constants
+const ATLAS_WIDTH = 1248
+const ATLAS_HEIGHT = 720
+const CARD_WIDTH = 96
+const CARD_HEIGHT = 144
+const COLS = 13
+const ROWS = 5
+
+# Card counts
+const CARDS_PER_SUIT = 13  # Ace through King
+const NUM_STANDARD_SUITS = 4  # Clubs, Diamonds, Hearts, Spades
+const STANDARD_CARD_COUNT = CARDS_PER_SUIT * NUM_STANDARD_SUITS  # 52
+const CUSTOM_CARD_START = STANDARD_CARD_COUNT  # 52
+
+# Suit constants (matching row indices)
+enum Suit {
+	CLUBS = 0,
+	DIAMONDS = 1,
+	HEARTS = 2,
+	SPADES = 3,
+	CUSTOM = 4
+}
+
+# Card value constants
+const ACE = 1
+const JACK = 11
+const QUEEN = 12
+const KING = 13
+
+# Custom card IDs (start at 52)
+const CARD_VIKINGS = 52  # Custom row, position 0
+const CARD_DINO = 53     # Custom row, position 1
+const CUSTOM_CARD_COUNT = 2  # Total number of custom cards
+const TOTAL_CARD_COUNT = STANDARD_CARD_COUNT + CUSTOM_CARD_COUNT  # 54
+
+## Convert suit and value to card_id for standard cards
+## suit: 0-3 (CLUBS, DIAMONDS, HEARTS, SPADES)
+## value: 1-13 (Ace through King)
+## Returns: card_id (0-51)
+static func get_card_id(suit: int, value: int) -> int:
+	assert(suit >= 0 and suit < NUM_STANDARD_SUITS, "Suit must be 0-%d" % (NUM_STANDARD_SUITS - 1))
+	assert(value >= ACE and value <= KING, "Value must be %d-%d" % [ACE, KING])
+	return suit * CARDS_PER_SUIT + (value - 1)
+
+## Get card_id from suit enum and value
+static func get_card_id_from_suit(suit: Suit, value: int) -> int:
+	if suit == Suit.CUSTOM:
+		push_error("Use CARD_VIKINGS or CARD_DINO constants for custom cards")
+		return 0
+	return get_card_id(suit, value)
+
+## Create a card material with the specified card_id
+static func create_card_material(card_id: int) -> ShaderMaterial:
+	var shader = load("res://shaders/card_atlas.gdshader")
+	var material = ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter("card_id", card_id)
+	return material
+
+## Update an existing material to show a different card
+static func set_card(material: ShaderMaterial, card_id: int) -> void:
+	material.set_shader_parameter("card_id", card_id)
+
+## Get human-readable card name
+static func get_card_name(suit: int, value: int) -> String:
+	var suit_names = ["Clubs", "Diamonds", "Hearts", "Spades"]
+	var value_names = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"]
+
+	if suit < 0 or suit > 3 or value < 1 or value > 13:
+		return "Invalid Card"
+
+	return value_names[value - 1] + " of " + suit_names[suit]
+
+## Get card name from card_id
+static func get_card_name_from_id(card_id: int) -> String:
+	if card_id == CARD_VIKINGS:
+		return "Vikings Special"
+	elif card_id == CARD_DINO:
+		return "Dino Special"
+	elif card_id >= 0 and card_id < STANDARD_CARD_COUNT:
+		var suit = card_id / CARDS_PER_SUIT
+		var value = (card_id % CARDS_PER_SUIT) + 1
+		return get_card_name(suit, value)
+	else:
+		return "Unknown Card"
+
+## Check if a card_id is valid
+static func is_valid_card_id(card_id: int) -> bool:
+	return card_id >= 0 and card_id < TOTAL_CARD_COUNT
+
+## Check if a card_id is a custom card
+static func is_custom_card(card_id: int) -> bool:
+	return card_id >= CUSTOM_CARD_START and card_id < TOTAL_CARD_COUNT
+
+## Example usage:
+## var material = CardAtlas.create_card_material(CardAtlas.get_card_id(CardAtlas.Suit.HEARTS, 1))
+## sprite.material = material

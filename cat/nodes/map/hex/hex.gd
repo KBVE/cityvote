@@ -171,8 +171,8 @@ func _update_highlight():
 		# No tile - hide highlight
 		hex_highlight.visible = false
 
-# Register a card placed on a tile
-func place_card_on_tile(tile_coords: Vector2i, card_sprite: Sprite2D, suit: int, value: int) -> void:
+# Register a card placed on a tile (accepts PooledCard which is now MeshInstance2D)
+func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, value: int) -> void:
 	card_data[tile_coords] = {
 		"sprite": card_sprite,
 		"suit": suit,

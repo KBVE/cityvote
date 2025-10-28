@@ -25,8 +25,9 @@ var camera_follow_enabled: bool = true
 var camera_follow_speed: float = 3.0  # How fast camera follows cursor (lower = smoother)
 var camera_edge_threshold: float = 250.0  # Distance from center before camera starts following (larger = more flexible)
 
-# Current hand of cards
-var hand: Array[Dictionary] = []
+# Current hand of cards (now using PooledCard instances)
+var hand: Array[PooledCard] = []
+var deck_id: int = -1  # Deck ID from CardDeck
 
 # Card size
 var card_width: float = 64.0
@@ -43,14 +44,14 @@ var card_state: CardState = CardState.IDLE
 
 # === Held Card (Game Logic) ===
 var held_card: Control = null  # Authoritative game state
-var held_card_data: Dictionary = {}  # Card suit/value
+var held_card_pooled: PooledCard = null  # Reference to the actual PooledCard
 var held_card_source_position: Vector2 = Vector2.ZERO  # Origin in fan
 var held_card_source_rotation: float = 0.0
 var held_card_source_scale: Vector2 = Vector2.ONE
 var held_card_source_index: int = -1
 
 # === Card Preview Ghost (Visual) ===
-var preview_ghost: Sprite2D = null  # Visual proxy that follows cursor
+var preview_ghost: MeshInstance2D = null  # Visual proxy that follows cursor
 var preview_ghost_target_tile: Vector2i = Vector2i(-1, -1)  # Current tile under ghost
 var ghost_scale: float = 0.8  # Ghost is slightly transparent/smaller
 var ghost_alpha_moving: float = 0.15  # Super transparent while moving
@@ -72,6 +73,10 @@ func _initialize() -> void:
 	# Set initial panel opacity to low
 	hand_panel.modulate.a = panel_opacity_idle
 
+	# Block input from passing through the entire hand UI to prevent accidental clicks on hex tiles
+	hand_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	card_container.mouse_filter = Control.MOUSE_FILTER_STOP
+
 	# Connect hover signals for panel
 	hand_panel.mouse_entered.connect(_on_hand_panel_mouse_entered)
 	hand_panel.mouse_exited.connect(_on_hand_panel_mouse_exited)
@@ -86,21 +91,39 @@ func _initialize() -> void:
 	# Update card count
 	_update_card_count()
 
-# Draw 7 random cards from the deck (guaranteed unique)
+# Draw 9+ cards: 7 random from deck + 2 guaranteed custom cards
+# (Could have more than 2 custom if they get lucky and draw custom cards)
 func draw_initial_hand() -> void:
 	hand.clear()
 	clear_hand_display()
 
-	# Draw 7 unique cards from CardDeck
+	# Create a deck with custom cards included
 	var card_deck = get_node("/root/CardDeck")
+	deck_id = card_deck.create_deck(true)  # Deck contains 54 cards (52 standard + 2 custom)
+
+	# Draw 7 random cards from deck (whatever they are - could include custom cards)
 	for i in range(7):
-		var card_data = card_deck.draw_card()
-		if card_data.is_empty():
+		var card = card_deck.draw_card(deck_id)
+		if card == null:
 			push_warning("PlayHand: Failed to draw card %d" % i)
 			continue
 
-		hand.append(card_data)
-		display_card(card_data, i)
+		hand.append(card)
+		display_card(card, i)
+
+	# Guarantee the 2 custom cards are ALSO in hand (on top of the 7 drawn)
+	# Create fresh instances from the pool
+	var viking_card = Cluster.acquire("playing_card") as PooledCard
+	if viking_card:
+		viking_card.init_custom_card(CardAtlas.CARD_VIKINGS)
+		hand.append(viking_card)
+		display_card(viking_card, hand.size() - 1)
+
+	var dino_card = Cluster.acquire("playing_card") as PooledCard
+	if dino_card:
+		dino_card.init_custom_card(CardAtlas.CARD_DINO)
+		hand.append(dino_card)
+		display_card(dino_card, hand.size() - 1)
 
 	# Refresh fan layout after all cards are loaded (deferred to ensure container is sized)
 	call_deferred("_refresh_card_positions")
@@ -110,15 +133,17 @@ func _update_card_count() -> void:
 	if card_count_label:
 		card_count_label.text = "Cards: %d" % hand.size()
 
-# Add a card to the hand
+# Add a card to the hand (for manual testing/debugging)
 func add_card_to_hand(suit: int, value: int) -> void:
-	var card_data = {
-		"suit": suit,
-		"value": value
-	}
-	hand.append(card_data)
-	display_card(card_data, hand.size() - 1)
-	_update_card_count()
+	# Acquire a new card from the pool
+	var card = Cluster.acquire("playing_card") as PooledCard
+	if card:
+		card.init_card(suit, value)
+		hand.append(card)
+		display_card(card, hand.size() - 1)
+		_update_card_count()
+	else:
+		push_error("PlayHand: Failed to acquire card from pool")
 
 # Refresh all card positions to match current fan layout
 func _refresh_card_positions() -> void:
@@ -184,31 +209,28 @@ func _reorganize_hand() -> void:
 		tween.tween_property(card_wrapper, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.3)
 
 # Display a single card in the hand
-func display_card(card_data: Dictionary, index: int) -> void:
+func display_card(card: PooledCard, index: int) -> void:
 	# Create a control wrapper for each card to handle rotation and hover
 	var card_wrapper = Control.new()
 	card_wrapper.name = "Card_%d" % index
 	card_wrapper.custom_minimum_size = Vector2(card_width, card_height)
 	card_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
 
-	# Get the pooled sprite from CardDeck
-	var card_deck = get_node("/root/CardDeck")
-	var card_sprite = card_deck.get_card_sprite(card_data.suit, card_data.value)
-
-	if card_sprite == null:
-		push_error("PlayHand: Failed to get sprite for card %s_%d" % [card_data.suit, card_data.value])
+	if card == null:
+		push_error("PlayHand: Received null card")
 		return
 
-	# Reparent sprite to wrapper
-	if card_sprite.get_parent():
-		card_sprite.get_parent().remove_child(card_sprite)
-	card_wrapper.add_child(card_sprite)
+	# Reparent PooledCard sprite to wrapper
+	if card.get_parent():
+		card.get_parent().remove_child(card)
+	card_wrapper.add_child(card)
 
 	# Position sprite within wrapper (centered)
-	card_sprite.position = Vector2(card_width / 2.0, card_height / 2.0)
+	card.position = Vector2(card_width / 2.0, card_height / 2.0)
 
 	# Fan the cards - rotate based on position from center
-	var total_cards = 7
+	# Use actual hand size instead of hardcoded value
+	var total_cards = hand.size()
 	var center_index = (total_cards - 1) / 2.0
 	var offset_from_center = index - center_index
 
@@ -235,6 +257,10 @@ func _on_card_mouse_entered(card: Control) -> void:
 	if card_state != CardState.IDLE:
 		return  # Don't hover effect while card is held
 
+	# Keep hand panel at full opacity when hovering cards
+	var tween_panel = create_tween()
+	tween_panel.tween_property(hand_panel, "modulate:a", panel_opacity_active, 0.3).set_ease(Tween.EASE_OUT)
+
 	# Lift card up and make it slightly larger
 	var tween = create_tween()
 	tween.set_parallel(true)
@@ -250,7 +276,7 @@ func _on_card_mouse_exited(card: Control) -> void:
 	var original_y = 0.0
 	# Calculate arc offset based on card index (concave up)
 	var card_index = card.get_index()
-	var total_cards = 7
+	var total_cards = hand.size()  # Use actual hand size
 	var center_index = (total_cards - 1) / 2.0
 	var offset_from_center = card_index - center_index
 	var arc_offset = abs(offset_from_center) * arc_height
@@ -306,23 +332,34 @@ func _input(event: InputEvent) -> void:
 # STATE MACHINE EVENTS
 # ===================================================================
 
-# EVENT: Pick Card - Transition IDLE → HELD
+# EVENT: Pick Card - Transition IDLE → HELD (or swap if already holding)
 func _event_pick_card(card: Control) -> void:
+	# If we're already holding a card, return it to hand first
+	if card_state == CardState.HELD or card_state == CardState.PREVIEW:
+		# Don't pick the same card twice
+		if held_card == card:
+			return
+
+		# Return the previous card to its position
+		_return_card_to_source()
+		print("State: Swapping cards - returned previous card to hand")
+
 	held_card = card
 	held_card_source_index = card.get_index()
 	held_card_source_position = card.position
 	held_card_source_rotation = card.rotation_degrees
 	held_card_source_scale = card.scale
 
-	# Get card data from hand array
+	# Get PooledCard from hand array
 	if held_card_source_index < hand.size():
-		held_card_data = hand[held_card_source_index]
+		held_card_pooled = hand[held_card_source_index]
 
 	# Create preview ghost
 	_create_preview_ghost()
 
-	# Hide source card in hand
+	# Hide source card in hand and block mouse input so clicks pass through
 	held_card.modulate = Color(1, 1, 1, 0.3)  # Make semi-transparent
+	held_card.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Let clicks pass through
 
 	# Transition to HELD state
 	card_state = CardState.HELD
@@ -361,14 +398,22 @@ func _event_cancel() -> void:
 # ===================================================================
 
 func _create_preview_ghost() -> void:
-	if preview_ghost != null:
-		preview_ghost.queue_free()
+	# The preview ghost IS the held_card_pooled itself, just reparented to follow the cursor
+	# We'll reparent it back to the hand wrapper when cancelled, or to the board when placed
+	if held_card_pooled:
+		preview_ghost = held_card_pooled
 
-	preview_ghost = Sprite2D.new()
-	preview_ghost.texture = held_card.get_child(0).texture
-	preview_ghost.modulate = Color(1, 1, 1, ghost_alpha_moving)  # Start super transparent
-	preview_ghost.scale = Vector2(ghost_scale, ghost_scale)
-	hex_map.add_child(preview_ghost)
+		# Debug: Check what card_id the ghost has
+		print("Ghost created - card_id: ", held_card_pooled.card_id, " (", held_card_pooled.get_card_name(), ")")
+		print("Ghost instance param: ", held_card_pooled.get_instance_shader_parameter("card_id"))
+
+		# Remove from hand wrapper and add to hex_map to follow cursor
+		if held_card_pooled.get_parent():
+			held_card_pooled.get_parent().remove_child(held_card_pooled)
+
+		hex_map.add_child(held_card_pooled)
+		held_card_pooled.modulate = Color(1, 1, 1, ghost_alpha_moving)
+		held_card_pooled.scale = Vector2(ghost_scale, ghost_scale)
 
 func _update_preview_ghost(delta: float) -> void:
 	if preview_ghost == null or hex_map == null:
@@ -377,14 +422,17 @@ func _update_preview_ghost(delta: float) -> void:
 	# Get mouse position in world coordinates
 	var mouse_world_pos = hex_map.get_global_mouse_position()
 
+	# Offset the ghost to the right of the cursor so it doesn't cover the tile
+	var ghost_offset = Vector2(80, 0)  # 80 pixels to the right of cursor
+
 	# Convert to tile coordinates
 	var tile_coords = hex_map.tile_map.local_to_map(mouse_world_pos)
 
-	# Check if tile is valid
-	if tile_coords.x >= 0 and tile_coords.x < 50 and tile_coords.y >= 0 and tile_coords.y < 50:
-		# Valid tile - snap ghost to tile center
+	# Check if tile is valid (use MapConfig for correct bounds)
+	if tile_coords.x >= 0 and tile_coords.x < MapConfig.MAP_WIDTH and tile_coords.y >= 0 and tile_coords.y < MapConfig.MAP_HEIGHT:
+		# Valid tile - snap ghost to tile center with offset
 		var tile_world_pos = hex_map.tile_map.map_to_local(tile_coords)
-		preview_ghost.position = tile_world_pos
+		preview_ghost.position = tile_world_pos + ghost_offset
 		preview_ghost_target_tile = tile_coords
 
 		# Transition to PREVIEW state if hovering valid tile
@@ -395,8 +443,8 @@ func _update_preview_ghost(delta: float) -> void:
 		var target_color = Color(0.8, 1, 0.8, ghost_alpha_snapped)
 		preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
 	else:
-		# Invalid tile - follow mouse freely
-		preview_ghost.position = mouse_world_pos
+		# Invalid tile - follow mouse freely with offset
+		preview_ghost.position = mouse_world_pos + ghost_offset
 		preview_ghost_target_tile = Vector2i(-1, -1)
 
 		# Transition back to HELD if not over valid tile
@@ -408,9 +456,8 @@ func _update_preview_ghost(delta: float) -> void:
 		preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
 
 func _destroy_preview_ghost() -> void:
-	if preview_ghost != null:
-		preview_ghost.queue_free()
-		preview_ghost = null
+	# Don't destroy the ghost - it's the actual PooledCard that will be returned to hand or placed
+	preview_ghost = null
 	preview_ghost_target_tile = Vector2i(-1, -1)
 
 func _update_camera_follow(delta: float) -> void:
@@ -460,14 +507,14 @@ func _update_camera_follow(delta: float) -> void:
 # ===================================================================
 
 func _place_card_on_tile(tile_coords: Vector2i) -> void:
-	if hex_map == null or held_card == null:
+	if hex_map == null or held_card == null or held_card_pooled == null:
 		return
 
 	# Convert tile coordinates to world position
 	var world_pos = hex_map.tile_map.map_to_local(tile_coords)
 
 	# Transfer the actual card sprite from hand to board (reuse same sprite!)
-	var card_sprite = held_card.get_child(0)  # Get the Sprite2D from wrapper
+	var card_sprite = held_card_pooled  # The PooledCard sprite
 
 	# Remove from hand wrapper
 	held_card.remove_child(card_sprite)
@@ -478,16 +525,15 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	card_sprite.scale = Vector2(0.15, 0.15)  # Downscale to fit tile
 	card_sprite.modulate = Color.WHITE
 
-	# Check if placed on water tile and apply wave shader
-	var tile_type = hex_map.get_tile_type_at_coords(tile_coords)
-	if tile_type == "water":
-		_apply_wave_shader(card_sprite)
+	# Note: Wave shader disabled for cards because it would override the card atlas material
+	# and lose the card_id instance parameter. Cards keep their atlas material so they
+	# display correctly. If wave effect is needed, a combined shader would be required.
 
 	# Add to hex map
 	hex_map.add_child(card_sprite)
 
-	# Register card with hex map
-	hex_map.place_card_on_tile(tile_coords, card_sprite, held_card_data.suit, held_card_data.value)
+	# Register card with hex map (using PooledCard's suit/value)
+	hex_map.place_card_on_tile(tile_coords, card_sprite, card_sprite.suit, card_sprite.value)
 
 	# Remove card from hand array
 	if held_card_source_index < hand.size():
@@ -506,18 +552,30 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	# Clean up
 	_destroy_preview_ghost()
 	held_card = null
-	held_card_data = {}
+	held_card_pooled = null
 
 	print("Card placed on tile ", tile_coords, " at world pos ", world_pos)
 
 func _return_card_to_source() -> void:
-	if held_card == null:
+	if held_card == null or held_card_pooled == null:
 		return
 
-	# Restore source card visibility
-	held_card.modulate = Color(1, 1, 1, 1)
+	# Reparent the PooledCard back to the hand wrapper
+	if held_card_pooled.get_parent():
+		held_card_pooled.get_parent().remove_child(held_card_pooled)
+	held_card.add_child(held_card_pooled)
 
-	# Animate back to source position
+	# Reset PooledCard transform
+	held_card_pooled.position = Vector2(card_width / 2.0, card_height / 2.0)
+	held_card_pooled.rotation = 0
+	held_card_pooled.scale = Vector2.ONE
+	held_card_pooled.modulate = Color.WHITE
+
+	# Restore wrapper visibility and mouse filter
+	held_card.modulate = Color(1, 1, 1, 1)
+	held_card.mouse_filter = Control.MOUSE_FILTER_PASS  # Re-enable mouse input
+
+	# Animate wrapper back to source position
 	var tween = create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(held_card, "position", held_card_source_position, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
@@ -527,7 +585,7 @@ func _return_card_to_source() -> void:
 	# Clean up
 	_destroy_preview_ghost()
 	held_card = null
-	held_card_data = {}
+	held_card_pooled = null
 
 # Clear all cards from display
 func clear_hand_display() -> void:
@@ -538,44 +596,7 @@ func clear_hand_display() -> void:
 func redraw_hand() -> void:
 	draw_initial_hand()
 
-# Apply wave shader to sprite (for water tiles)
-func _apply_wave_shader(sprite: Sprite2D) -> void:
-	# Create shader material from Cache with parameters
-	var shader_material = Cache.create_shader_material("with_wave", {
-		"wave_speed": 0.8,
-		"wave_amplitude": 2.0,  # Small vertical bob
-		"sway_amplitude": 1.5,  # Subtle horizontal sway
-		"wave_frequency": 1.5,
-		"rotation_amount": 1.0  # Slight rocking
-	})
-
-	if shader_material:
-		sprite.material = shader_material
-
 # Get card name as string (for debugging)
 func get_card_name(suit: int, value: int) -> String:
-	var suit_name = ""
-	match suit:
-		PlayingDeck.Suit.SPADES:
-			suit_name = "Spades"
-		PlayingDeck.Suit.HEARTS:
-			suit_name = "Hearts"
-		PlayingDeck.Suit.DIAMONDS:
-			suit_name = "Diamonds"
-		PlayingDeck.Suit.CLUBS:
-			suit_name = "Clubs"
-
-	var value_name = ""
-	match value:
-		1:
-			value_name = "Ace"
-		11:
-			value_name = "Jack"
-		12:
-			value_name = "Queen"
-		13:
-			value_name = "King"
-		_:
-			value_name = str(value)
-
-	return "%s of %s" % [value_name, suit_name]
+	# Use CardAtlas helper for consistent card naming
+	return CardAtlas.get_card_name(suit, value)

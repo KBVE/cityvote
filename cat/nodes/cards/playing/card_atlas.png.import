@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dubecao1qugoy"
-path="res://.godot/imported/card-blank.png-f032a2c729785f103be829e4b61a153b.ctex"
+uid="uid://6a5nrsmpxllp"
+path="res://.godot/imported/card_atlas.png-2ea580856f27accc0175efcacd5bc44b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://nodes/cards/playing/card-blank.png"
-dest_files=["res://.godot/imported/card-blank.png-f032a2c729785f103be829e4b61a153b.ctex"]
+source_file="res://nodes/cards/playing/card_atlas.png"
+dest_files=["res://.godot/imported/card_atlas.png-2ea580856f27accc0175efcacd5bc44b.ctex"]
 
 [params]
 

@@ -28,6 +28,10 @@ func _setup_pools():
 	var jezza_scene = preload("res://nodes/npc/dino/jezza/jezza.tscn")
 	register_pool("jezza", jezza_scene, 10)
 
+	# Playing card pool (104 cards = 2 decks)
+	var card_scene = preload("res://nodes/cards/pooled_card.tscn")
+	register_pool("playing_card", card_scene, 104)
+
 	# Add more pools here as needed
 	# register_pool("city", city_scene, 10)
 	# register_pool("unit", unit_scene, 50)

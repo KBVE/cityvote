@@ -1,0 +1,14 @@
+[gd_scene load_steps=5 format=3 uid="uid://pooled_card_atlas"]
+
+[ext_resource type="Script" path="res://nodes/cards/pooled_card.gd" id="1"]
+[ext_resource type="Texture2D" path="res://nodes/cards/playing/card_atlas.png" id="2"]
+[ext_resource type="Material" path="res://shaders/card_atlas.tres" id="3"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_1"]
+size = Vector2(96, 144)
+
+[node name="PooledCard" type="MeshInstance2D"]
+texture = ExtResource("2")
+mesh = SubResource("QuadMesh_1")
+material = ExtResource("3")
+script = ExtResource("1")
