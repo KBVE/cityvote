@@ -9,6 +9,11 @@ class_name Ship
 var direction: int = 0
 var target_direction: int = 0
 
+# Continuous angular representation for smooth interpolation
+var current_angle: float = 0.0  # Current facing angle in degrees (0-360)
+var target_angle: float = 0.0   # Target angle we're steering toward
+var angular_velocity: float = 0.0  # Current rate of rotation
+
 # Preloaded ship sprites (to be set by child classes)
 var ship_sprites: Array[Texture2D] = []
 
@@ -17,15 +22,25 @@ var is_moving: bool = false
 var move_start_pos: Vector2 = Vector2.ZERO
 var move_target_pos: Vector2 = Vector2.ZERO
 var move_progress: float = 0.0
-var move_speed: float = 3.0  # Faster movement - 0.33 seconds per tile
+var move_speed: float = 3.0  # Movement speed multiplier
 
-# Rotation state
-var rotation_speed: float = 12.0  # Faster, smoother rotation to track velocity changes
+# Inertial steering parameters for organic motion
+var max_angular_velocity: float = 90.0   # Max rotation speed in degrees/sec (reduced for smoother feel)
+var angular_acceleration: float = 120.0  # How quickly rotation speeds up (reduced for less snap)
+var angular_damping: float = 0.92       # Friction/water resistance (0-1, higher = less friction, increased for smoother)
+var steering_anticipation: float = 0.2   # How much to lead the turn (0-1, reduced for less twitchy)
 
 # Reference to other ships for collision detection
 var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
 
 func _ready():
+	# Initialize current angle based on initial direction
+	# Direction 0 = North = 270° in Godot, Direction 4 = West = 180°, etc.
+	# Convert our direction to Godot angle: angle = 270 - (direction * 22.5)
+	current_angle = fmod(270.0 - (direction * 22.5), 360.0)
+	if current_angle < 0:
+		current_angle += 360.0
+	target_angle = current_angle
 	_update_sprite()
 
 # Set direction (0-15, counter-clockwise from north)
@@ -62,7 +77,6 @@ func angle_to_direction(angle_degrees: float) -> int:
 
 	# Convert Godot angle to our direction system:
 	# Godot 0°(E) → our 12(E), Godot 90°(S) → our 8(S), Godot 180°(W) → our 4(W), Godot 270°(N) → our 0(N)
-	# Formula: direction = (12 - (angle / 22.5)) % 16
 	var direction_index = (12 - int(round(angle_degrees / 22.5))) % 16
 	if direction_index < 0:
 		direction_index += 16
@@ -74,6 +88,65 @@ func vector_to_direction(vec: Vector2) -> int:
 	var angle = rad_to_deg(vec.angle())
 	return angle_to_direction(angle)
 
+# Smoothly interpolate between two angles (handles wraparound)
+func lerp_angle(from: float, to: float, weight: float) -> float:
+	var diff = fmod(to - from, 360.0)
+	if diff > 180.0:
+		diff -= 360.0
+	elif diff < -180.0:
+		diff += 360.0
+	return from + diff * weight
+
+# Calculate shortest angular difference (handles wraparound)
+func angle_difference(from: float, to: float) -> float:
+	var diff = fmod(to - from, 360.0)
+	if diff > 180.0:
+		diff -= 360.0
+	elif diff < -180.0:
+		diff += 360.0
+	return diff
+
+# Update angular motion with inertia and damping
+func _update_angular_motion(delta: float):
+	# Calculate angular difference (shortest path)
+	var angle_diff = angle_difference(current_angle, target_angle)
+
+	# Apply angular acceleration toward target
+	var desired_velocity = sign(angle_diff) * max_angular_velocity
+	var velocity_change = (desired_velocity - angular_velocity) * angular_acceleration * delta
+	angular_velocity += velocity_change
+
+	# Clamp to max angular velocity
+	angular_velocity = clamp(angular_velocity, -max_angular_velocity, max_angular_velocity)
+
+	# Apply damping (water resistance)
+	angular_velocity *= angular_damping
+
+	# If close to target, apply stronger damping to settle smoothly
+	if abs(angle_diff) < 30.0:
+		var settle_factor = abs(angle_diff) / 30.0  # 0 to 1 as we approach target
+		angular_velocity *= 0.5 + settle_factor * 0.5  # Extra damping when close
+
+	# Update current angle
+	current_angle += angular_velocity * delta
+
+	# Normalize angle to 0-360
+	current_angle = fmod(current_angle, 360.0)
+	if current_angle < 0:
+		current_angle += 360.0
+
+	# Convert continuous angle to discrete direction for sprite selection
+	var old_direction = direction
+	direction = angle_to_direction(current_angle)
+
+	# Debug output - always show when moving
+	if is_moving and Engine.get_frames_drawn() % 30 == 0:  # Every 30 frames (~0.5 sec)
+		print("Angular: cur=%.1f° tgt=%.1f° diff=%.1f° vel=%.1f°/s dir=%d" % [current_angle, target_angle, angle_diff, angular_velocity, direction])
+
+	# Only update sprite if direction changed (optimization)
+	if direction != old_direction:
+		_update_sprite()
+
 # Start moving to a target position
 func move_to(target_pos: Vector2):
 	if is_moving:
@@ -84,10 +157,15 @@ func move_to(target_pos: Vector2):
 	move_progress = 0.0
 	is_moving = true
 
-	# Set initial target direction based on movement vector
+	# Set initial target angle based on movement vector
 	var direction_vec = target_pos - position
 	if direction_vec.length() > 0:
-		target_direction = vector_to_direction(direction_vec)
+		target_angle = rad_to_deg(direction_vec.angle())
+		# Normalize to 0-360
+		if target_angle < 0:
+			target_angle += 360.0
+		var expected_dir = angle_to_direction(target_angle)
+		print("Ship moving - Vec: ", direction_vec, " Godot angle: %.1f°, Target angle: %.1f°, Expected direction: %d, Current: %d" % [rad_to_deg(direction_vec.angle()), target_angle, expected_dir, direction])
 
 func _process(delta):
 	# Smooth movement interpolation
@@ -110,28 +188,14 @@ func _process(delta):
 			# Calculate actual velocity direction from position change
 			var velocity = new_pos - old_pos
 			if velocity.length_squared() > 0.01:  # Only update if moving significantly
-				target_direction = vector_to_direction(velocity)
+				var velocity_angle = rad_to_deg(velocity.angle())
+
+				# Add anticipation - blend between current heading and velocity direction
+				# This makes the ship "lean into" turns before the velocity fully changes
+				var anticipated_angle = lerp_angle(current_angle, velocity_angle, steering_anticipation)
+				target_angle = anticipated_angle
 
 			position = new_pos
 
-	# Smooth rotation interpolation toward target direction
-	if direction != target_direction:
-		var dir_diff = target_direction - direction
-
-		# Handle wraparound (shortest path)
-		if abs(dir_diff) > 8:
-			if dir_diff > 0:
-				dir_diff -= 16
-			else:
-				dir_diff += 16
-
-		# Interpolate direction (ensure at least 1 step per frame)
-		var step = max(1.0, rotation_speed * delta)
-		if abs(dir_diff) <= step:
-			direction = target_direction
-		else:
-			direction = int(direction + sign(dir_diff) * step) % 16
-			if direction < 0:
-				direction += 16
-
-		_update_sprite()
+	# Inertial angular steering with damping
+	_update_angular_motion(delta)

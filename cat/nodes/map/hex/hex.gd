@@ -48,11 +48,11 @@ func _ready():
 	_render_tiles()
 
 func _generate_test_map():
-	# Create a 50x50 map with water extending to edges and small central land area
+	# Create a 50x50 map with water tiles extending to all edges
 	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
 	var map_width = 50
 	var map_height = 50
-	var water_margin = 3  # Minimal margin - land is small island in center
+	var land_inset = 10  # How many tiles to inset land from edges (water band around map)
 
 	# Initialize with water everywhere first
 	for y in range(map_height):
@@ -61,29 +61,29 @@ func _generate_test_map():
 			row.append("water")
 		map_data.append(row)
 
-	# Fill land area with random grasslands
-	for y in range(water_margin, map_height - water_margin):
-		for x in range(water_margin, map_width - water_margin):
+	# Fill land area with random grasslands (smaller central island)
+	for y in range(land_inset, map_height - land_inset):
+		for x in range(land_inset, map_width - land_inset):
 			var grassland = grassland_types[randi() % grassland_types.size()]
 			map_data[y][x] = grassland
 
 	# Place special tiles (1 of each city, 1 village)
-	var land_width = map_width - water_margin * 2
-	var land_height = map_height - water_margin * 2
+	var land_width = map_width - land_inset * 2
+	var land_height = map_height - land_inset * 2
 
 	# Place city1 (upper left quadrant)
-	var city1_x = water_margin + randi() % int(land_width / 2.0)
-	var city1_y = water_margin + randi() % int(land_height / 2.0)
+	var city1_x = land_inset + randi() % int(land_width / 2.0)
+	var city1_y = land_inset + randi() % int(land_height / 2.0)
 	map_data[city1_y][city1_x] = "city1"
 
 	# Place city2 (lower right quadrant)
-	var city2_x = water_margin + int(land_width / 2.0) + randi() % int(land_width / 2.0)
-	var city2_y = water_margin + int(land_height / 2.0) + randi() % int(land_height / 2.0)
+	var city2_x = land_inset + int(land_width / 2.0) + randi() % int(land_width / 2.0)
+	var city2_y = land_inset + int(land_height / 2.0) + randi() % int(land_height / 2.0)
 	map_data[city2_y][city2_x] = "city2"
 
 	# Place village1 (center area)
-	var village_x = water_margin + int(land_width / 4.0) + randi() % int(land_width / 2.0)
-	var village_y = water_margin + int(land_height / 4.0) + randi() % int(land_height / 2.0)
+	var village_x = land_inset + int(land_width / 4.0) + randi() % int(land_width / 2.0)
+	var village_y = land_inset + int(land_height / 4.0) + randi() % int(land_height / 2.0)
 	map_data[village_y][village_x] = "village1"
 
 func _render_tiles():
