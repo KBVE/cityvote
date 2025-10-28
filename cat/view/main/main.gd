@@ -106,15 +106,21 @@ func _on_card_cancelled() -> void:
 	print("Card cancelled")
 
 func _calculate_camera_bounds():
-	# Calculate bounds based on 50x50 map with water margins
+	# Calculate bounds by checking all 4 corners to find true extents
 	var top_left_tile = Vector2i(0, 0)
-	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
-
+	var top_right_tile = Vector2i(49, 0)
+	var bottom_left_tile = Vector2i(0, 49)
 	var bottom_right_tile = Vector2i(49, 49)
+
+	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
+	var top_right_world = hex_map.tile_map.map_to_local(top_right_tile)
+	var bottom_left_world = hex_map.tile_map.map_to_local(bottom_left_tile)
 	var bottom_right_world = hex_map.tile_map.map_to_local(bottom_right_tile)
 
 	print("=== CORNER WATER TILES ===")
 	print("Top-Left (0,0): ", top_left_world)
+	print("Top-Right (49,0): ", top_right_world)
+	print("Bottom-Left (0,49): ", bottom_left_world)
 	print("Bottom-Right (49,49): ", bottom_right_world)
 
 	# Account for viewport size
@@ -122,12 +128,11 @@ func _calculate_camera_bounds():
 	var viewport_half_size = (viewport_size / camera.zoom) / 2.0
 	print("Viewport size: ", viewport_size, " Zoom: ", camera.zoom, " Half size in world: ", viewport_half_size)
 
-	# Calculate bounds properly accounting for hex grid slope
-	# Hex grids have top_left.x > bottom_right.x (slopes left)
-	var min_world_x = min(top_left_world.x, bottom_right_world.x) + 100
-	var max_world_x = max(top_left_world.x, bottom_right_world.x) - 100
-	var min_world_y = min(top_left_world.y, bottom_right_world.y) + 50
-	var max_world_y = max(top_left_world.y, bottom_right_world.y) - 50
+	# Find actual min/max from all corners
+	var min_world_x = min(min(top_left_world.x, top_right_world.x), min(bottom_left_world.x, bottom_right_world.x)) + 100
+	var max_world_x = max(max(top_left_world.x, top_right_world.x), max(bottom_left_world.x, bottom_right_world.x)) - 100
+	var min_world_y = min(min(top_left_world.y, top_right_world.y), min(bottom_left_world.y, bottom_right_world.y)) + 50
+	var max_world_y = max(max(top_left_world.y, top_right_world.y), max(bottom_left_world.y, bottom_right_world.y)) - 50
 
 	camera_min_bounds = Vector2(min_world_x, min_world_y) + viewport_half_size
 	camera_max_bounds = Vector2(max_world_x, max_world_y) - viewport_half_size
