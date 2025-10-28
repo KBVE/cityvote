@@ -32,10 +32,10 @@ var move_progress: float = 0.0
 var move_speed: float = 3.0  # Movement speed multiplier
 
 # Critically-damped spring parameters for organic motion
-var angular_stiffness: float = 25.0  # How strongly we pull toward target_angle
-var angular_damping_strength: float = 10.0  # How strongly we damp angular_velocity
-var steering_anticipation: float = 0.2   # How much to lead the turn (0-1)
-var sector_edge_buffer: float = 4.0  # Degrees of hysteresis to prevent frame jitter
+var angular_stiffness: float = 18.0  # How strongly we pull toward target_angle (reduced for smoother)
+var angular_damping_strength: float = 12.0  # How strongly we damp angular_velocity (increased for less jitter)
+var steering_anticipation: float = 0.15   # How much to lead the turn (reduced for smoother)
+var sector_edge_buffer: float = 5.0  # Degrees of hysteresis to prevent frame jitter (increased)
 
 # Reference to other ships for collision detection
 var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
@@ -84,8 +84,8 @@ func _update_sprite():
 func _apply_residual_pivot():
 	var dir_center = direction_to_godot_angle(direction)
 	var residual = shortest_angle_deg(dir_center, current_angle)
-	# Clamp to prevent rubbery appearance
-	residual = clamp(residual, -10.0, 10.0)
+	# Clamp to prevent rubbery appearance (reduced range for smoother look)
+	residual = clamp(residual, -8.0, 8.0)
 	sprite.rotation_degrees = residual
 
 # Convert angle to direction with hysteresis to prevent jitter

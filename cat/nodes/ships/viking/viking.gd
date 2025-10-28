@@ -28,6 +28,9 @@ func _ready():
 
 	sprite.material = shader_material
 
+	# Scale down the sprite to fit better on tile (64x64 sprite -> ~48x48 visual size)
+	sprite.scale = Vector2(0.75, 0.75)
+
 	# Still load sprites array for compatibility (though not used for rendering)
 	ship_sprites = [
 		preload("res://nodes/ships/viking/ship1.png"),   # 0 - North
