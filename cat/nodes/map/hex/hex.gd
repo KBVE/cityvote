@@ -48,11 +48,11 @@ func _ready():
 	_render_tiles()
 
 func _generate_test_map():
-	# Create a 50x50 map with water margins
+	# Create a rectangular map (60x50) to fill hex parallelogram viewport
 	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
-	var map_width = 50
+	var map_width = 60  # Wider to fill horizontal gaps
 	var map_height = 50
-	var land_inset = 5  # Water border around central land island
+	var land_inset = 7  # Water border around central land island
 
 	# Initialize with water everywhere first
 	for y in range(map_height):

@@ -106,11 +106,11 @@ func _on_card_cancelled() -> void:
 	print("Card cancelled")
 
 func _calculate_camera_bounds():
-	# Calculate bounds by checking all 4 corners to find true extents
+	# Calculate bounds by checking all 4 corners to find true extents (60x50 map)
 	var top_left_tile = Vector2i(0, 0)
-	var top_right_tile = Vector2i(49, 0)
+	var top_right_tile = Vector2i(59, 0)
 	var bottom_left_tile = Vector2i(0, 49)
-	var bottom_right_tile = Vector2i(49, 49)
+	var bottom_right_tile = Vector2i(59, 49)
 
 	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
 	var top_right_world = hex_map.tile_map.map_to_local(top_right_tile)
@@ -228,8 +228,8 @@ func _spawn_test_vikings():
 	# Find water tiles and spawn vikings on them
 	var water_tiles: Array = []
 
-	# Collect all water tile coordinates (50x50 map with water margins)
-	for x in range(50):
+	# Collect all water tile coordinates (60x50 map with water margins)
+	for x in range(60):
 		for y in range(50):
 			var tile_coords = Vector2i(x, y)
 			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
