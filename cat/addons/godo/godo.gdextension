@@ -1,0 +1,19 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.1
+reloadable = true
+
+[libraries]
+# Debug builds
+linux.debug.x86_64 =     "res://addons/godo/bin/debug/libgodo.so"
+windows.debug.x86_64 =   "res://addons/godo/bin/debug/godo.dll"
+macos.debug =            "res://addons/godo/bin/debug/libgodo.dylib"
+macos.debug.arm64 =      "res://addons/godo/bin/debug/libgodo.dylib"
+web.debug.wasm32 =       "res://addons/godo/bin/debug/godo.wasm"
+
+# Release builds
+linux.release.x86_64 =   "res://addons/godo/bin/release/libgodo.so"
+windows.release.x86_64 = "res://addons/godo/bin/release/godo.dll"
+macos.release =          "res://addons/godo/bin/release/libgodo.dylib"
+macos.release.arm64 =    "res://addons/godo/bin/release/libgodo.dylib"
+web.release.wasm32 =     "res://addons/godo/bin/release/godo.wasm"

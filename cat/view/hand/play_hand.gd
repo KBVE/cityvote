@@ -6,11 +6,9 @@ signal card_picked_up()  # Emitted when player picks up a card
 signal card_placed()     # Emitted when card is placed on tile
 signal card_cancelled()  # Emitted when card placement is cancelled
 
-@onready var card_container: HBoxContainer = $HandPanel/MarginContainer/CardContainer
+@onready var card_container: Control = $HandPanel/MarginContainer/VBoxContainer/CardContainer
 @onready var hand_panel: PanelContainer = $HandPanel
-
-# Reference to the deck
-var deck: PlayingDeck
+@onready var card_count_label: Label = $HandPanel/MarginContainer/VBoxContainer/CardCountLabel
 
 # Reference to the hex map (set from main scene)
 var hex_map = null
@@ -35,7 +33,7 @@ var card_width: float = 64.0
 var card_height: float = 90.0
 
 # Card fanning settings (spreading cards in an arc)
-var card_spacing: float = 50.0
+var card_spacing: float = 35.0  # Reduced from 50 for more overlap
 var arc_height: float = 15.0  # Height of the arc curve (concave up)
 var fan_rotation: float = 8.0  # Degrees per card from center for fanning
 
@@ -59,20 +57,58 @@ var ghost_alpha_moving: float = 0.15  # Super transparent while moving
 var ghost_alpha_snapped: float = 0.85  # More visible when snapped to tile
 var ghost_fade_speed: float = 8.0  # How fast the ghost fades in/out
 
+# Hand panel opacity settings
+var panel_opacity_idle: float = 0.3  # Low opacity when idle
+var panel_opacity_active: float = 1.0  # Full opacity on hover
+var panel_fade_speed: float = 6.0  # How fast panel fades in/out
+
 func _ready() -> void:
-	deck = PlayingDeck.new()
+	# Defer to ensure all autoloads are ready
+	call_deferred("_initialize")
+
+func _initialize() -> void:
 	draw_initial_hand()
 
-# Draw 7 random cards
+	# Set initial panel opacity to low
+	hand_panel.modulate.a = panel_opacity_idle
+
+	# Connect hover signals for panel
+	hand_panel.mouse_entered.connect(_on_hand_panel_mouse_entered)
+	hand_panel.mouse_exited.connect(_on_hand_panel_mouse_exited)
+
+	# Apply Alagard font to card count label
+	var font = Cache.get_font("alagard")
+	if font:
+		card_count_label.add_theme_font_override("font", font)
+	else:
+		push_warning("PlayHand: Could not load Alagard font from Cache")
+
+	# Update card count
+	_update_card_count()
+
+# Draw 7 random cards from the deck (guaranteed unique)
 func draw_initial_hand() -> void:
 	hand.clear()
 	clear_hand_display()
 
-	# Draw 7 random cards
+	# Draw 7 unique cards from CardDeck
+	var card_deck = get_node("/root/CardDeck")
 	for i in range(7):
-		var random_suit = randi() % 4
-		var random_value = (randi() % 13) + 1  # 1-13
-		add_card_to_hand(random_suit, random_value)
+		var card_data = card_deck.draw_card()
+		if card_data.is_empty():
+			push_warning("PlayHand: Failed to draw card %d" % i)
+			continue
+
+		hand.append(card_data)
+		display_card(card_data, i)
+
+	# Refresh fan layout after all cards are loaded (deferred to ensure container is sized)
+	call_deferred("_refresh_card_positions")
+
+# Update card count label
+func _update_card_count() -> void:
+	if card_count_label:
+		card_count_label.text = "Cards: %d" % hand.size()
 
 # Add a card to the hand
 func add_card_to_hand(suit: int, value: int) -> void:
@@ -82,6 +118,70 @@ func add_card_to_hand(suit: int, value: int) -> void:
 	}
 	hand.append(card_data)
 	display_card(card_data, hand.size() - 1)
+	_update_card_count()
+
+# Refresh all card positions to match current fan layout
+func _refresh_card_positions() -> void:
+	var total_cards = card_container.get_child_count()
+	if total_cards == 0:
+		return
+
+	var center_index = (total_cards - 1) / 2.0
+
+	# Calculate container center for positioning
+	var container_width = card_container.size.x
+	var container_center_x = container_width / 2.0
+
+	for i in range(total_cards):
+		var card_wrapper = card_container.get_child(i)
+		var offset_from_center = i - center_index
+
+		# Set pivot point to bottom center of card for rotation
+		card_wrapper.pivot_offset = Vector2(card_width / 2.0, card_height)
+
+		# Calculate horizontal position (spread cards with card_spacing)
+		var base_x = container_center_x + (offset_from_center * card_spacing) - (card_width / 2.0)
+		card_wrapper.position.x = base_x
+
+		# Rotate card for fanning effect
+		card_wrapper.rotation_degrees = offset_from_center * fan_rotation
+
+		# Adjust vertical position to create arc curve (concave up - cards dip toward center)
+		var arc_offset = abs(offset_from_center) * arc_height
+		card_wrapper.position.y = arc_offset  # Positive y to create concave up arc
+
+# Reorganize hand with smooth animation after card is removed/added
+func _reorganize_hand() -> void:
+	var total_cards = card_container.get_child_count()
+	if total_cards == 0:
+		return
+
+	var center_index = (total_cards - 1) / 2.0
+
+	# Calculate container center for positioning
+	var container_width = card_container.size.x
+	var container_center_x = container_width / 2.0
+
+	for i in range(total_cards):
+		var card_wrapper = card_container.get_child(i)
+		var offset_from_center = i - center_index
+
+		# Set pivot point to bottom center of card for rotation
+		card_wrapper.pivot_offset = Vector2(card_width / 2.0, card_height)
+
+		# Calculate new positions
+		var target_x = container_center_x + (offset_from_center * card_spacing) - (card_width / 2.0)
+		var target_rotation = offset_from_center * fan_rotation
+		var arc_offset = abs(offset_from_center) * arc_height
+
+		# Animate to new position smoothly
+		var tween = create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(card_wrapper, "position:x", target_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+		tween.tween_property(card_wrapper, "position:y", arc_offset, 0.4).set_ease(Tween.EASE_OUT)
+		tween.tween_property(card_wrapper, "rotation_degrees", target_rotation, 0.4).set_ease(Tween.EASE_OUT)
+		tween.tween_property(card_wrapper, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
+		tween.tween_property(card_wrapper, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.3)
 
 # Display a single card in the hand
 func display_card(card_data: Dictionary, index: int) -> void:
@@ -91,16 +191,21 @@ func display_card(card_data: Dictionary, index: int) -> void:
 	card_wrapper.custom_minimum_size = Vector2(card_width, card_height)
 	card_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
 
-	# Create the texture rect for the card image
-	var card_sprite = TextureRect.new()
-	card_sprite.custom_minimum_size = Vector2(card_width, card_height)
-	card_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	card_sprite.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-	card_sprite.mouse_filter = Control.MOUSE_FILTER_PASS
+	# Get the pooled sprite from CardDeck
+	var card_deck = get_node("/root/CardDeck")
+	var card_sprite = card_deck.get_card_sprite(card_data.suit, card_data.value)
 
-	# Get the texture from the deck
-	var texture = deck.get_card(card_data.suit as PlayingDeck.Suit, card_data.value)
-	card_sprite.texture = texture
+	if card_sprite == null:
+		push_error("PlayHand: Failed to get sprite for card %s_%d" % [card_data.suit, card_data.value])
+		return
+
+	# Reparent sprite to wrapper
+	if card_sprite.get_parent():
+		card_sprite.get_parent().remove_child(card_sprite)
+	card_wrapper.add_child(card_sprite)
+
+	# Position sprite within wrapper (centered)
+	card_sprite.position = Vector2(card_width / 2.0, card_height / 2.0)
 
 	# Fan the cards - rotate based on position from center
 	var total_cards = 7
@@ -116,9 +221,6 @@ func display_card(card_data: Dictionary, index: int) -> void:
 	# Adjust vertical position to create arc curve (concave up - cards dip toward center)
 	var arc_offset = abs(offset_from_center) * arc_height
 	card_wrapper.position.y = arc_offset  # Positive y to create concave up arc
-
-	# Add sprite to wrapper
-	card_wrapper.add_child(card_sprite)
 
 	# Connect hover and input signals
 	card_wrapper.mouse_entered.connect(_on_card_mouse_entered.bind(card_wrapper))
@@ -159,6 +261,17 @@ func _on_card_mouse_exited(card: Control) -> void:
 	tween.tween_property(card, "position:y", original_y, 0.2).set_ease(Tween.EASE_OUT)
 	tween.tween_property(card, "scale", Vector2(1.0, 1.0), 0.2).set_ease(Tween.EASE_OUT)
 	tween.tween_property(card, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.2)
+
+# Hand panel hover effects
+func _on_hand_panel_mouse_entered() -> void:
+	# Fade in panel to full opacity
+	var tween = create_tween()
+	tween.tween_property(hand_panel, "modulate:a", panel_opacity_active, 0.3).set_ease(Tween.EASE_OUT)
+
+func _on_hand_panel_mouse_exited() -> void:
+	# Fade out panel to low opacity
+	var tween = create_tween()
+	tween.tween_property(hand_panel, "modulate:a", panel_opacity_idle, 0.3).set_ease(Tween.EASE_OUT)
 
 # === EVENT: Pick Card ===
 func _on_card_gui_input(event: InputEvent, card: Control) -> void:
@@ -353,26 +466,42 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	# Convert tile coordinates to world position
 	var world_pos = hex_map.tile_map.map_to_local(tile_coords)
 
-	# Create placed card sprite on map
-	var placed_card = Sprite2D.new()
-	placed_card.texture = held_card.get_child(0).texture
-	placed_card.position = world_pos
-	placed_card.scale = Vector2(0.15, 0.15)  # Downscale to fit tile
+	# Transfer the actual card sprite from hand to board (reuse same sprite!)
+	var card_sprite = held_card.get_child(0)  # Get the Sprite2D from wrapper
+
+	# Remove from hand wrapper
+	held_card.remove_child(card_sprite)
+
+	# Reset sprite properties for board placement
+	card_sprite.position = world_pos
+	card_sprite.rotation = 0
+	card_sprite.scale = Vector2(0.15, 0.15)  # Downscale to fit tile
+	card_sprite.modulate = Color.WHITE
 
 	# Check if placed on water tile and apply wave shader
 	var tile_type = hex_map.get_tile_type_at_coords(tile_coords)
 	if tile_type == "water":
-		_apply_wave_shader(placed_card)
+		_apply_wave_shader(card_sprite)
 
-	hex_map.add_child(placed_card)
+	# Add to hex map
+	hex_map.add_child(card_sprite)
 
 	# Register card with hex map
-	hex_map.place_card_on_tile(tile_coords, placed_card, held_card_data.suit, held_card_data.value)
+	hex_map.place_card_on_tile(tile_coords, card_sprite, held_card_data.suit, held_card_data.value)
 
-	# Remove card from hand
-	held_card.queue_free()
+	# Remove card from hand array
 	if held_card_source_index < hand.size():
 		hand.remove_at(held_card_source_index)
+
+	# Remove card from container immediately (not queue_free to avoid gaps)
+	card_container.remove_child(held_card)
+	held_card.queue_free()
+
+	# Update card count
+	_update_card_count()
+
+	# Reorganize remaining cards in hand with animation
+	call_deferred("_reorganize_hand")
 
 	# Clean up
 	_destroy_preview_ghost()

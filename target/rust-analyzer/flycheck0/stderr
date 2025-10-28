@@ -1,0 +1,20 @@
+    Blocking waiting for file lock on build directory
+ 455.586220291s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint: stale: missing "/Users/alappatel/Documents/GitHub/afk/rust/src/toast_test.rs"
+ 455.586358958s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint: fingerprint dirty for godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("godo", ["cdylib"], "/Users/alappatel/Documents/GitHub/afk/rust/src/lib.rs", Edition2021) }
+ 455.586371291s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(MissingFile("/Users/alappatel/Documents/GitHub/afk/rust/src/toast_test.rs")))
+ 455.590535666s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint: stale: missing "/Users/alappatel/Documents/GitHub/afk/rust/src/toast_test.rs"
+ 455.590575291s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint: fingerprint dirty for godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("godo", ["cdylib"], "/Users/alappatel/Documents/GitHub/afk/rust/src/lib.rs", Edition2021) }
+ 455.590580208s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(MissingFile("/Users/alappatel/Documents/GitHub/afk/rust/src/toast_test.rs")))
+    Checking godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust)
+error: could not compile `godo` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `godo` (lib) due to 1 previous error
+(lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `godo` (lib test) due to 1 previous error
+rust/src/lib.rs", Edition2021) }
+ 455.633321292s  INFO prepare_target{force=false package_id=godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust) target="godo"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/Users/alappatel/Documents/GitHub/afk/rust/target/debug/.fingerprint/godo-4a74c085b1b02e3c/dep-test-lib-godo", reference_mtime: FileTime { seconds: 1761625386, nanos: 757419878 }, stale: "/Users/alappatel/Documents/GitHub/afk/rust/src/lib.rs", stale_mtime: FileTime { seconds: 1761627495, nanos: 946339831 } }))
+    Checking godo v0.1.1 (/Users/alappatel/Documents/GitHub/afk/rust)
+error: could not compile `godo` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `godo` (lib) due to 1 previous error

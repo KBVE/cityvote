@@ -82,8 +82,17 @@ func _ready():
 	#; TEST
 
 	#### TEST ####
+	# Initialize Rust pathfinding map cache
+	print("Initializing Rust pathfinding map cache...")
+	get_node("/root/ShipPathfindingBridge").init_map(hex_map)
+
 	# Spawn a few test viking ships on water tiles
 	_spawn_test_vikings()
+
+	# Test toast notification
+	Toast.show_toast("Welcome to Cat!", 5.0)
+	await get_tree().create_timer(2.0).timeout
+	Toast.show_toast("Vikings spawned successfully", 3.0)
 
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:
@@ -97,51 +106,28 @@ func _on_card_cancelled() -> void:
 	print("Card cancelled")
 
 func _calculate_camera_bounds():
-	# Debug: Find the 4 corner water tiles and print their world positions
-	# Top-left corner water tile (should be around 0,0)
+	# Calculate bounds based on 50x50 map with water margins
 	var top_left_tile = Vector2i(0, 0)
 	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
 
-	# Top-right corner water tile
-	var top_right_tile = Vector2i(49, 0)
-	var top_right_world = hex_map.tile_map.map_to_local(top_right_tile)
-
-	# Bottom-left corner water tile
-	var bottom_left_tile = Vector2i(0, 49)
-	var bottom_left_world = hex_map.tile_map.map_to_local(bottom_left_tile)
-
-	# Bottom-right corner water tile
 	var bottom_right_tile = Vector2i(49, 49)
 	var bottom_right_world = hex_map.tile_map.map_to_local(bottom_right_tile)
 
 	print("=== CORNER WATER TILES ===")
 	print("Top-Left (0,0): ", top_left_world)
-	print("Top-Right (49,0): ", top_right_world)
-	print("Bottom-Left (0,49): ", bottom_left_world)
 	print("Bottom-Right (49,49): ", bottom_right_world)
 
-	# Also print the land area corners (12,12) and (37,37)
-	var land_top_left = hex_map.tile_map.map_to_local(Vector2i(12, 12))
-	var land_bottom_right = hex_map.tile_map.map_to_local(Vector2i(37, 37))
-	print("=== LAND AREA ===")
-	print("Land Top-Left (12,12): ", land_top_left)
-	print("Land Bottom-Right (37,37): ", land_bottom_right)
-
-	# Based on actual corner coordinates:
-	# Map spans X: -1160 to 1192, Y: 14 to 1386
-	# Land area centered at X: 16, Y: 350 to 1050
-
-	# Account for viewport size (dynamically based on actual viewport and zoom)
-	var viewport_size = Vector2(subviewport.size)  # Convert Vector2i to Vector2
+	# Account for viewport size
+	var viewport_size = Vector2(subviewport.size)
 	var viewport_half_size = (viewport_size / camera.zoom) / 2.0
 	print("Viewport size: ", viewport_size, " Zoom: ", camera.zoom, " Half size in world: ", viewport_half_size)
 
-	# Set bounds to allow viewing the entire map (water included)
-	# Use minimal padding so camera can reach all tiles
-	var min_world_x = -1160.0 + 100  # Left water edge with small padding
-	var max_world_x = 1192.0 - 100   # Right water edge with small padding
-	var min_world_y = 14.0 + 50      # Top water edge with small padding
-	var max_world_y = 1386.0 - 50    # Bottom water edge with small padding
+	# Calculate bounds properly accounting for hex grid slope
+	# Hex grids have top_left.x > bottom_right.x (slopes left)
+	var min_world_x = min(top_left_world.x, bottom_right_world.x) + 100
+	var max_world_x = max(top_left_world.x, bottom_right_world.x) - 100
+	var min_world_y = min(top_left_world.y, bottom_right_world.y) + 50
+	var max_world_y = max(top_left_world.y, bottom_right_world.y) - 50
 
 	camera_min_bounds = Vector2(min_world_x, min_world_y) + viewport_half_size
 	camera_max_bounds = Vector2(max_world_x, max_world_y) - viewport_half_size
@@ -234,10 +220,10 @@ func _input(event):
 
 #### TEST ####
 func _spawn_test_vikings():
-	# Find water tiles and spawn 3 vikings on them
+	# Find water tiles and spawn vikings on them
 	var water_tiles: Array = []
 
-	# Collect all water tile coordinates
+	# Collect all water tile coordinates (50x50 map with water margins)
 	for x in range(50):
 		for y in range(50):
 			var tile_coords = Vector2i(x, y)
@@ -248,12 +234,12 @@ func _spawn_test_vikings():
 	print("=== VIKING SPAWN ===")
 	print("Found ", water_tiles.size(), " water tiles")
 
-	if water_tiles.size() < 3:
+	if water_tiles.size() < 10:
 		print("Not enough water tiles to spawn vikings")
 		return
 
-	# Spawn 3 vikings on random water tiles
-	for i in range(3):
+	# Spawn 10 vikings on random water tiles
+	for i in range(10):
 		var viking = Cluster.acquire("viking")
 		if viking:
 			# Get random unoccupied water tile
@@ -291,7 +277,7 @@ func _spawn_test_vikings():
 	print("Total vikings spawned: ", test_vikings.size())
 
 func _move_test_vikings():
-	# Move each viking using pathfinding
+	# Move each viking using Rust pathfinding
 	for i in range(test_vikings.size()):
 		var viking_data = test_vikings[i]
 		var viking = viking_data["ship"]
@@ -301,7 +287,7 @@ func _move_test_vikings():
 		if viking.is_moving:
 			continue
 
-		# Find a random destination within range using pathfinding
+		# Find a random destination within range (keeping GDScript for destination picking)
 		var destination = Pathfinding.find_random_destination(
 			current_tile,
 			hex_map,
@@ -325,31 +311,48 @@ func _move_test_vikings():
 			else:
 				continue  # No valid tiles found
 
-		# Find path to destination
-		var path = Pathfinding.find_path(
+		# Use Rust pathfinding (async via callback)
+		var ship_id = viking.get_instance_id()
+		var pathfinding_bridge = get_node("/root/ShipPathfindingBridge")
+
+		# Update ship position in Rust
+		pathfinding_bridge.update_ship_position(ship_id, current_tile)
+
+		# Request pathfinding from Rust
+		pathfinding_bridge.request_path(
+			ship_id,
 			current_tile,
 			destination,
-			hex_map,
-			occupied_tiles,
-			viking
+			true,  # avoid_ships = true
+			func(path: Array[Vector2i], success: bool, _cost: float):
+				# Callback when path is found
+				if success and path.size() > 1:
+					# Free up current tile
+					occupied_tiles.erase(current_tile)
+
+					# Capture final destination BEFORE ship clears the path
+					var final_destination = path[path.size() - 1]
+
+					# Mark ship as MOVING in Rust
+					pathfinding_bridge.set_ship_moving(ship_id)
+
+					# Follow the full path calculated by Rust
+					viking.follow_path(
+						path,
+						hex_map.tile_map,
+						func():  # On path complete
+							# Update occupied tiles
+							occupied_tiles[final_destination] = viking
+							viking_data["tile"] = final_destination
+
+							# Update Rust with final position and set to IDLE
+							pathfinding_bridge.update_ship_position(ship_id, final_destination)
+							pathfinding_bridge.set_ship_idle(ship_id),
+						func(waypoint: Vector2i):  # On each waypoint reached
+							# Update Rust as ship moves through path
+							pathfinding_bridge.update_ship_position(ship_id, waypoint)
+					)
 		)
-
-		if path.size() > 0:
-			# Move to first tile in path
-			var new_tile = path[0]
-			var new_pos = hex_map.tile_map.map_to_local(new_tile)
-
-			# Free up current tile
-			occupied_tiles.erase(current_tile)
-
-			# Occupy new tile
-			occupied_tiles[new_tile] = viking
-
-			# Start smooth movement
-			viking.move_to(new_pos)
-
-			# Update stored tile
-			viking_data["tile"] = new_tile
 
 # Clamp camera position within bounds
 # TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping

@@ -5,7 +5,9 @@ class_name TileInfo
 @onready var tile_type_label: Label = $MarginContainer/VBoxContainer/TileTypeLabel
 @onready var world_pos_label: Label = $MarginContainer/VBoxContainer/WorldPosLabel
 @onready var card_label: Label = $MarginContainer/VBoxContainer/CardLabel
-@onready var card_ghost: TextureRect = $CardGhost
+
+# CardGhost is now a sibling in Main scene, not a child
+var card_ghost: TextureRect = null
 
 # Reference to hex map
 var hex_map = null
@@ -14,8 +16,10 @@ func _ready() -> void:
 	# Start visible for testing
 	visible = true
 
-	# Hide card ghost initially
-	card_ghost.visible = false
+	# Get CardGhost reference from parent (Main scene)
+	card_ghost = get_parent().get_node("CardGhost")
+	if card_ghost:
+		card_ghost.visible = false
 
 	# Apply Alagard font to all labels
 	_apply_fonts()
@@ -97,7 +101,7 @@ func _apply_fonts() -> void:
 
 func _show_card_info(card_data: Dictionary) -> void:
 	# Show card ghost image
-	if card_data.has("sprite"):
+	if card_ghost and card_data.has("sprite"):
 		var sprite = card_data["sprite"]
 		card_ghost.texture = sprite.texture
 		card_ghost.visible = true
@@ -109,7 +113,8 @@ func _show_card_info(card_data: Dictionary) -> void:
 	card_label.visible = true
 
 func _hide_card_info() -> void:
-	card_ghost.visible = false
+	if card_ghost:
+		card_ghost.visible = false
 	card_label.text = "Card: --"
 
 func get_card_name(suit: int, value: int) -> String:

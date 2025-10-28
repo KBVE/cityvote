@@ -1,0 +1,80 @@
+[gd_scene load_steps=3 format=3 uid="uid://c8n9m0p1q2r5u"]
+
+[ext_resource type="Script" path="res://view/hud/topbar/topbar_uiux.gd" id="1_topbar"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_topbar"]
+bg_color = Color(0.15, 0.15, 0.15, 0.85)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.8, 0.6, 0.2, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="TopbarUIUX" type="PanelContainer"]
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 1270.0
+offset_bottom = 70.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_topbar")
+script = ExtResource("1_topbar")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 10
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 40
+
+[node name="LeftSection" type="HBoxContainer" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 20
+
+[node name="Placeholder1" type="Label" parent="MarginContainer/HBoxContainer/LeftSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "Placeholder 1"
+
+[node name="Placeholder2" type="Label" parent="MarginContainer/HBoxContainer/LeftSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "Placeholder 2"
+
+[node name="CenterSection" type="HBoxContainer" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/separation = 20
+
+[node name="Placeholder3" type="Label" parent="MarginContainer/HBoxContainer/CenterSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "Placeholder 3"
+
+[node name="RightSection" type="HBoxContainer" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 20
+alignment = 2
+
+[node name="Placeholder4" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "Placeholder 4"
+
+[node name="Placeholder5" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "Placeholder 5"

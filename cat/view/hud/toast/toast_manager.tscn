@@ -1,0 +1,20 @@
+[gd_scene load_steps=2 format=3 uid="uid://c9n5m8p4q6r9t"]
+
+[ext_resource type="Script" path="res://view/hud/toast/toast_manager.gd" id="1_toast_manager"]
+
+[node name="ToastManager" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+mouse_filter = 2
+script = ExtResource("1_toast_manager")
+
+[node name="ToastContainer" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 1010.0
+offset_top = 80.0
+offset_right = 1270.0
+offset_bottom = 80.0
+theme_override_constants/separation = 10
+alignment = 1

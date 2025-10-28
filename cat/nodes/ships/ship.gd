@@ -31,6 +31,13 @@ var move_target_pos: Vector2 = Vector2.ZERO
 var move_progress: float = 0.0
 var move_speed: float = 3.0  # Movement speed multiplier
 
+# Path following
+var current_path: Array[Vector2i] = []  # Tile coordinates of path to follow
+var path_index: int = 0  # Current position in path
+var on_path_complete: Callable  # Callback when entire path is complete
+var on_waypoint_reached: Callable  # Callback when each waypoint is reached
+var path_visualizer: Node2D = null  # Visual representation of path
+
 # Critically-damped spring parameters for organic motion
 var angular_stiffness: float = 18.0  # How strongly we pull toward target_angle (reduced for smoother)
 var angular_damping_strength: float = 12.0  # How strongly we damp angular_velocity (increased for less jitter)
@@ -135,10 +142,6 @@ func _update_angular_motion(delta: float):
 	var old_direction = direction
 	direction = angle_to_direction_stable(current_angle)
 
-	# Debug output - show every 30 frames when moving
-	if is_moving and Engine.get_frames_drawn() % 30 == 0:
-		print("Angular: cur=%.1f° tgt=%.1f° err=%.1f° vel=%.1f°/s dir=%d" % [current_angle, target_angle, angle_err, angular_velocity, direction])
-
 	# Update sprite frame if direction changed
 	if direction != old_direction:
 		_update_sprite()
@@ -160,8 +163,52 @@ func move_to(target_pos: Vector2):
 	var direction_vec = target_pos - position
 	if direction_vec.length() > 0:
 		target_angle = fmod(rad_to_deg(direction_vec.angle()) + 360.0, 360.0)
-		var expected_dir = angle_to_direction_stable(target_angle)
-		print("Ship moving - Vec: ", direction_vec, " Godot angle: %.1f°, Target angle: %.1f°, Expected direction: %d, Current: %d" % [rad_to_deg(direction_vec.angle()), target_angle, expected_dir, direction])
+
+# Start following a path (array of tile coordinates)
+func follow_path(path: Array[Vector2i], tile_map: TileMap, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
+	if path.size() < 2:
+		return
+
+	current_path = path
+	path_index = 1  # Start at index 1 (0 is current position)
+	on_path_complete = complete_callback
+	on_waypoint_reached = waypoint_callback
+
+	# Create path visualizer
+	_create_path_visualizer(path, tile_map)
+
+	_advance_to_next_waypoint()
+
+# Create visual representation of path
+func _create_path_visualizer(path: Array[Vector2i], tile_map: TileMap) -> void:
+	# Remove old visualizer if exists
+	if path_visualizer:
+		path_visualizer.queue_free()
+		path_visualizer = null
+
+	# Load PathVisualizer
+	var PathVisualizerScript = load("res://view/hud/waypoint/path_visualizer.gd")
+	if PathVisualizerScript:
+		path_visualizer = Node2D.new()
+		path_visualizer.set_script(PathVisualizerScript)
+
+		# Add to parent (hex_map) so it's visible
+		var parent = get_parent()
+		if parent:
+			parent.add_child(path_visualizer)
+			path_visualizer.show_path(path, tile_map, self)
+
+# Internal: Move to next waypoint in path
+func _advance_to_next_waypoint():
+	if path_index >= current_path.size():
+		return
+
+	var next_tile = current_path[path_index]
+	var tile_map = get_parent()  # Assuming ship is child of hex_map
+	if tile_map and tile_map.has_node("TileMap"):
+		var tm = tile_map.get_node("TileMap")
+		var next_pos = tm.map_to_local(next_tile)
+		move_to(next_pos)
 
 func _process(delta):
 	# Smooth movement interpolation
@@ -173,6 +220,34 @@ func _process(delta):
 			position = move_target_pos
 			is_moving = false
 			move_progress = 1.0
+
+			# Remove waypoint marker (visual feedback)
+			if path_visualizer and path_visualizer.has_method("remove_first_waypoint"):
+				path_visualizer.remove_first_waypoint()
+
+			# Notify waypoint reached
+			if current_path.size() > 0 and path_index >= 0 and path_index < current_path.size() and on_waypoint_reached.is_valid():
+				var reached_tile = current_path[path_index]
+				on_waypoint_reached.call(reached_tile)
+
+			# If following a path, move to next waypoint
+			if current_path.size() > 0 and path_index < current_path.size() - 1:
+				path_index += 1
+				_advance_to_next_waypoint()
+			else:
+				# Path complete
+				var was_following_path = current_path.size() > 0
+				current_path.clear()
+				path_index = 0
+
+				# Clean up visualizer
+				if path_visualizer:
+					path_visualizer.queue_free()
+					path_visualizer = null
+
+				# Notify completion
+				if was_following_path and on_path_complete.is_valid():
+					on_path_complete.call()
 		else:
 			# Lerp position with ease-in-out
 			var t = ease(move_progress, -2.0)  # Ease in-out

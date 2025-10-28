@@ -1,0 +1,45 @@
+[gd_scene load_steps=3 format=3 uid="uid://d9n4m7p3q5r8s"]
+
+[ext_resource type="Script" path="res://view/hud/toast/toast_item.gd" id="1_toast_item"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_toast"]
+bg_color = Color(0.15, 0.15, 0.15, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.8, 0.6, 0.2, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="ToastItem" type="PanelContainer"]
+custom_minimum_size = Vector2(250, 0)
+theme_override_styles/panel = SubResource("StyleBoxFlat_toast")
+script = ExtResource("1_toast_item")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="MessageLabel" type="Label" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.9, 0.9, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Toast message"
+autowrap_mode = 3
+
+[node name="DismissButton" type="Button" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 10
+text = "X"

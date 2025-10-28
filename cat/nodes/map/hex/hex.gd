@@ -48,11 +48,11 @@ func _ready():
 	_render_tiles()
 
 func _generate_test_map():
-	# Create a 50x50 map with water tiles extending to all edges
+	# Create a 50x50 map with water margins
 	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
 	var map_width = 50
 	var map_height = 50
-	var land_inset = 10  # How many tiles to inset land from edges (water band around map)
+	var land_inset = 5  # Water border around central land island
 
 	# Initialize with water everywhere first
 	for y in range(map_height):
@@ -61,7 +61,7 @@ func _generate_test_map():
 			row.append("water")
 		map_data.append(row)
 
-	# Fill land area with random grasslands (smaller central island)
+	# Fill land area with random grasslands (centered island with water border)
 	for y in range(land_inset, map_height - land_inset):
 		for x in range(land_inset, map_width - land_inset):
 			var grassland = grassland_types[randi() % grassland_types.size()]
