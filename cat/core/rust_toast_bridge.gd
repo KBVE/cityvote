@@ -30,10 +30,16 @@ func _on_toast_message_received(message: String) -> void:
 		push_error("RustToastBridge: Toast autoload not found!")
 		return
 
+	# Try to translate the message using I18n
+	# If the message is a translation key, use it; otherwise display as-is
+	var translated_message = message
+	if I18n.has_key(message):
+		translated_message = I18n.translate(message)
+
 	# Display as toast
 	var toast_node = get_node("/root/Toast")
 	if toast_node:
-		toast_node.show_toast(message, 3.0)
+		toast_node.show_toast(translated_message, 3.0)
 	else:
 		push_error("RustToastBridge: Failed to get Toast node!")
 

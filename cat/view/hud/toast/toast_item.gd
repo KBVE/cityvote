@@ -17,7 +17,7 @@ func _ready() -> void:
 	dismiss_button.pressed.connect(_on_dismiss_pressed)
 
 	# Apply Alagard font
-	var font = Cache.get_font("alagard")
+	var font = Cache.get_font_for_current_language()
 	if font:
 		message_label.add_theme_font_override("font", font)
 		dismiss_button.add_theme_font_override("font", font)

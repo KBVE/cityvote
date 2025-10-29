@@ -22,12 +22,39 @@ func _ready():
 
 # Load all fonts
 func _load_fonts():
-	# Alagard font (main game font)
+	# Alagard font (main game font - Latin characters only)
 	var alagard_path = "res://view/font/alagard.ttf"
 	if ResourceLoader.exists(alagard_path):
 		fonts["alagard"] = load(alagard_path)
 	else:
 		push_warning("Cache: Could not find font at " + alagard_path)
+
+	# Japanese font (TODO: Add a font that supports Japanese characters)
+	var japanese_font_path = "res://view/font/japanese.ttf"
+	if ResourceLoader.exists(japanese_font_path):
+		fonts["japanese"] = load(japanese_font_path)
+	else:
+		# Fallback to system font or alagard
+		fonts["japanese"] = fonts.get("alagard")
+		push_warning("Cache: Japanese font not found, using fallback")
+
+	# Chinese font (TODO: Add a font that supports Chinese characters)
+	var chinese_font_path = "res://view/font/chinese.ttf"
+	if ResourceLoader.exists(chinese_font_path):
+		fonts["chinese"] = load(chinese_font_path)
+	else:
+		# Fallback to system font or alagard
+		fonts["chinese"] = fonts.get("alagard")
+		push_warning("Cache: Chinese font not found, using fallback")
+
+	# Hindi font (TODO: Add a font that supports Devanagari script)
+	var hindi_font_path = "res://view/font/hindi.ttf"
+	if ResourceLoader.exists(hindi_font_path):
+		fonts["hindi"] = load(hindi_font_path)
+	else:
+		# Fallback to system font or alagard
+		fonts["hindi"] = fonts.get("alagard")
+		push_warning("Cache: Hindi font not found, using fallback")
 
 # Load all shaders
 func _load_shaders():
@@ -58,6 +85,21 @@ func get_font(font_name: String) -> Font:
 		return fonts[font_name]
 	push_warning("Cache: Font not found: " + font_name)
 	return null
+
+# Get font appropriate for current language (auto-switches based on I18n.current_language)
+func get_font_for_current_language() -> Font:
+	var current_lang = I18n.get_current_language()
+	match current_lang:
+		I18n.Language.JAPANESE:
+			return fonts.get("japanese", fonts.get("alagard"))
+		I18n.Language.CHINESE:
+			return fonts.get("chinese", fonts.get("alagard"))
+		I18n.Language.HINDI:
+			# Hindi uses Devanagari script - needs special font too
+			return fonts.get("hindi", fonts.get("alagard"))
+		_:
+			# English and Spanish use Latin characters - alagard works
+			return fonts.get("alagard")
 
 # Get a string by key
 func get_string(key: String, default: String = "") -> String:

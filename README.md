@@ -14,3 +14,8 @@ https://helianthus-games.itch.io/pixel-art-viking-ship-16-directions
 Dino Character - Velo
 https://pixramen.itch.io/2d-dino-character-velociraptor
 
+Pixel Banner for i18n
+https://andelrodis.itch.io/pixel-banner-pack-andel
+
+Fantasy Warrior
+https://luizmelo.itch.io/fantasy-warrior

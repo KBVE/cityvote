@@ -29,18 +29,15 @@ var typewriter_tween: Tween = null
 var current_full_text: String = ""
 var typewriter_speed: float = 0.05  # seconds per character
 
-# Flavor text database
-var flavor_texts: Dictionary = {
-	"viking": "Fearless raiders from the frozen north. Their longships cut through waves like axes through ice. They seek glory, plunder, and a place in Valhalla.",
-	"jezza": "Ancient reptilian survivors from a forgotten age. Their roar echoes across time itself. Despite their fearsome appearance, they're surprisingly curious."
-}
+# Flavor text is now managed by I18n system
+# Keys: entity.viking.flavor, entity.jezza.flavor
 
 func _ready() -> void:
 	# Start hidden
 	visible = false
 
 	# Apply Alagard font to header elements
-	var font = Cache.get_font("alagard")
+	var font = Cache.get_font_for_current_language()
 	if font:
 		if entity_name_label:
 			entity_name_label.add_theme_font_override("font", font)
@@ -50,6 +47,10 @@ func _ready() -> void:
 	# Connect close button
 	if close_button:
 		close_button.pressed.connect(_on_close_pressed)
+
+	# Connect to language change signal
+	if I18n:
+		I18n.language_changed.connect(_on_language_changed)
 
 	# Connect to StatsManager signals for live updates
 	if StatsManager:
@@ -104,27 +105,27 @@ func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
 	var all_stats = StatsManager.get_all_stats(ulid)
 
 	# Update stat displays (creates labels on first call, reuses thereafter)
-	_update_stat("Health (HP)", all_stats.get(StatsManager.STAT.HP, 0), all_stats.get(StatsManager.STAT.MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
-	_update_stat("Attack", all_stats.get(StatsManager.STAT.ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
-	_update_stat("Defense", all_stats.get(StatsManager.STAT.DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Blue
-	_update_stat("Speed", all_stats.get(StatsManager.STAT.SPEED, 0), -1, Color(0.5, 1.0, 0.5))  # Green
-	_update_stat("Range", all_stats.get(StatsManager.STAT.RANGE, 0), -1, Color(0.9, 0.9, 0.5))  # Yellow
-	_update_stat("Morale", all_stats.get(StatsManager.STAT.MORALE, 0), -1, Color(0.8, 0.5, 1.0))  # Purple
-	_update_stat("Level", all_stats.get(StatsManager.STAT.LEVEL, 0), -1, Color(1.0, 0.8, 0.3))  # Gold
+	_update_stat(I18n.translate("stat.health") + " (HP)", all_stats.get(StatsManager.STAT.HP, 0), all_stats.get(StatsManager.STAT.MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
+	_update_stat(I18n.translate("stat.attack") + " (ATK)", all_stats.get(StatsManager.STAT.ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
+	_update_stat(I18n.translate("stat.defense") + " (DEF)", all_stats.get(StatsManager.STAT.DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Blue
+	_update_stat(I18n.translate("stat.speed") + " (SPD)", all_stats.get(StatsManager.STAT.SPEED, 0), -1, Color(0.5, 1.0, 0.5))  # Green
+	_update_stat(I18n.translate("stat.range") + " (RNG)", all_stats.get(StatsManager.STAT.RANGE, 0), -1, Color(0.9, 0.9, 0.5))  # Yellow
+	_update_stat(I18n.translate("stat.morale") + " (MOR)", all_stats.get(StatsManager.STAT.MORALE, 0), -1, Color(0.8, 0.5, 1.0))  # Purple
+	_update_stat(I18n.translate("stat.level") + " (LVL)", all_stats.get(StatsManager.STAT.LEVEL, 0), -1, Color(1.0, 0.8, 0.3))  # Gold
 
 	# Check for experience
 	var exp = all_stats.get(StatsManager.STAT.EXPERIENCE, -1)
 	if exp >= 0:
-		_update_stat("Experience", exp, -1, Color(0.6, 0.9, 1.0))  # Cyan
+		_update_stat(I18n.translate("stat.experience") + " (EXP)", exp, -1, Color(0.6, 0.9, 1.0))  # Cyan
 
 	# Check for building stats
 	var prod_rate = all_stats.get(StatsManager.STAT.PRODUCTION_RATE, -1)
 	if prod_rate >= 0:
-		_update_stat("Production Rate", prod_rate, -1, Color(0.9, 0.7, 0.4))  # Tan
+		_update_stat(I18n.translate("stat.production_rate") + " (PROD)", prod_rate, -1, Color(0.9, 0.7, 0.4))  # Tan
 
 	var storage = all_stats.get(StatsManager.STAT.STORAGE_CAPACITY, -1)
 	if storage >= 0:
-		_update_stat("Storage Capacity", storage, -1, Color(0.7, 0.6, 0.5))  # Brown
+		_update_stat(I18n.translate("stat.storage_capacity") + " (STOR)", storage, -1, Color(0.7, 0.6, 0.5))  # Brown
 
 ## Close the panel
 func close_panel() -> void:
@@ -139,15 +140,16 @@ func _start_typewriter(pool_key: String) -> void:
 	# Stop any existing typewriter
 	_stop_typewriter()
 
-	# Get flavor text for this entity type
-	var flavor_text = flavor_texts.get(pool_key, "A mysterious entity shrouded in legend...")
+	# Get flavor text for this entity type from I18n
+	var flavor_key = "entity.%s.flavor" % pool_key
+	var flavor_text = I18n.translate(flavor_key) if I18n.has_key(flavor_key) else "A mysterious entity shrouded in legend..."
 	current_full_text = flavor_text
 
 	if not flavor_text_label:
 		return
 
 	# Apply Alagard font
-	var font = Cache.get_font("alagard")
+	var font = Cache.get_font_for_current_language()
 	if font:
 		flavor_text_label.add_theme_font_override("font", font)
 
@@ -183,7 +185,7 @@ func _update_stat(stat_name: String, value: float, max_value: float = -1, value_
 	# Check if we already have labels for this stat
 	if not stat_labels.has(stat_name):
 		# Get cached font
-		var font = Cache.get_font("alagard") if Cache.has_font("alagard") else null
+		var font = Cache.get_font_for_current_language() if Cache.has_font("alagard") else null
 
 		# Create new labels and container
 		var stat_row = HBoxContainer.new()
@@ -227,6 +229,20 @@ func _update_stat(stat_name: String, value: float, max_value: float = -1, value_
 ## Handle close button press
 func _on_close_pressed() -> void:
 	close_panel()
+
+## Handle language changes
+func _on_language_changed(_new_language: int) -> void:
+	# Update fonts
+	var font = Cache.get_font_for_current_language()
+	if font:
+		if entity_name_label:
+			entity_name_label.add_theme_font_override("font", font)
+		if close_button:
+			close_button.add_theme_font_override("font", font)
+
+	# Refresh stats display if panel is visible
+	if visible and current_entity_ulid:
+		_display_stats_from_ulid(current_entity_ulid)
 
 ## Handle stat changes (live updates)
 func _on_stat_changed(ulid: PackedByteArray, stat_type: int, new_value: float) -> void:

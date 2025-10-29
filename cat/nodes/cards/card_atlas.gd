@@ -68,26 +68,45 @@ static func set_card(material: ShaderMaterial, card_id: int) -> void:
 
 ## Get human-readable card name
 static func get_card_name(suit: int, value: int) -> String:
-	var suit_names = ["Clubs", "Diamonds", "Hearts", "Spades"]
-	var value_names = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King"]
-
 	if suit < 0 or suit > 3 or value < 1 or value > 13:
 		return "Invalid Card"
 
-	return value_names[value - 1] + " of " + suit_names[suit]
+	# Get translated suit name
+	var suit_keys = ["card.suit.clubs", "card.suit.diamonds", "card.suit.hearts", "card.suit.spades"]
+	var suit_name = I18n.translate(suit_keys[suit])
+
+	# Get translated value name
+	var value_name = ""
+	if value == 1:
+		value_name = I18n.translate("card.value.ace")
+	elif value == 11:
+		value_name = I18n.translate("card.value.jack")
+	elif value == 12:
+		value_name = I18n.translate("card.value.queen")
+	elif value == 13:
+		value_name = I18n.translate("card.value.king")
+	else:
+		value_name = str(value)
+
+	# Handle Chinese language which doesn't use "of"
+	var of_text = I18n.translate("card.of")
+	if of_text == "":
+		return "%s%s" % [value_name, suit_name]
+	else:
+		return "%s %s %s" % [value_name, of_text, suit_name]
 
 ## Get card name from card_id
 static func get_card_name_from_id(card_id: int) -> String:
 	if card_id == CARD_VIKINGS:
-		return "Vikings Special"
+		return I18n.translate("card.custom.viking")
 	elif card_id == CARD_DINO:
-		return "Dino Special"
+		return I18n.translate("card.custom.dino")
 	elif card_id >= 0 and card_id < STANDARD_CARD_COUNT:
 		var suit = card_id / CARDS_PER_SUIT
 		var value = (card_id % CARDS_PER_SUIT) + 1
 		return get_card_name(suit, value)
 	else:
-		return "Unknown Card"
+		return I18n.translate("card.custom.generic")
 
 ## Check if a card_id is valid
 static func is_valid_card_id(card_id: int) -> bool:

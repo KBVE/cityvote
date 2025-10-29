@@ -45,14 +45,14 @@ theme_override_constants/separation = 2
 [node name="GoldName" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/GoldContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Gold"
 horizontal_alignment = 1
 
 [node name="GoldValue" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/GoldContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.84, 0, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "100"
 horizontal_alignment = 1
 
@@ -63,14 +63,14 @@ theme_override_constants/separation = 2
 [node name="FoodName" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/FoodContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Food"
 horizontal_alignment = 1
 
 [node name="FoodValue" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/FoodContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.4, 0.8, 0.4, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "50"
 horizontal_alignment = 1
 
@@ -81,14 +81,14 @@ theme_override_constants/separation = 2
 [node name="LaborName" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/LaborContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.8, 0.6, 0.4, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Labor"
 horizontal_alignment = 1
 
 [node name="LaborValue" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/LaborContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.8, 0.6, 0.4, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "10"
 horizontal_alignment = 1
 
@@ -99,14 +99,14 @@ theme_override_constants/separation = 2
 [node name="FaithName" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/FaithContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.5, 1, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Faith"
 horizontal_alignment = 1
 
 [node name="FaithValue" type="Label" parent="MarginContainer/HBoxContainer/LeftSection/FaithContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.5, 1, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "0"
 horizontal_alignment = 1
 
@@ -118,7 +118,7 @@ theme_override_constants/separation = 20
 [node name="CityVoteButton" type="Button" parent="MarginContainer/HBoxContainer/CenterSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "CityVote"
 
 [node name="RightSection" type="HBoxContainer" parent="MarginContainer/HBoxContainer"]
@@ -130,11 +130,11 @@ alignment = 2
 [node name="TimerLabel" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "Timer: 60s"
 
 [node name="TurnLabel" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.7, 1, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "Turn: 0"

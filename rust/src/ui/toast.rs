@@ -9,11 +9,28 @@ use std::time::Duration;
 /// This module provides a thread-safe way for any Rust worker thread to send
 /// toast notifications to the Godot UI. Uses SegQueue for lock-free message passing.
 ///
+/// # I18n Support
+/// Messages are automatically translated by the GDScript i18n system. You can either:
+/// 1. Send a translation key (e.g., "rust.card.placed") which will be translated
+/// 2. Send a plain English message which will be displayed as-is
+///
 /// Usage from Rust threads:
 /// ```rust
 /// use crate::ui::toast;
-/// toast::send_message("Operation completed!".to_string());
+///
+/// // Option 1: Use translation key (recommended)
+/// toast::send_message("rust.card.placed".to_string());
+///
+/// // Option 2: Plain message (fallback)
+/// toast::send_message("Card placed successfully".to_string());
 /// ```
+///
+/// # Available Translation Keys
+/// See cat/core/i18n.gd for all available keys. Common ones:
+/// - "rust.pathfinding.started", "rust.pathfinding.completed", "rust.pathfinding.failed"
+/// - "rust.card.placed", "rust.card.removed"
+/// - "rust.resource.insufficient"
+/// - "rust.error.generic"
 
 // Global message queue shared between Rust threads and GDScript
 static MESSAGE_QUEUE: once_cell::sync::Lazy<Arc<SegQueue<String>>> =

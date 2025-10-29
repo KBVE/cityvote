@@ -101,7 +101,7 @@ func _initialize() -> void:
 	hand_panel.mouse_exited.connect(_on_hand_panel_mouse_exited)
 
 	# Apply Alagard font to card count label
-	var font = Cache.get_font("alagard")
+	var font = Cache.get_font_for_current_language()
 	if font:
 		card_count_label.add_theme_font_override("font", font)
 	else:
@@ -409,8 +409,11 @@ func _create_swap_indicator() -> void:
 		push_error("PlayHand: Failed to instantiate swap indicator scene!")
 		return
 
+	# Set translated text
+	swap_indicator.text = I18n.translate("ui.hand.swap")
+
 	# Apply Alagard font
-	var font = Cache.get_font("alagard")
+	var font = Cache.get_font_for_current_language()
 	if font:
 		swap_indicator.add_theme_font_override("font", font)
 
@@ -700,6 +703,13 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	# Register card with hex map (using PooledCard's suit/value)
 	hex_map.place_card_on_tile(tile_coords, card_sprite, card_sprite.suit, card_sprite.value)
 
+	# Show toast notification for card placement
+	var card_name = card_sprite.get_card_name()
+	Toast.show_toast(I18n.translate("ui.hand.card_placed", [card_name]), 2.0)
+
+	# Check for card combos after placement
+	_check_for_combos()
+
 	# Remove card from hand array
 	if held_card_source_index < hand.size():
 		hand.remove_at(held_card_source_index)
@@ -778,7 +788,7 @@ func _on_timer_reset() -> void:
 	# Check if hand is at max capacity
 	if hand.size() >= MAX_HAND:
 		# Send toast: Hand is full
-		Toast.show_toast("Hand is full! Use a card to draw more.", 3.0)
+		Toast.show_toast(I18n.translate("ui.hand.full"), 3.0)
 		return
 
 	# Hand has space - draw a card
@@ -793,7 +803,78 @@ func _on_timer_reset() -> void:
 		call_deferred("_refresh_card_positions")
 
 		# Send toast: Drew a card
-		Toast.show_toast("Drew: %s" % card.get_card_name(), 2.5)
+		Toast.show_toast(I18n.translate("ui.hand.drew", [card.get_card_name()]), 2.5)
 	else:
 		# No cards left in deck
-		Toast.show_toast("Deck is empty!", 2.5)
+		Toast.show_toast(I18n.translate("ui.hand.deck_empty"), 2.5)
+
+# ===================================================================
+# COMBO DETECTION
+# ===================================================================
+
+## Check for card combos on the hex grid (ASYNC - runs on worker thread)
+func _check_for_combos() -> void:
+	if not hex_map or not CardComboBridge:
+		return
+
+	# Collect all placed cards from hex_map (explicitly typed for godot-rust)
+	var placed_cards: Array[Dictionary] = []
+
+	# Get all card data from hex_map
+	for tile_coords in hex_map.card_data.keys():
+		var card_info = hex_map.card_data[tile_coords]
+		var card_sprite = card_info.get("sprite")
+
+		# Create card dictionary for combo detection
+		var card_dict: Dictionary = CardComboBridge.create_card_dict(
+			card_info.get("ulid"),
+			card_info.get("suit", 0),
+			card_info.get("value", 0),
+			card_info.get("card_id", 0),
+			tile_coords.x,
+			tile_coords.y,
+			card_sprite.is_custom if card_sprite is PooledCard else false
+		)
+
+		placed_cards.append(card_dict)
+
+	# Need at least 5 cards for a combo
+	if placed_cards.size() < 5:
+		return
+
+	# Request combo detection (async - result via callback)
+	CardComboBridge.request_combo_detection(placed_cards, _on_combo_result)
+
+## Callback when combo detection completes
+func _on_combo_result(result: Dictionary) -> void:
+	# Check if a combo was found
+	if not result.has("hand_name") or not result.has("card_indices"):
+		return
+
+	# Get hand rank (0 = High Card, which we don't want to show)
+	var hand_rank = result.get("hand_rank", 0)
+	if hand_rank == 0:
+		# High Card - not a real combo, don't show popup
+		return
+
+	print("Combo found: %s (rank %d)" % [result["hand_name"], hand_rank])
+
+	# Highlight cards in the combo
+	var card_indices = result.get("card_indices", [])
+	for idx in card_indices:
+		# Need to look up the card sprite from hex_map again
+		var tile_coords_list = hex_map.card_data.keys()
+		if idx < tile_coords_list.size():
+			var tile_coords = tile_coords_list[idx]
+			var card_info = hex_map.card_data[tile_coords]
+			var card_sprite = card_info.get("sprite")
+			if card_sprite is PooledCard:
+				card_sprite.highlight_combo()
+
+	# Show combo popup
+	if ComboPopup:
+		ComboPopup.show_combo(result)
+		ComboPopup.apply_combo_resources(result)
+
+	# Play a sound effect (if available)
+	# TODO: Add combo sound effect

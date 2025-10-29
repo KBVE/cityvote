@@ -192,6 +192,18 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 		"position": {"x": tile_coords.x, "y": tile_coords.y}
 	})
 
+	# Determine if this is a custom card
+	var is_custom = false
+	if card_sprite is PooledCard:
+		is_custom = card_sprite.is_custom
+
+	# Register with Rust CardRegistry
+	var card_registry = get_node("/root/CardRegistryBridge")
+	if card_registry:
+		var success = card_registry.place_card(tile_coords.x, tile_coords.y, ulid, suit, value, is_custom, card_id)
+		if not success:
+			push_error("Hex: Failed to register card with Rust CardRegistry at (%d, %d)" % [tile_coords.x, tile_coords.y])
+
 	card_data[tile_coords] = {
 		"sprite": card_sprite,
 		"suit": suit,

@@ -17,11 +17,14 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+I18n="*res://core/i18n.gd"
 MapConfig="*res://core/map_config.gd"
 Cache="*res://core/cache.gd"
 Pathfinding="*res://core/pathfinding.gd"
 Cluster="*res://core/pool/cluster.gd"
+CardComboBridge="*res://core/card_combo_bridge.gd"
 Toast="*res://view/hud/toast/toast_manager.gd"
+ComboPopup="*res://view/hud/combo_popup_manager.gd"
 CardAtlas="*res://nodes/cards/card_atlas.gd"
 CardAtlasMeshes="*res://nodes/cards/card_atlas_meshes.gd"
 CardDeck="*res://nodes/cards/card_deck.gd"
@@ -32,6 +35,7 @@ StatsManager="*res://core/stats_manager.gd"
 RustToastBridge="*res://core/rust_toast_bridge.gd"
 ShipPathfindingBridge="*res://core/ship_pathfinding_bridge.gd"
 NpcPathfindingBridge="*res://core/npc_pathfinding_bridge.gd"
+CardRegistryBridge="*res://core/card_registry_bridge.gd"
 
 [display]
 

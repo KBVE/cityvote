@@ -28,6 +28,10 @@ func _setup_pools():
 	var jezza_scene = preload("res://nodes/npc/dino/jezza/jezza.tscn")
 	register_pool("jezza", jezza_scene, 10)
 
+	# Fantasy Warrior NPC pool
+	var fantasy_warrior_scene = preload("res://nodes/npc/fantasy-warrior/fantasy_warrior.tscn")
+	register_pool("fantasywarrior", fantasy_warrior_scene, 10)
+
 	# Playing card pool (starts with MAX_HAND capacity)
 	# Pool grows dynamically if needed. Deck stores CardData, not instances.
 	var card_scene = preload("res://nodes/cards/pooled_card.tscn")

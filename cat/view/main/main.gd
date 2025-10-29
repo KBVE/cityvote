@@ -50,7 +50,15 @@ var test_jezzas: Array = []
 var jezza_move_timer: float = 0.0
 var jezza_move_interval: float = 3.0  # Move every 3 seconds
 
+# Fantasy Warrior NPC testing
+var test_fantasy_warriors: Array = []
+var fantasy_warrior_move_timer: float = 0.0
+var fantasy_warrior_move_interval: float = 2.5  # Move every 2.5 seconds
+
 func _ready():
+	# Show language selector immediately (before any initialization)
+	_show_language_selector_overlay()
+
 	# Get viewport texture
 	var viewport_texture = subviewport.get_texture()
 
@@ -104,10 +112,26 @@ func _ready():
 	# Spawn test Jezza raptor on land tiles
 	_spawn_test_jezza()
 
+	# Spawn test Fantasy Warriors on land tiles
+	_spawn_test_fantasy_warriors()
+
 	# Test toast notification
-	Toast.show_toast("Welcome to Cat!", 5.0)
+	Toast.show_toast(I18n.translate("game.welcome"), 5.0)
 	await get_tree().create_timer(2.0).timeout
-	Toast.show_toast("Vikings and Jezza spawned!", 3.0)
+	Toast.show_toast(I18n.translate("game.entities_spawned"), 3.0)
+
+## Show language selector overlay (shows every time, game is visible behind it)
+func _show_language_selector_overlay() -> void:
+	# Load language selector scene
+	var selector_scene = load("res://view/hud/i18n/language_selector.tscn")
+	if not selector_scene:
+		push_error("Main: Failed to load language selector scene!")
+		return
+
+	var selector = selector_scene.instantiate()
+	add_child(selector)
+
+	print("Main: Language selector displayed over game world")
 
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:
@@ -211,6 +235,12 @@ func _process(delta):
 		jezza_move_timer = 0.0
 		_move_test_jezzas()
 
+	# Move Fantasy Warrior NPCs periodically
+	fantasy_warrior_move_timer += delta
+	if fantasy_warrior_move_timer >= fantasy_warrior_move_interval:
+		fantasy_warrior_move_timer = 0.0
+		_move_test_fantasy_warriors()
+
 func _input(event):
 	# Handle right-click to open entity stats panel
 	if event is InputEventMouseButton:
@@ -222,12 +252,14 @@ func _input(event):
 			var entity = _find_entity_near_position(world_pos, 32.0)  # 32px search radius
 
 			if entity:
-				# Get entity name
+				# Get entity name (translated)
 				var entity_name = "Unknown"
 				if entity is Ship:
-					entity_name = "Viking Ship"
+					entity_name = I18n.translate("entity.viking.name")
 				elif entity is Jezza:
-					entity_name = "Jezza Raptor"
+					entity_name = I18n.translate("entity.jezza_raptor")
+				elif entity is FantasyWarrior:
+					entity_name = I18n.translate("entity.fantasy_warrior.name")
 				elif entity is NPC:
 					var script = entity.get_script()
 					if script:
@@ -473,6 +505,53 @@ func _move_test_jezzas():
 					)
 		)
 
+func _move_test_fantasy_warriors():
+	# Move each Fantasy Warrior using Rust NPC pathfinding
+	for i in range(test_fantasy_warriors.size()):
+		var warrior_data = test_fantasy_warriors[i]
+		var warrior = warrior_data["npc"]
+		var current_tile = warrior_data["tile"]
+
+		# Skip if still moving
+		if warrior.is_moving:
+			continue
+
+		# Find a random land destination within range
+		var destination = _find_random_land_destination(current_tile, 3, 8)
+
+		# If no destination found or same as current, skip
+		if destination == current_tile:
+			continue
+
+		# Use Rust NPC pathfinding (async via callback)
+		var npc_id = warrior.get_instance_id()
+		var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
+
+		# Request pathfinding from Rust
+		npc_pathfinding_bridge.request_path(
+			npc_id,
+			current_tile,
+			destination,
+			func(path: Array[Vector2i], success: bool):
+				# Callback when path is found
+				if success and path.size() > 1:
+					# Free up current tile
+					occupied_tiles.erase(current_tile)
+
+					# Capture final destination
+					var final_destination = path[path.size() - 1]
+
+					# Follow the full path calculated by Rust
+					warrior.follow_path(
+						path,
+						hex_map.tile_map,
+						func():  # On path complete
+							# Update occupied tiles
+							occupied_tiles[final_destination] = warrior
+							warrior_data["tile"] = final_destination
+					)
+		)
+
 func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int) -> Vector2i:
 	# Find a random land tile (non-water) within distance range
 	var candidates: Array[Vector2i] = []
@@ -589,6 +668,60 @@ func _spawn_test_jezza():
 
 	print("Total Jezza raptors spawned: 3")
 
+func _spawn_test_fantasy_warriors():
+	# Find land tiles (non-water) and spawn Fantasy Warriors
+	var land_tiles: Array = []
+
+	# Collect all land tile coordinates
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
+			var tile_coords = Vector2i(x, y)
+			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+			if source_id != 4:  # Not water = land
+				land_tiles.append(tile_coords)
+
+	print("=== FANTASY WARRIOR SPAWN ===")
+	print("Found ", land_tiles.size(), " land tiles")
+
+	if land_tiles.size() < 3:
+		print("Not enough land tiles to spawn Fantasy Warriors")
+		return
+
+	# Spawn 3 Fantasy Warriors on random land tiles
+	for i in range(3):
+		var warrior = Cluster.acquire("fantasywarrior")
+		if warrior:
+			# Get random unoccupied land tile
+			var random_tile: Vector2i
+			var attempts = 0
+			while attempts < 100:
+				random_tile = land_tiles[randi() % land_tiles.size()]
+				if not occupied_tiles.has(random_tile):
+					break
+				attempts += 1
+
+			# Convert tile coordinates to world position
+			var world_pos = hex_map.tile_map.map_to_local(random_tile)
+
+			# Set warrior position and add to hex_map
+			hex_map.add_child(warrior)
+			warrior.position = world_pos
+			warrior.occupied_tiles = occupied_tiles  # Share reference
+
+			# Set random initial direction
+			warrior.set_direction(randi() % 16)
+
+			# Mark tile as occupied
+			occupied_tiles[random_tile] = warrior
+
+			# Store warrior and its current tile
+			test_fantasy_warriors.append({"npc": warrior, "tile": random_tile})
+			print("Spawned Fantasy Warrior ", i, " at tile ", random_tile, " world pos ", world_pos)
+		else:
+			print("Failed to acquire Fantasy Warrior ", i, " from Cluster")
+
+	print("Total Fantasy Warriors spawned: 3")
+
 # Find entity near a world position (spatial query)
 func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Node:
 	var closest_entity = null
@@ -603,7 +736,7 @@ func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Nod
 				closest_distance = distance
 				closest_entity = ship
 
-	# Search through all NPCs
+	# Search through all Jezza NPCs
 	for npc_data in test_jezzas:
 		var npc = npc_data["npc"]
 		if npc and is_instance_valid(npc):
@@ -611,5 +744,14 @@ func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Nod
 			if distance < closest_distance:
 				closest_distance = distance
 				closest_entity = npc
+
+	# Search through all Fantasy Warrior NPCs
+	for warrior_data in test_fantasy_warriors:
+		var warrior = warrior_data["npc"]
+		if warrior and is_instance_valid(warrior):
+			var distance = warrior.position.distance_to(world_pos)
+			if distance < closest_distance:
+				closest_distance = distance
+				closest_entity = warrior
 
 	return closest_entity
