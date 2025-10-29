@@ -17,11 +17,23 @@ var preview_pool_key: String = ""
 # UI references
 @onready var close_button: Button = $MarginContainer/VBoxContainer/HeaderBar/CloseButton
 @onready var entity_name_label: Label = $MarginContainer/VBoxContainer/HeaderBar/EntityNameLabel
-@onready var preview_container: CenterContainer = $MarginContainer/VBoxContainer/EntityPreviewContainer
+@onready var preview_container: CenterContainer = $MarginContainer/VBoxContainer/PreviewAndFlavorContainer/EntityPreviewContainer
+@onready var flavor_text_label: Label = $MarginContainer/VBoxContainer/PreviewAndFlavorContainer/FlavorTextLabel
 @onready var stats_container: VBoxContainer = $MarginContainer/VBoxContainer/StatsContainer
 
 # Cached stat label references for reuse (memory optimization)
 var stat_labels: Dictionary = {}  # stat_name -> {name_label, value_label}
+
+# Typewriter effect
+var typewriter_tween: Tween = null
+var current_full_text: String = ""
+var typewriter_speed: float = 0.05  # seconds per character
+
+# Flavor text database
+var flavor_texts: Dictionary = {
+	"viking": "Fearless raiders from the frozen north. Their longships cut through waves like axes through ice. They seek glory, plunder, and a place in Valhalla.",
+	"jezza": "Ancient reptilian survivors from a forgotten age. Their roar echoes across time itself. Despite their fearsome appearance, they're surprisingly curious."
+}
 
 func _ready() -> void:
 	# Start hidden
@@ -109,9 +121,51 @@ func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
 ## Close the panel
 func close_panel() -> void:
 	_clear_entity_preview()
+	_stop_typewriter()
 	visible = false
 	current_entity_ulid = PackedByteArray()
 	current_entity_node = null
+
+## Start typewriter effect for flavor text
+func _start_typewriter(pool_key: String) -> void:
+	# Stop any existing typewriter
+	_stop_typewriter()
+
+	# Get flavor text for this entity type
+	var flavor_text = flavor_texts.get(pool_key, "A mysterious entity shrouded in legend...")
+	current_full_text = flavor_text
+
+	if not flavor_text_label:
+		return
+
+	# Apply Alagard font
+	var font = Cache.get_font("alagard")
+	if font:
+		flavor_text_label.add_theme_font_override("font", font)
+
+	# Start with empty text
+	flavor_text_label.text = ""
+
+	# Calculate total duration based on text length
+	var total_duration = flavor_text.length() * typewriter_speed
+
+	# Create typewriter tween
+	typewriter_tween = create_tween()
+
+	# Animate from 0 to full text length
+	for i in range(flavor_text.length() + 1):
+		typewriter_tween.tween_callback(
+			func(): flavor_text_label.text = current_full_text.substr(0, i)
+		)
+		if i < flavor_text.length():
+			typewriter_tween.tween_interval(typewriter_speed)
+
+## Stop typewriter effect
+func _stop_typewriter() -> void:
+	if typewriter_tween and typewriter_tween.is_valid():
+		typewriter_tween.kill()
+		typewriter_tween = null
+	current_full_text = ""
 
 ## Update a single stat (creates labels on first call, reuses thereafter)
 func _update_stat(stat_name: String, value: float, max_value: float = -1, value_color: Color = Color(1, 1, 1, 1)) -> void:
@@ -211,7 +265,7 @@ func _show_entity_preview(entity: Node) -> void:
 
 	if preview_instance and preview_container:
 		preview_container.add_child(preview_instance)
-		preview_instance.scale = Vector2(2.0, 2.0)  # Scale up for visibility
+		preview_instance.scale = Vector2(3.0, 3.0)  # Scale up more for better visibility
 		preview_instance.visible = true  # Ensure visible
 		preview_instance.position = Vector2.ZERO  # Center in container
 		preview_instance.rotation = 0.0  # Reset rotation
@@ -226,18 +280,32 @@ func _show_entity_preview(entity: Node) -> void:
 			sprite.visible = true
 			sprite.modulate = Color(1, 1, 1, 1)  # Reset color/alpha
 			sprite.rotation = 0.0  # Reset sprite rotation
+			sprite.position = Vector2.ZERO  # Reset sprite position
+			sprite.z_index = 0  # Ensure not hidden behind
 
-		print("EntityStatsPanel: Acquired preview from pool '%s', scale=%s" % [pool_key, preview_instance.scale])
+			# Debug: Check if sprite has texture and material
+			print("EntityStatsPanel: Sprite visible=%s, texture=%s, material=%s" % [sprite.visible, sprite.texture != null, sprite.material != null])
+
+			# For ships with shader materials, set direction and disable wave animation
+			if sprite.material and sprite.material is ShaderMaterial:
+				# Set direction to 8 (south-facing) for consistent preview
+				sprite.material.set_shader_parameter("direction", 8)
+				# Disable wave animation by setting amplitudes to 0
+				sprite.material.set_shader_parameter("wave_amplitude", 0.0)
+				sprite.material.set_shader_parameter("sway_amplitude", 0.0)
+				print("EntityStatsPanel: Set shader parameters for ship preview (direction=8)")
+
+		# Start typewriter effect for this entity type
+		_start_typewriter(pool_key)
 	else:
-		print("EntityStatsPanel: Failed to acquire preview - pool_key='%s', instance=%s, container=%s" % [pool_key, preview_instance, preview_container])
+		push_error("EntityStatsPanel: Failed to acquire preview from pool '%s'" % pool_key)
 
 ## Clear entity preview and return to pool
 func _clear_entity_preview() -> void:
 	if preview_instance and preview_container and not preview_pool_key.is_empty():
 		preview_container.remove_child(preview_instance)
 		Cluster.release(preview_pool_key, preview_instance)
-		print("EntityStatsPanel: Released preview back to pool '%s'" % preview_pool_key)
 		preview_instance = null
 		preview_pool_key = ""
 	elif preview_instance:
-		print("EntityStatsPanel: Preview instance exists but missing container or pool_key")
+		push_error("EntityStatsPanel: Preview instance exists but missing container or pool_key")

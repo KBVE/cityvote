@@ -1,16 +1,25 @@
-[gd_scene load_steps=19 format=3 uid="uid://b0v1xvyqj8y3h"]
+[gd_scene load_steps=23 format=3 uid="uid://b0v1xvyqj8y3h"]
 
 [ext_resource type="Script" uid="uid://dm4b85w81o2cn" path="res://view/main/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://c8n2x3nak4p1j" path="res://nodes/map/hex/hex.tscn" id="2_hex"]
 [ext_resource type="Shader" uid="uid://bsqdm8lw8oxis" path="res://shader/crt.gdshader" id="3_crt"]
 [ext_resource type="Shader" uid="uid://foef4n8nqebi" path="res://shader/godrays.gdshader" id="4_godrays"]
 [ext_resource type="Shader" uid="uid://ct8veipovl0f5" path="res://shader/fog_of_war.gdshader" id="5_fog"]
-[ext_resource type="Shader" path="res://shader/smoke_atmosphere.gdshader" id="6_smoke"]
 [ext_resource type="PackedScene" uid="uid://dq8h7k5nan2p4" path="res://view/hand/play_hand.tscn" id="6_hand"]
-[ext_resource type="Shader" path="res://shader/water.gdshader" id="7_water"]
-[ext_resource type="PackedScene" uid="uid://c7n9m5p8q2r4t" path="res://view/hud/tile_info.tscn" id="7_tile_info"]
-[ext_resource type="PackedScene" uid="uid://c8n9m0p1q2r5u" path="res://view/hud/topbar/topbar_uiux.tscn" id="8_topbar"]
-[ext_resource type="PackedScene" uid="uid://stats_panel_001" path="res://view/hud/entity_stats_panel.tscn" id="9_stats_panel"]
+[ext_resource type="Shader" uid="uid://cqr3l8a663r1n" path="res://shader/smoke_atmosphere.gdshader" id="6_smoke"]
+[ext_resource type="PackedScene" uid="uid://c7oam5p8q2r4t" path="res://view/hud/tile_info.tscn" id="7_tile_info"]
+[ext_resource type="Shader" uid="uid://d0a4k1ojjfv43" path="res://shader/water.gdshader" id="7_water"]
+[ext_resource type="PackedScene" uid="uid://c8oam0p1q2r5u" path="res://view/hud/topbar/topbar_uiux.tscn" id="8_topbar"]
+[ext_resource type="PackedScene" path="res://view/hud/entity_stats_panel.tscn" id="9_stats_panel"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
+shader = ExtResource("7_water")
+shader_parameter/WATER_COL = Color(0.176471, 0.635294, 0.85098, 1)
+shader_parameter/WATER2_COL = Color(0.0588235, 0.529412, 0.776471, 1)
+shader_parameter/FOAM_COL = Color(0.87451, 0.988235, 1, 1)
+shader_parameter/distortion_speed = 2.0
+shader_parameter/tile = Vector2(5, 5)
+shader_parameter/offset = Vector2(0, 0)
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_godrays"]
 frequency = 0.5
@@ -19,19 +28,6 @@ fractal_octaves = 3
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_godrays"]
 noise = SubResource("FastNoiseLite_godrays")
 seamless = true
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_smoke"]
-noise_type = 0
-frequency = 0.5
-fractal_octaves = 3
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_smoke"]
-width = 160
-height = 90
-seamless = true
-seamless_blend_skirt = 1.0
-normalize = false
-noise = SubResource("FastNoiseLite_smoke")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_godrays"]
 shader = ExtResource("4_godrays")
@@ -88,22 +84,26 @@ shader_parameter/cloud_speed = Vector2(0.01, 0.005)
 shader_parameter/cloud_scale = 2.0
 shader_parameter/turbulence = 0.5
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_smoke"]
+noise_type = 0
+frequency = 0.5
+fractal_octaves = 3
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_smoke"]
+width = 160
+height = 90
+noise = SubResource("FastNoiseLite_smoke")
+seamless = true
+normalize = false
+seamless_blend_skirt = 1.0
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_smoke_atmosphere"]
 shader = ExtResource("6_smoke")
+shader_parameter/noise_texture = SubResource("NoiseTexture2D_smoke")
 shader_parameter/density = 0.4
 shader_parameter/speed = Vector2(0.02, 0.01)
 shader_parameter/inner_radius = 0.35
 shader_parameter/outer_radius = 0.85
-shader_parameter/noise_texture = SubResource("NoiseTexture2D_smoke")
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
-shader = ExtResource("7_water")
-shader_parameter/WATER_COL = Color(0.176471, 0.635294, 0.85098, 1)
-shader_parameter/WATER2_COL = Color(0.0588235, 0.529412, 0.776471, 1)
-shader_parameter/FOAM_COL = Color(0.87451, 0.988235, 1, 1)
-shader_parameter/distortion_speed = 2.0
-shader_parameter/tile = Vector2(5, 5)
-shader_parameter/offset = Vector2(0, 0)
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -166,7 +166,6 @@ offset_right = 1280.0
 offset_bottom = 720.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(1, 1, 1, 1)
 mouse_filter = 2
 
 [node name="SmokeAtmosphere" type="ColorRect" parent="."]
@@ -179,7 +178,6 @@ offset_right = 1280.0
 offset_bottom = 720.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(1, 1, 1, 1)
 mouse_filter = 2
 
 [node name="TileInfo" parent="." instance=ExtResource("7_tile_info")]

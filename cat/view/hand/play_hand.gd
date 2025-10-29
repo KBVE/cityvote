@@ -107,8 +107,8 @@ func _initialize() -> void:
 	else:
 		push_warning("PlayHand: Could not load Alagard font from Cache")
 
-	# Create swap indicator UI
-	_create_swap_indicator()
+	# Create swap indicator UI (await since it's async)
+	await _create_swap_indicator()
 
 	# Update card count
 	_update_card_count()
@@ -756,9 +756,16 @@ func _on_timer_reset() -> void:
 	# Hand has space - draw a card
 	var card = CardDeck.draw_card(deck_id)
 	if card:
-		add_card_to_hand(card.suit, card.value)
+		# Add the already-initialized card directly to hand
+		hand.append(card)
+		display_card(card, hand.size() - 1)
+		_update_card_count()
+
+		# Refresh fan layout to show new card properly
+		call_deferred("_refresh_card_positions")
+
 		# Send toast: Drew a card
-		Toast.show_toast("Drew: %s" % get_card_name(card.suit, card.value), 2.5)
+		Toast.show_toast("Drew: %s" % card.get_card_name(), 2.5)
 	else:
 		# No cards left in deck
 		Toast.show_toast("Deck is empty!", 2.5)
