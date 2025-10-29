@@ -173,10 +173,25 @@ func _update_highlight():
 
 # Register a card placed on a tile (accepts PooledCard which is now MeshInstance2D)
 func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, value: int) -> void:
+	# Get card_id from the sprite (works for both standard and custom cards)
+	var card_id = -1
+	if card_sprite.has_method("get_instance_shader_parameter"):
+		card_id = card_sprite.get_instance_shader_parameter("card_id")
+
+	# Generate ULID for the card
+	var ulid = UlidManager.register_entity(card_sprite, UlidManager.TYPE_CARD, {
+		"suit": suit,
+		"value": value,
+		"card_id": card_id,
+		"position": {"x": tile_coords.x, "y": tile_coords.y}
+	})
+
 	card_data[tile_coords] = {
 		"sprite": card_sprite,
 		"suit": suit,
-		"value": value
+		"value": value,
+		"card_id": card_id,
+		"ulid": ulid
 	}
 
 # Get card data at tile coordinates

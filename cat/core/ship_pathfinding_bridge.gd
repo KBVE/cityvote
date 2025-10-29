@@ -4,7 +4,7 @@ extends Node
 # Manages ship pathfinding requests and results
 
 var pathfinding_bridge: Node = null
-var pending_requests: Dictionary = {}  # ship_id -> callback
+var pending_requests: Dictionary = {}  # ship_ulid_hex -> callback (using hex string as key for Dictionary)
 
 # Map sync settings
 var sync_interval: float = 5.0  # Sync dirty tiles every 5 seconds
@@ -34,11 +34,14 @@ func _process(delta: float) -> void:
 		sync_dirty_tiles()
 		sync_timer = 0.0
 
-func _on_path_found(ship_id: int, path: Array, success: bool, cost: float) -> void:
+func _on_path_found(ship_ulid: PackedByteArray, path: Array, success: bool, cost: float) -> void:
+	# Convert ULID to hex for Dictionary lookup
+	var ulid_key = UlidManager.to_hex(ship_ulid)
+
 	# Call callback if registered
-	if pending_requests.has(ship_id):
-		var callback = pending_requests[ship_id]
-		pending_requests.erase(ship_id)
+	if pending_requests.has(ulid_key):
+		var callback = pending_requests[ulid_key]
+		pending_requests.erase(ulid_key)
 
 		# Convert path to Vector2i array
 		var path_coords: Array[Vector2i] = []
@@ -81,47 +84,49 @@ func init_map(hex_map: Node) -> void:
 	pathfinding_bridge.init_map(tiles)
 
 ## Check if ship can accept a path request (not already moving)
-func can_ship_request_path(ship_id: int) -> bool:
+func can_ship_request_path(ship_ulid: PackedByteArray) -> bool:
 	if not pathfinding_bridge:
 		return false
-	return pathfinding_bridge.can_ship_request_path(ship_id)
+	return pathfinding_bridge.can_ship_request_path(ship_ulid)
 
 ## Set ship state to MOVING (call when ship starts following path)
-func set_ship_moving(ship_id: int) -> void:
+func set_ship_moving(ship_ulid: PackedByteArray) -> void:
 	if pathfinding_bridge:
-		pathfinding_bridge.set_ship_moving(ship_id)
+		pathfinding_bridge.set_ship_moving(ship_ulid)
 
 ## Set ship state to IDLE (call when ship stops moving)
-func set_ship_idle(ship_id: int) -> void:
+func set_ship_idle(ship_ulid: PackedByteArray) -> void:
 	if pathfinding_bridge:
-		pathfinding_bridge.set_ship_idle(ship_id)
+		pathfinding_bridge.set_ship_idle(ship_ulid)
 
 ## Request pathfinding (async, callback receives result)
-func request_path(ship_id: int, start: Vector2i, goal: Vector2i, avoid_ships: bool, callback: Callable) -> void:
+func request_path(ship_ulid: PackedByteArray, start: Vector2i, goal: Vector2i, avoid_ships: bool, callback: Callable) -> void:
 	if not pathfinding_bridge:
 		push_error("ShipPathfindingBridge: Not initialized!")
 		return
 
 	# Check if ship can accept request
-	if not can_ship_request_path(ship_id):
+	if not can_ship_request_path(ship_ulid):
 		return
 
-	# Register callback
-	pending_requests[ship_id] = callback
+	# Register callback (using hex string as Dictionary key)
+	var ulid_key = UlidManager.to_hex(ship_ulid)
+	pending_requests[ulid_key] = callback
 
 	# Send request to Rust (Rust will mark ship as PATHFINDING)
-	pathfinding_bridge.request_path(ship_id, start.x, start.y, goal.x, goal.y, avoid_ships)
+	pathfinding_bridge.request_path(ship_ulid, start.x, start.y, goal.x, goal.y, avoid_ships)
 
 ## Update ship position (call when ship moves)
-func update_ship_position(ship_id: int, position: Vector2i) -> void:
+func update_ship_position(ship_ulid: PackedByteArray, position: Vector2i) -> void:
 	if pathfinding_bridge:
-		pathfinding_bridge.update_ship_position(ship_id, position.x, position.y)
+		pathfinding_bridge.update_ship_position(ship_ulid, position.x, position.y)
 
 ## Remove ship (call when ship is destroyed)
-func remove_ship(ship_id: int) -> void:
+func remove_ship(ship_ulid: PackedByteArray) -> void:
 	if pathfinding_bridge:
-		pathfinding_bridge.remove_ship(ship_id)
-		pending_requests.erase(ship_id)
+		var ulid_key = UlidManager.to_hex(ship_ulid)
+		pathfinding_bridge.remove_ship(ship_ulid)
+		pending_requests.erase(ulid_key)
 
 ## Mark tile as dirty (will sync on next interval)
 func mark_tile_dirty(coord: Vector2i, tile_type: int) -> void:

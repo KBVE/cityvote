@@ -32,6 +32,28 @@ func show_path(path: Array[Vector2i], tile_map_ref: TileMap, ship_ref: Node2D) -
 	if path.size() < 2:
 		return
 
+	# Get entity ULID and name for waypoint markers
+	var entity_ulid = PackedByteArray()
+	var entity_name = "Unknown"
+	if ship and "ulid" in ship:
+		entity_ulid = ship.ulid
+
+		# Determine entity name
+		if ship is Ship:
+			entity_name = "Viking Ship"
+		elif ship is Jezza:
+			entity_name = "Jezza Raptor"
+		elif ship is NPC:
+			var script = ship.get_script()
+			if script:
+				var class_name_val = script.get_global_name()
+				if not class_name_val.is_empty():
+					entity_name = class_name_val
+				else:
+					entity_name = "NPC"
+			else:
+				entity_name = "NPC"
+
 	# Skip first waypoint (ship's current position)
 	for i in range(1, path.size()):
 		var tile_coord = path[i]
@@ -41,6 +63,8 @@ func show_path(path: Array[Vector2i], tile_map_ref: TileMap, ship_ref: Node2D) -
 		var marker = WaypointMarkerScene.instantiate()
 		marker.position = world_pos
 		marker.waypoint_index = i
+		marker.entity_ulid = entity_ulid  # Store ULID for click handling
+		marker.entity_name = entity_name  # Store name for display
 
 		# Color gradient from cyan to blue
 		var t = float(i) / float(path.size() - 1)

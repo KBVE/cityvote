@@ -56,7 +56,23 @@ var sector_edge_buffer: float = 5.0
 # Reference to occupied tiles for collision detection
 var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
 
+# ULID for persistent entity tracking
+var ulid: PackedByteArray = PackedByteArray()
+
 func _ready():
+	# Register with ULID system
+	if ulid.is_empty():
+		ulid = UlidManager.register_entity(self, UlidManager.TYPE_NPC, {
+			"npc_type": get_class(),
+			"position": position,
+			"state": current_state
+		})
+		print("NPC registered with ULID: %s" % UlidManager.to_hex(ulid))
+
+	# Register with stats system (deferred to ensure StatsManager is ready)
+	if StatsManager:
+		call_deferred("_register_stats")
+
 	# Initialize current angle based on initial direction
 	current_angle = direction_to_godot_angle(direction)
 	target_angle = current_angle
@@ -310,3 +326,8 @@ func _process(delta):
 
 	# Inertial angular steering with damping
 	_update_angular_motion(delta)
+
+# Helper function to register stats (called deferred to ensure StatsManager is ready)
+func _register_stats() -> void:
+	if StatsManager:
+		StatsManager.register_entity(self, "npc")

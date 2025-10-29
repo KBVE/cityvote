@@ -29,6 +29,9 @@ var camera_edge_threshold: float = 250.0  # Distance from center before camera s
 var hand: Array[PooledCard] = []
 var deck_id: int = -1  # Deck ID from CardDeck
 
+# Hand size limit
+var MAX_HAND: int = 12  # Maximum cards in hand (can be upgraded later)
+
 # Card size
 var card_width: float = 64.0
 var card_height: float = 90.0
@@ -76,6 +79,10 @@ func _initialize() -> void:
 	# Block input from passing through the entire hand UI to prevent accidental clicks on hex tiles
 	hand_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	card_container.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	# Connect to GameTimer for auto-draw
+	if GameTimer:
+		GameTimer.timer_reset.connect(_on_timer_reset)
 
 	# Connect hover signals for panel
 	hand_panel.mouse_entered.connect(_on_hand_panel_mouse_entered)
@@ -131,7 +138,7 @@ func draw_initial_hand() -> void:
 # Update card count label
 func _update_card_count() -> void:
 	if card_count_label:
-		card_count_label.text = "Cards: %d" % hand.size()
+		card_count_label.text = "Cards: %d / %d" % [hand.size(), MAX_HAND]
 
 # Add a card to the hand (for manual testing/debugging)
 func add_card_to_hand(suit: int, value: int) -> void:
@@ -142,6 +149,9 @@ func add_card_to_hand(suit: int, value: int) -> void:
 		hand.append(card)
 		display_card(card, hand.size() - 1)
 		_update_card_count()
+
+		# Refresh fan layout to show new card properly
+		call_deferred("_refresh_card_positions")
 	else:
 		push_error("PlayHand: Failed to acquire card from pool")
 
@@ -157,6 +167,12 @@ func _refresh_card_positions() -> void:
 	var container_width = card_container.size.x
 	var container_center_x = container_width / 2.0
 
+	# Dynamic spacing: reduce spacing when hand is fuller to keep all cards visible
+	var dynamic_spacing = card_spacing
+	if total_cards > 8:
+		# For 9-12 cards, reduce spacing to fit them all
+		dynamic_spacing = min(card_spacing, (container_width - 100) / total_cards)
+
 	for i in range(total_cards):
 		var card_wrapper = card_container.get_child(i)
 		var offset_from_center = i - center_index
@@ -164,8 +180,8 @@ func _refresh_card_positions() -> void:
 		# Set pivot point to bottom center of card for rotation
 		card_wrapper.pivot_offset = Vector2(card_width / 2.0, card_height)
 
-		# Calculate horizontal position (spread cards with card_spacing)
-		var base_x = container_center_x + (offset_from_center * card_spacing) - (card_width / 2.0)
+		# Calculate horizontal position (spread cards with dynamic spacing)
+		var base_x = container_center_x + (offset_from_center * dynamic_spacing) - (card_width / 2.0)
 		card_wrapper.position.x = base_x
 
 		# Rotate card for fanning effect
@@ -374,6 +390,11 @@ func _event_confirm_place() -> void:
 	if card_state != CardState.PREVIEW:
 		return  # Can only place from PREVIEW state
 
+	# Check if mouse is over the hand UI - prevent accidental placement
+	if _is_mouse_over_hand_ui():
+		print("Cannot place card: mouse is over hand UI")
+		return
+
 	if preview_ghost_target_tile != Vector2i(-1, -1):
 		_place_card_on_tile(preview_ghost_target_tile)
 		card_state = CardState.PLACED
@@ -516,9 +537,7 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	# Transfer the actual card sprite from hand to board (reuse same sprite!)
 	var card_sprite = held_card_pooled  # The PooledCard sprite
 
-	# Remove from hand wrapper
-	held_card.remove_child(card_sprite)
-
+	# Card is already a child of hex_map from the preview ghost, so just reset properties
 	# Reset sprite properties for board placement
 	card_sprite.position = world_pos
 	card_sprite.rotation = 0
@@ -528,9 +547,6 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	# Note: Wave shader disabled for cards because it would override the card atlas material
 	# and lose the card_id instance parameter. Cards keep their atlas material so they
 	# display correctly. If wave effect is needed, a combined shader would be required.
-
-	# Add to hex map
-	hex_map.add_child(card_sprite)
 
 	# Register card with hex map (using PooledCard's suit/value)
 	hex_map.place_card_on_tile(tile_coords, card_sprite, card_sprite.suit, card_sprite.value)
@@ -554,7 +570,8 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	held_card = null
 	held_card_pooled = null
 
-	print("Card placed on tile ", tile_coords, " at world pos ", world_pos)
+	print("Car
+	d placed on tile ", tile_coords, " at world pos ", world_pos)
 
 func _return_card_to_source() -> void:
 	if held_card == null or held_card_pooled == null:
@@ -600,3 +617,27 @@ func redraw_hand() -> void:
 func get_card_name(suit: int, value: int) -> String:
 	# Use CardAtlas helper for consistent card naming
 	return CardAtlas.get_card_name(suit, value)
+
+# Check if mouse is currently over the hand UI
+func _is_mouse_over_hand_ui() -> bool:
+	var mouse_pos = get_viewport().get_mouse_position()
+	var hand_rect = hand_panel.get_global_rect()
+	return hand_rect.has_point(mouse_pos)
+
+# Auto-draw card when timer resets (every 60 seconds)
+func _on_timer_reset() -> void:
+	# Check if hand is at max capacity
+	if hand.size() >= MAX_HAND:
+		# Send toast: Hand is full
+		Toast.show_toast("Hand is full! Use a card to draw more.", 3.0)
+		return
+
+	# Hand has space - draw a card
+	var card = CardDeck.draw_card(deck_id)
+	if card:
+		add_card_to_hand(card.suit, card.value)
+		# Send toast: Drew a card
+		Toast.show_toast("Drew: %s" % get_card_name(card.suit, card.value), 2.5)
+	else:
+		# No cards left in deck
+		Toast.show_toast("Deck is empty!", 2.5)

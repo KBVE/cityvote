@@ -14,6 +14,7 @@ extends Node2D
 @onready var play_hand = $SubViewport/PlayHand
 @onready var tile_info = $TileInfo
 @onready var topbar_uiux = $TopbarUIUX
+@onready var entity_stats_panel = $EntityStatsPanel
 #; TEST
 
 var camera_speed = 300.0
@@ -211,6 +212,40 @@ func _process(delta):
 		_move_test_jezzas()
 
 func _input(event):
+	# Handle right-click to open entity stats panel
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			# Get world position of click
+			var world_pos = camera.get_global_mouse_position()
+
+			# Find entity near click position (spatial query with generous radius)
+			var entity = _find_entity_near_position(world_pos, 32.0)  # 32px search radius
+
+			if entity:
+				# Get entity name
+				var entity_name = "Unknown"
+				if entity is Ship:
+					entity_name = "Viking Ship"
+				elif entity is Jezza:
+					entity_name = "Jezza Raptor"
+				elif entity is NPC:
+					var script = entity.get_script()
+					if script:
+						var class_name_val = script.get_global_name()
+						if not class_name_val.is_empty():
+							entity_name = class_name_val
+						else:
+							entity_name = "NPC"
+					else:
+						entity_name = "NPC"
+
+				# Show stats panel
+				if entity_stats_panel and "ulid" in entity:
+					entity_stats_panel.show_entity_stats(entity, entity.ulid, entity_name)
+					get_viewport().set_input_as_handled()
+
+				return
+
 	# Handle mouse drag panning (works alongside auto-follow)
 	# Left-click drag works for camera since card placement uses double-click
 	if event is InputEventMouseButton:
@@ -345,15 +380,15 @@ func _move_test_vikings():
 				continue  # No valid tiles found
 
 		# Use Rust pathfinding (async via callback)
-		var ship_id = viking.get_instance_id()
+		var ship_ulid = viking.ulid
 		var pathfinding_bridge = get_node("/root/ShipPathfindingBridge")
 
 		# Update ship position in Rust
-		pathfinding_bridge.update_ship_position(ship_id, current_tile)
+		pathfinding_bridge.update_ship_position(ship_ulid, current_tile)
 
 		# Request pathfinding from Rust
 		pathfinding_bridge.request_path(
-			ship_id,
+			ship_ulid,
 			current_tile,
 			destination,
 			true,  # avoid_ships = true
@@ -367,7 +402,7 @@ func _move_test_vikings():
 					var final_destination = path[path.size() - 1]
 
 					# Mark ship as MOVING in Rust
-					pathfinding_bridge.set_ship_moving(ship_id)
+					pathfinding_bridge.set_ship_moving(ship_ulid)
 
 					# Follow the full path calculated by Rust
 					viking.follow_path(
@@ -379,11 +414,11 @@ func _move_test_vikings():
 							viking_data["tile"] = final_destination
 
 							# Update Rust with final position and set to IDLE
-							pathfinding_bridge.update_ship_position(ship_id, final_destination)
-							pathfinding_bridge.set_ship_idle(ship_id),
+							pathfinding_bridge.update_ship_position(ship_ulid, final_destination)
+							pathfinding_bridge.set_ship_idle(ship_ulid),
 						func(waypoint: Vector2i):  # On each waypoint reached
 							# Update Rust as ship moves through path
-							pathfinding_bridge.update_ship_position(ship_id, waypoint)
+							pathfinding_bridge.update_ship_position(ship_ulid, waypoint)
 					)
 		)
 
@@ -549,3 +584,28 @@ func _spawn_test_jezza():
 			print("Failed to acquire Jezza ", i, " from Cluster")
 
 	print("Total Jezza raptors spawned: 3")
+
+# Find entity near a world position (spatial query)
+func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Node:
+	var closest_entity = null
+	var closest_distance = search_radius
+
+	# Search through all ships
+	for ship_data in test_vikings:
+		var ship = ship_data["ship"]
+		if ship and is_instance_valid(ship):
+			var distance = ship.position.distance_to(world_pos)
+			if distance < closest_distance:
+				closest_distance = distance
+				closest_entity = ship
+
+	# Search through all NPCs
+	for npc_data in test_jezzas:
+		var npc = npc_data["npc"]
+		if npc and is_instance_valid(npc):
+			var distance = npc.position.distance_to(world_pos)
+			if distance < closest_distance:
+				closest_distance = distance
+				closest_entity = npc
+
+	return closest_entity

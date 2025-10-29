@@ -5,9 +5,10 @@ class_name TileInfo
 @onready var tile_type_label: Label = $MarginContainer/VBoxContainer/TileTypeLabel
 @onready var world_pos_label: Label = $MarginContainer/VBoxContainer/WorldPosLabel
 @onready var card_label: Label = $MarginContainer/VBoxContainer/CardLabel
+@onready var ulid_label: Label = $MarginContainer/VBoxContainer/ULIDLabel
 
-# CardGhost is now a sibling in Main scene, not a child
-var card_ghost: TextureRect = null
+# CardGhost is a pooled card for displaying card preview
+var card_ghost = null  # PooledCard instance
 
 # Reference to hex map
 var hex_map = null
@@ -16,9 +17,15 @@ func _ready() -> void:
 	# Start visible for testing
 	visible = true
 
-	# Get CardGhost reference from parent (Main scene)
-	card_ghost = get_parent().get_node("CardGhost")
+	# Create a pooled card for the ghost preview (reused, not destroyed)
+	card_ghost = Cluster.acquire("playing_card")
 	if card_ghost:
+		# Add as sibling to match the old CardGhost position (deferred to avoid setup conflicts)
+		get_parent().call_deferred("add_child", card_ghost)
+		card_ghost.name = "CardGhost"
+		card_ghost.position = Vector2(1155, 485)  # Center of old TextureRect (1110+45, 440+45)
+		card_ghost.scale = Vector2(0.94, 0.94)  # Scale to fit ~90px (96 * 0.94)
+		card_ghost.z_index = 101
 		card_ghost.visible = false
 
 	# Apply Alagard font to all labels
@@ -98,36 +105,72 @@ func _apply_fonts() -> void:
 	tile_type_label.add_theme_font_override("font", font)
 	world_pos_label.add_theme_font_override("font", font)
 	card_label.add_theme_font_override("font", font)
+	ulid_label.add_theme_font_override("font", font)
 
 func _show_card_info(card_data: Dictionary) -> void:
-	# Show card ghost image
-	if card_ghost and card_data.has("sprite"):
-		var sprite = card_data["sprite"]
-		card_ghost.texture = sprite.texture
+	# Show card ghost image using PooledCard
+	if card_ghost and card_data.has("card_id"):
+		var card_id = card_data["card_id"]
+		card_ghost.set_instance_shader_parameter("card_id", card_id)
 		card_ghost.visible = true
 		card_ghost.modulate = Color(1, 1, 1, 0.8)  # Slightly transparent
 
 	# Show card name
-	var card_name = get_card_name(card_data.suit, card_data.value)
+	var card_name = get_card_name_from_data(card_data)
 	card_label.text = "Card: %s" % card_name
 	card_label.visible = true
+
+	# Show ULID if available
+	if card_data.has("ulid"):
+		var ulid_hex = UlidManager.to_hex(card_data["ulid"])
+		# Show abbreviated ULID (first 8 chars)
+		ulid_label.text = "ULID: %s..." % ulid_hex.substr(0, 8)
+		ulid_label.visible = true
+	else:
+		ulid_label.text = "ULID: --"
+		ulid_label.visible = true
+
+func get_card_name_from_data(card_data: Dictionary) -> String:
+	# Use card_id if available for accurate naming (handles custom cards)
+	if card_data.has("card_id"):
+		var card_id = card_data["card_id"]
+		if card_id == CardAtlas.CARD_VIKINGS:
+			return "Vikings"
+		elif card_id == CardAtlas.CARD_DINO:
+			return "Dino"
+		elif card_id >= 0 and card_id < CardAtlas.STANDARD_CARD_COUNT:
+			# Calculate suit and value from card_id
+			var suit = card_id / CardAtlas.CARDS_PER_SUIT
+			var value = (card_id % CardAtlas.CARDS_PER_SUIT) + 1
+			return get_card_name(suit, value)
+
+	# Fallback to suit/value if card_id not available
+	if card_data.has("suit") and card_data.has("value"):
+		return get_card_name(card_data["suit"], card_data["value"])
+
+	return "Unknown Card"
 
 func _hide_card_info() -> void:
 	if card_ghost:
 		card_ghost.visible = false
 	card_label.text = "Card: --"
+	ulid_label.text = "ULID: --"
 
 func get_card_name(suit: int, value: int) -> String:
+	# Check if it's a custom card (suit = -1, value = -1)
+	if suit == -1 and value == -1:
+		return "Custom Card"  # We don't have the card_id here to determine Vikings/Dino
+
 	var suit_name = ""
 	match suit:
-		0:  # Spades
-			suit_name = "Spades"
-		1:  # Hearts
-			suit_name = "Hearts"
-		2:  # Diamonds
-			suit_name = "Diamonds"
-		3:  # Clubs
+		0:  # Clubs
 			suit_name = "Clubs"
+		1:  # Diamonds
+			suit_name = "Diamonds"
+		2:  # Hearts
+			suit_name = "Hearts"
+		3:  # Spades
+			suit_name = "Spades"
 
 	var value_name = ""
 	match value:

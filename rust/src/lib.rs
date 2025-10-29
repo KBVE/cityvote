@@ -13,6 +13,11 @@ macro_rules! debug_log {
 
 mod npc;
 mod ui;
+mod utility;
+mod storage;
+mod card;
+mod economy;
+mod stats;
 
 struct Godo;
 

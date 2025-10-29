@@ -25,8 +25,6 @@ impl INode for ShipPathfindingBridge {
     fn process(&mut self, _delta: f64) {
         // Poll for pathfinding results every frame
         while let Some(result) = pathfinding::get_result() {
-            godot_print!("ShipPathfindingBridge: Path found for ship {}", result.ship_id);
-
             // Convert path to GDScript array
             let mut path_array = Array::new();
             for (q, r) in result.path {
@@ -36,11 +34,14 @@ impl INode for ShipPathfindingBridge {
                 path_array.push(&coord);  // Push by reference
             }
 
+            // Convert ULID Vec<u8> to PackedByteArray
+            let ship_ulid = PackedByteArray::from(&result.ship_ulid[..]);
+
             // Emit signal with result
             self.base_mut().emit_signal(
                 "path_found",
                 &[
-                    result.ship_id.to_variant(),
+                    ship_ulid.to_variant(),
                     path_array.to_variant(),
                     result.success.to_variant(),
                     result.cost.to_variant(),
@@ -54,7 +55,7 @@ impl INode for ShipPathfindingBridge {
 impl ShipPathfindingBridge {
     /// Signal emitted when path is found
     #[signal]
-    fn path_found(ship_id: u64, path: Array<Dictionary>, success: bool, cost: f32);
+    fn path_found(ship_ulid: PackedByteArray, path: Array<Dictionary>, success: bool, cost: f32);
 
     /// Initialize map cache with full tile data
     #[func]
@@ -122,39 +123,45 @@ impl ShipPathfindingBridge {
 
     /// Update ship position
     #[func]
-    fn update_ship_position(&mut self, ship_id: u64, q: i32, r: i32) {
-        pathfinding::update_ship_position(ship_id, (q, r));
+    fn update_ship_position(&mut self, ship_ulid: PackedByteArray, q: i32, r: i32) {
+        let ulid_bytes: Vec<u8> = ship_ulid.to_vec();
+        pathfinding::update_ship_position(ulid_bytes, (q, r));
     }
 
     /// Set ship state to MOVING
     #[func]
-    fn set_ship_moving(&mut self, ship_id: u64) {
-        pathfinding::set_ship_moving(ship_id);
+    fn set_ship_moving(&mut self, ship_ulid: PackedByteArray) {
+        let ulid_bytes: Vec<u8> = ship_ulid.to_vec();
+        pathfinding::set_ship_moving(ulid_bytes);
     }
 
     /// Set ship state to IDLE
     #[func]
-    fn set_ship_idle(&mut self, ship_id: u64) {
-        pathfinding::set_ship_idle(ship_id);
+    fn set_ship_idle(&mut self, ship_ulid: PackedByteArray) {
+        let ulid_bytes: Vec<u8> = ship_ulid.to_vec();
+        pathfinding::set_ship_idle(ulid_bytes);
     }
 
     /// Check if ship can accept a new path request (not already moving/pathfinding)
     #[func]
-    fn can_ship_request_path(&self, ship_id: u64) -> bool {
-        pathfinding::can_ship_accept_path_request(ship_id)
+    fn can_ship_request_path(&self, ship_ulid: PackedByteArray) -> bool {
+        let ulid_bytes: Vec<u8> = ship_ulid.to_vec();
+        pathfinding::can_ship_accept_path_request(ulid_bytes)
     }
 
     /// Remove ship from tracking
     #[func]
-    fn remove_ship(&mut self, ship_id: u64) {
-        pathfinding::remove_ship(ship_id);
+    fn remove_ship(&mut self, ship_ulid: PackedByteArray) {
+        let ulid_bytes: Vec<u8> = ship_ulid.to_vec();
+        pathfinding::remove_ship(ulid_bytes);
     }
 
     /// Request pathfinding for a ship
     #[func]
-    fn request_path(&mut self, ship_id: u64, start_q: i32, start_r: i32, goal_q: i32, goal_r: i32, avoid_ships: bool) {
+    fn request_path(&mut self, ship_ulid: PackedByteArray, start_q: i32, start_r: i32, goal_q: i32, goal_r: i32, avoid_ships: bool) {
+        let ulid_bytes: Vec<u8> = ship_ulid.to_vec();
         let request = PathRequest {
-            ship_id,
+            ship_ulid: ulid_bytes,
             start: (start_q, start_r),
             goal: (goal_q, goal_r),
             avoid_ships,

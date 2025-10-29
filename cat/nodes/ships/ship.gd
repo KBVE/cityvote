@@ -26,10 +26,12 @@ var ship_sprites: Array[Texture2D] = []
 
 # Movement state
 var is_moving: bool = false
+var is_rotating_to_target: bool = false  # Rotating before moving
 var move_start_pos: Vector2 = Vector2.ZERO
 var move_target_pos: Vector2 = Vector2.ZERO
 var move_progress: float = 0.0
 var move_speed: float = 3.0  # Movement speed multiplier
+var rotation_threshold: float = 5.0  # Degrees - how close to target angle before starting movement
 
 # Path following
 var current_path: Array[Vector2i] = []  # Tile coordinates of path to follow
@@ -47,7 +49,22 @@ var sector_edge_buffer: float = 5.0  # Degrees of hysteresis to prevent frame ji
 # Reference to other ships for collision detection
 var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
 
+# ULID for persistent entity tracking
+var ulid: PackedByteArray = PackedByteArray()
+
 func _ready():
+	# Register with ULID system
+	if ulid.is_empty():
+		ulid = UlidManager.register_entity(self, UlidManager.TYPE_SHIP, {
+			"ship_type": get_class(),
+			"position": position
+		})
+		print("Ship registered with ULID: %s" % UlidManager.to_hex(ulid))
+
+	# Register with stats system (deferred to ensure StatsManager is ready)
+	if StatsManager:
+		call_deferred("_register_stats")
+
 	# Initialize current angle based on initial direction
 	current_angle = direction_to_godot_angle(direction)
 	target_angle = current_angle
@@ -151,18 +168,28 @@ func _update_angular_motion(delta: float):
 
 # Start moving to a target position
 func move_to(target_pos: Vector2):
-	if is_moving:
-		return  # Already moving
+	if is_moving or is_rotating_to_target:
+		return  # Already moving or rotating
 
 	move_start_pos = position
 	move_target_pos = target_pos
 	move_progress = 0.0
-	is_moving = true
 
-	# Set initial target angle based on movement vector
+	# Set target angle based on movement vector
 	var direction_vec = target_pos - position
 	if direction_vec.length() > 0:
 		target_angle = fmod(rad_to_deg(direction_vec.angle()) + 360.0, 360.0)
+
+		# Check if we need to rotate first
+		var angle_diff = abs(shortest_angle_deg(current_angle, target_angle))
+		if angle_diff > rotation_threshold:
+			# Start rotating phase - don't move yet
+			is_rotating_to_target = true
+			is_moving = false
+		else:
+			# Close enough, start moving immediately
+			is_rotating_to_target = false
+			is_moving = true
 
 # Start following a path (array of tile coordinates)
 func follow_path(path: Array[Vector2i], tile_map: TileMap, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
@@ -211,6 +238,14 @@ func _advance_to_next_waypoint():
 		move_to(next_pos)
 
 func _process(delta):
+	# Handle rotation phase (before moving)
+	if is_rotating_to_target:
+		var angle_diff = abs(shortest_angle_deg(current_angle, target_angle))
+		if angle_diff <= rotation_threshold:
+			# Rotation complete, start moving
+			is_rotating_to_target = false
+			is_moving = true
+
 	# Smooth movement interpolation
 	if is_moving:
 		move_progress += delta * move_speed
@@ -265,3 +300,8 @@ func _process(delta):
 
 	# Inertial angular steering with damping
 	_update_angular_motion(delta)
+
+# Helper function to register stats (called deferred to ensure StatsManager is ready)
+func _register_stats() -> void:
+	if StatsManager:
+		StatsManager.register_entity(self, "ship")

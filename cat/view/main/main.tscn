@@ -10,6 +10,7 @@
 [ext_resource type="Shader" path="res://shader/water.gdshader" id="7_water"]
 [ext_resource type="PackedScene" uid="uid://c7n9m5p8q2r4t" path="res://view/hud/tile_info.tscn" id="7_tile_info"]
 [ext_resource type="PackedScene" uid="uid://c8n9m0p1q2r5u" path="res://view/hud/topbar/topbar_uiux.tscn" id="8_topbar"]
+[ext_resource type="PackedScene" uid="uid://stats_panel_001" path="res://view/hud/entity_stats_panel.tscn" id="9_stats_panel"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_godrays"]
 frequency = 0.5
@@ -197,3 +198,6 @@ stretch_mode = 5
 
 [node name="TopbarUIUX" parent="." instance=ExtResource("8_topbar")]
 z_index = 102
+
+[node name="EntityStatsPanel" parent="." instance=ExtResource("9_stats_panel")]
+z_index = 103

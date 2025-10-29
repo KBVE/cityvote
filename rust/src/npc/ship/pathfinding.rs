@@ -96,7 +96,7 @@ pub struct ShipData {
 /// Request for pathfinding
 #[derive(Debug, Clone)]
 pub struct PathRequest {
-    pub ship_id: u64,
+    pub ship_ulid: Vec<u8>,  // 16-byte ULID for ship identification
     pub start: HexCoord,
     pub goal: HexCoord,
     pub avoid_ships: bool,  // Whether to avoid other ships
@@ -105,7 +105,7 @@ pub struct PathRequest {
 /// Result of pathfinding
 #[derive(Debug, Clone)]
 pub struct PathResult {
-    pub ship_id: u64,
+    pub ship_ulid: Vec<u8>,  // 16-byte ULID for ship identification
     pub path: Vec<HexCoord>,
     pub success: bool,
     pub cost: f32,
@@ -123,7 +123,8 @@ static MAP_CACHE: once_cell::sync::Lazy<Arc<DashMap<HexCoord, TileType>>> =
     once_cell::sync::Lazy::new(|| Arc::new(DashMap::new()));
 
 /// Ship data cache (position + state, thread-safe)
-static SHIP_DATA: once_cell::sync::Lazy<Arc<DashMap<u64, ShipData>>> =
+/// Ship tracking using ULID (16-byte Vec<u8>) as key
+static SHIP_DATA: once_cell::sync::Lazy<Arc<DashMap<Vec<u8>, ShipData>>> =
     once_cell::sync::Lazy::new(|| Arc::new(DashMap::new()));
 
 /// Request queue (GDScript → Rust)
@@ -211,7 +212,7 @@ fn find_path_astar(request: &PathRequest) -> PathResult {
     if !is_in_bounds(start) {
         toast::send_message(format!("Ship pathfinding: start coord {:?} out of bounds!", start));
         return PathResult {
-            ship_id: request.ship_id,
+            ship_ulid: request.ship_ulid.clone(),
             path: vec![],
             success: false,
             cost: 0.0,
@@ -220,7 +221,7 @@ fn find_path_astar(request: &PathRequest) -> PathResult {
     if !is_in_bounds(goal) {
         toast::send_message(format!("Ship pathfinding: goal coord {:?} out of bounds!", goal));
         return PathResult {
-            ship_id: request.ship_id,
+            ship_ulid: request.ship_ulid.clone(),
             path: vec![],
             success: false,
             cost: 0.0,
@@ -230,7 +231,7 @@ fn find_path_astar(request: &PathRequest) -> PathResult {
     // Check if start and goal are walkable
     if !is_tile_walkable(start) || !is_tile_walkable(goal) {
         return PathResult {
-            ship_id: request.ship_id,
+            ship_ulid: request.ship_ulid.clone(),
             path: vec![],
             success: false,
             cost: 0.0,
@@ -254,7 +255,7 @@ fn find_path_astar(request: &PathRequest) -> PathResult {
 
         // Goal reached
         if current == goal {
-            return reconstruct_path(&came_from, current, request.ship_id);
+            return reconstruct_path(&came_from, current, request.ship_ulid.clone());
         }
 
         // Already processed
@@ -295,10 +296,10 @@ fn find_path_astar(request: &PathRequest) -> PathResult {
 
     // No path found
     // Optional: Send toast notification for debugging
-    // toast::send_message(format!("Ship {}: No path found from {:?} to {:?}", request.ship_id, start, goal));
+    // toast::send_message(format!("Ship: No path found from {:?} to {:?}", start, goal));
 
     PathResult {
-        ship_id: request.ship_id,
+        ship_ulid: request.ship_ulid.clone(),
         path: vec![],
         success: false,
         cost: 0.0,
@@ -306,7 +307,7 @@ fn find_path_astar(request: &PathRequest) -> PathResult {
 }
 
 /// Reconstruct path from A* came_from map
-fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoord, ship_id: u64) -> PathResult {
+fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoord, ship_ulid: Vec<u8>) -> PathResult {
     let mut path = vec![current];
     let mut cost = 0.0;
 
@@ -319,7 +320,7 @@ fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoo
     path.reverse();
 
     PathResult {
-        ship_id,
+        ship_ulid,
         path,
         success: true,
         cost,
@@ -349,11 +350,11 @@ fn pathfinding_worker() {
 
         // Process requests
         if let Some(request) = PATH_REQUESTS.pop() {
-            let ship_id = request.ship_id;
+            let ship_ulid = request.ship_ulid.clone();
             let result = find_path_astar(&request);
 
             // Clear pathfinding flag when result is ready
-            if let Some(mut data) = SHIP_DATA.get_mut(&ship_id) {
+            if let Some(mut data) = SHIP_DATA.get_mut(&ship_ulid) {
                 data.state.clear_pathfinding();
             }
 
@@ -396,8 +397,8 @@ pub fn update_tiles(updates: Vec<TileUpdate>) {
 }
 
 /// Public API: Update ship position and state
-pub fn update_ship_position(ship_id: u64, coord: HexCoord) {
-    SHIP_DATA.entry(ship_id).and_modify(|data| {
+pub fn update_ship_position(ship_ulid: Vec<u8>, coord: HexCoord) {
+    SHIP_DATA.entry(ship_ulid.clone()).and_modify(|data| {
         data.position = coord;
     }).or_insert(ShipData {
         position: coord,
@@ -406,35 +407,35 @@ pub fn update_ship_position(ship_id: u64, coord: HexCoord) {
 }
 
 /// Public API: Set ship state to MOVING
-pub fn set_ship_moving(ship_id: u64) {
-    if let Some(mut data) = SHIP_DATA.get_mut(&ship_id) {
+pub fn set_ship_moving(ship_ulid: Vec<u8>) {
+    if let Some(mut data) = SHIP_DATA.get_mut(&ship_ulid) {
         data.state.set_moving();
     }
 }
 
 /// Public API: Set ship state to IDLE
-pub fn set_ship_idle(ship_id: u64) {
-    if let Some(mut data) = SHIP_DATA.get_mut(&ship_id) {
+pub fn set_ship_idle(ship_ulid: Vec<u8>) {
+    if let Some(mut data) = SHIP_DATA.get_mut(&ship_ulid) {
         data.state.set_idle();
     }
 }
 
 /// Public API: Check if ship can accept path request
-pub fn can_ship_accept_path_request(ship_id: u64) -> bool {
-    SHIP_DATA.get(&ship_id)
+pub fn can_ship_accept_path_request(ship_ulid: Vec<u8>) -> bool {
+    SHIP_DATA.get(&ship_ulid)
         .map(|data| data.state.can_accept_path_request())
         .unwrap_or(true) // If ship doesn't exist yet, allow request
 }
 
 /// Public API: Remove ship
-pub fn remove_ship(ship_id: u64) {
-    SHIP_DATA.remove(&ship_id);
+pub fn remove_ship(ship_ulid: Vec<u8>) {
+    SHIP_DATA.remove(&ship_ulid);
 }
 
 /// Public API: Request pathfinding (with state checking)
 pub fn request_path(request: PathRequest) {
     // Mark ship as pathfinding
-    if let Some(mut data) = SHIP_DATA.get_mut(&request.ship_id) {
+    if let Some(mut data) = SHIP_DATA.get_mut(&request.ship_ulid) {
         data.state.set_pathfinding();
     }
 
