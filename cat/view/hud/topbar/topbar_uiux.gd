@@ -16,14 +16,12 @@ class_name TopbarUIUX
 @onready var labor_name: Label = $MarginContainer/HBoxContainer/LeftSection/LaborContainer/LaborName
 @onready var faith_name: Label = $MarginContainer/HBoxContainer/LeftSection/FaithContainer/FaithName
 
-# Center labels and button
-@onready var turn_label: Label = $MarginContainer/HBoxContainer/CenterSection/TurnLabel
+# Center section button
 @onready var city_vote_button: Button = $MarginContainer/HBoxContainer/CenterSection/CityVoteButton
-@onready var timer_label: Label = $MarginContainer/HBoxContainer/CenterSection/TimerLabel
 
-# Right section labels
-@onready var placeholder4: Label = $MarginContainer/HBoxContainer/RightSection/Placeholder4
-@onready var placeholder5: Label = $MarginContainer/HBoxContainer/RightSection/Placeholder5
+# Right section labels (timer and turn moved here)
+@onready var timer_label: Label = $MarginContainer/HBoxContainer/RightSection/TimerLabel
+@onready var turn_label: Label = $MarginContainer/HBoxContainer/RightSection/TurnLabel
 
 # Reference to camera (set by main scene)
 var camera: Camera2D = null
@@ -74,13 +72,11 @@ func _apply_fonts() -> void:
 	faith_value.add_theme_font_override("font", font)
 
 	# Apply to center section
-	turn_label.add_theme_font_override("font", font)
 	city_vote_button.add_theme_font_override("font", font)
-	timer_label.add_theme_font_override("font", font)
 
-	# Apply to right section
-	placeholder4.add_theme_font_override("font", font)
-	placeholder5.add_theme_font_override("font", font)
+	# Apply to right section (timer and turn)
+	timer_label.add_theme_font_override("font", font)
+	turn_label.add_theme_font_override("font", font)
 
 func _on_city_vote_pressed() -> void:
 	# Zoom out camera when CityVote is clicked

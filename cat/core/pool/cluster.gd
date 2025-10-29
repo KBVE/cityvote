@@ -33,6 +33,11 @@ func _setup_pools():
 	var card_scene = preload("res://nodes/cards/pooled_card.tscn")
 	register_pool("playing_card", card_scene, 12)  # MAX_HAND = 12
 
+	# Health bar pool (large initial size for 1000+ entities)
+	# Used by ships, NPCs, and any other entities that need health display
+	var health_bar_scene = preload("res://view/hud/healthbar/health_bar.tscn")
+	register_pool("health_bar", health_bar_scene, 100)  # Start with 100, will grow as needed
+
 	# Add more pools here as needed
 	# register_pool("city", city_scene, 10)
 	# register_pool("unit", unit_scene, 50)

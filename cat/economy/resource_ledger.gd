@@ -29,7 +29,8 @@ func _ready() -> void:
 	# Connect to GameTimer
 	if GameTimer:
 		GameTimer.timer_tick.connect(_on_game_timer_tick)
-		print("ResourceLedger: Connected to GameTimer")
+		GameTimer.consume_food.connect(_on_consume_food)
+		print("ResourceLedger: Connected to GameTimer and food consumption")
 	else:
 		push_error("ResourceLedger: GameTimer not found!")
 
@@ -38,6 +39,11 @@ func _ready() -> void:
 func _on_game_timer_tick(time_left: int) -> void:
 	# Forward timer tick to Rust (which will tick economy and emit signals)
 	rust_bridge.on_timer_tick(time_left)
+
+func _on_consume_food() -> void:
+	# Consume 1 food per turn (every 60 seconds)
+	add(R.FOOD, -1.0)
+	print("ResourceLedger: Consumed 1 food per turn. Current food: %d" % get_current(R.FOOD))
 
 func _on_rust_resource_changed(kind: int, current: float, cap: float, rate: float) -> void:
 	# Re-emit signal for GDScript listeners

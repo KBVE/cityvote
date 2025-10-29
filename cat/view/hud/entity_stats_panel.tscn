@@ -64,7 +64,7 @@ layout_mode = 2
 theme_override_constants/separation = 15
 
 [node name="EntityPreviewContainer" type="CenterContainer" parent="MarginContainer/VBoxContainer/PreviewAndFlavorContainer"]
-custom_minimum_size = Vector2(120, 120)
+custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 
 [node name="FlavorTextLabel" type="Label" parent="MarginContainer/VBoxContainer/PreviewAndFlavorContainer"]

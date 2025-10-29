@@ -115,23 +115,11 @@ layout_mode = 2
 size_flags_horizontal = 4
 theme_override_constants/separation = 20
 
-[node name="TurnLabel" type="Label" parent="MarginContainer/HBoxContainer/CenterSection"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.7, 1, 1)
-theme_override_font_sizes/font_size = 14
-text = "Turn: 0"
-
 [node name="CityVoteButton" type="Button" parent="MarginContainer/HBoxContainer/CenterSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
 theme_override_font_sizes/font_size = 14
 text = "CityVote"
-
-[node name="TimerLabel" type="Label" parent="MarginContainer/HBoxContainer/CenterSection"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
-text = "Timer: 60s"
 
 [node name="RightSection" type="HBoxContainer" parent="MarginContainer/HBoxContainer"]
 layout_mode = 2
@@ -139,14 +127,14 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 20
 alignment = 2
 
-[node name="Placeholder4" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
+[node name="TimerLabel" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 14
-text = "Placeholder 4"
+text = "Timer: 60s"
 
-[node name="Placeholder5" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
+[node name="TurnLabel" type="Label" parent="MarginContainer/HBoxContainer/RightSection"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_colors/font_color = Color(0.9, 0.7, 1, 1)
 theme_override_font_sizes/font_size = 14
-text = "Placeholder 5"
+text = "Turn: 0"

@@ -39,6 +39,14 @@ func _ready() -> void:
 	# Start hidden
 	visible = false
 
+	# Apply Alagard font to header elements
+	var font = Cache.get_font("alagard")
+	if font:
+		if entity_name_label:
+			entity_name_label.add_theme_font_override("font", font)
+		if close_button:
+			close_button.add_theme_font_override("font", font)
+
 	# Connect close button
 	if close_button:
 		close_button.pressed.connect(_on_close_pressed)
@@ -265,7 +273,6 @@ func _show_entity_preview(entity: Node) -> void:
 
 	if preview_instance and preview_container:
 		preview_container.add_child(preview_instance)
-		preview_instance.scale = Vector2(3.0, 3.0)  # Scale up more for better visibility
 		preview_instance.visible = true  # Ensure visible
 		preview_instance.position = Vector2.ZERO  # Center in container
 		preview_instance.rotation = 0.0  # Reset rotation
@@ -283,8 +290,19 @@ func _show_entity_preview(entity: Node) -> void:
 			sprite.position = Vector2.ZERO  # Reset sprite position
 			sprite.z_index = 0  # Ensure not hidden behind
 
-			# Debug: Check if sprite has texture and material
-			print("EntityStatsPanel: Sprite visible=%s, texture=%s, material=%s" % [sprite.visible, sprite.texture != null, sprite.material != null])
+			# Debug: Check texture type and material
+			var tex = sprite.texture
+			print("EntityStatsPanel: Sprite visible=%s, texture type=%s, material=%s" % [sprite.visible, tex.get_class() if tex else "null", sprite.material != null])
+
+			# If using AtlasTexture, we need to ensure the full atlas is used for the shader
+			if tex and tex is AtlasTexture:
+				var atlas_tex = tex as AtlasTexture
+				print("EntityStatsPanel: AtlasTexture region=%s, atlas=%s" % [atlas_tex.region, atlas_tex.atlas != null])
+
+				# For shader-based ships, replace AtlasTexture with the full atlas
+				if sprite.material and sprite.material is ShaderMaterial and atlas_tex.atlas:
+					sprite.texture = atlas_tex.atlas
+					print("EntityStatsPanel: Replaced AtlasTexture with full atlas for shader")
 
 			# For ships with shader materials, set direction and disable wave animation
 			if sprite.material and sprite.material is ShaderMaterial:
@@ -295,10 +313,48 @@ func _show_entity_preview(entity: Node) -> void:
 				sprite.material.set_shader_parameter("sway_amplitude", 0.0)
 				print("EntityStatsPanel: Set shader parameters for ship preview (direction=8)")
 
+			# Auto-scale sprite to fit container
+			_auto_scale_preview(preview_instance, sprite)
+
 		# Start typewriter effect for this entity type
 		_start_typewriter(pool_key)
 	else:
 		push_error("EntityStatsPanel: Failed to acquire preview from pool '%s'" % pool_key)
+
+## Auto-scale preview to fit within container
+func _auto_scale_preview(instance: Node2D, sprite: Sprite2D) -> void:
+	if not preview_container or not sprite.texture:
+		return
+
+	# Get container size
+	var container_size = preview_container.custom_minimum_size
+	if container_size == Vector2.ZERO:
+		container_size = Vector2(80, 80)  # Default size
+
+	# Get base texture size
+	var texture_size = sprite.texture.get_size()
+
+	# For atlas-based shaders, use 1/4 of the texture size (4x4 grid)
+	if sprite.material and sprite.material is ShaderMaterial:
+		texture_size = texture_size / 4.0
+
+	# Account for sprite's existing scale
+	var sprite_size = texture_size * sprite.scale
+
+	# Calculate scale factor to fit within container with some padding
+	var padding = 20.0  # pixels of padding
+	var available_size = container_size - Vector2(padding, padding)
+
+	var scale_x = available_size.x / sprite_size.x
+	var scale_y = available_size.y / sprite_size.y
+
+	# Use the smaller scale to fit both dimensions
+	var final_scale = min(scale_x, scale_y)
+
+	# Apply scale to instance (this multiplies with sprite's scale)
+	instance.scale = Vector2(final_scale, final_scale)
+
+	print("EntityStatsPanel: Auto-scaled preview to %s (texture=%s, sprite.scale=%s, final_sprite_size=%s)" % [final_scale, texture_size, sprite.scale, sprite_size])
 
 ## Clear entity preview and return to pool
 func _clear_entity_preview() -> void:

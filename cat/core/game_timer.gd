@@ -7,6 +7,7 @@ extends Node
 signal timer_tick(time_left: int)  # Emitted every second with remaining time
 signal timer_reset()  # Emitted when timer resets to 60
 signal turn_changed(turn: int)  # Emitted when turn increments
+signal consume_food()  # Emitted once per turn (every 60 seconds) to consume food
 
 # Timer constants
 const TIMER_DURATION: int = 60  # 60 seconds
@@ -48,6 +49,9 @@ func _reset_timer() -> void:
 	current_turn += 1
 	timer_reset.emit()
 	turn_changed.emit(current_turn)
+
+	# Emit food consumption signal (once per turn)
+	consume_food.emit()
 
 ## Get current time remaining
 func get_time_left() -> int:

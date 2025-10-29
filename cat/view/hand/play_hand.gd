@@ -47,8 +47,8 @@ var card_wrapper_padding: float = 20.0  # Extra padding around cards for better 
 
 # Card fanning settings (spreading cards in an arc)
 var card_spacing: float = 35.0  # Reduced from 50 for more overlap
-var arc_height: float = 15.0  # Height of the arc curve (concave up)
-var fan_rotation: float = 8.0  # Degrees per card from center for fanning
+var arc_height: float = 8.0  # Height of the arc curve (concave up) - reduced for less arch
+var fan_rotation: float = 6.0  # Degrees per card from center for fanning - reduced for gentler fan
 
 # === Card State Machine ===
 enum CardState { IDLE, HOVER, HELD, PREVIEW, PLACED, CANCELED }
@@ -150,6 +150,9 @@ func draw_initial_hand() -> void:
 		hand.append(dino_card)
 		display_card(dino_card, hand.size() - 1)
 
+	# Update card count display
+	_update_card_count()
+
 	# Refresh fan layout after all cards are loaded (deferred to ensure container is sized)
 	call_deferred("_refresh_card_positions")
 
@@ -191,6 +194,10 @@ func _refresh_card_positions() -> void:
 		# For 9-12 cards, reduce spacing to fit them all
 		dynamic_spacing = min(card_spacing, (container_width - 100) / total_cards)
 
+	# Calculate vertical center offset to center cards in container
+	var container_height = card_container.size.y
+	var vertical_center_offset = (container_height - card_height - card_wrapper_padding * 2) / 2.0
+
 	for i in range(total_cards):
 		var card_wrapper = card_container.get_child(i)
 		var offset_from_center = i - center_index
@@ -207,7 +214,7 @@ func _refresh_card_positions() -> void:
 
 		# Adjust vertical position to create arc curve (concave up - cards dip toward center)
 		var arc_offset = abs(offset_from_center) * arc_height
-		card_wrapper.position.y = arc_offset  # Positive y to create concave up arc
+		card_wrapper.position.y = vertical_center_offset + arc_offset  # Centered + arc offset
 
 # Reorganize hand with smooth animation after card is removed/added
 func _reorganize_hand() -> void:
@@ -220,6 +227,8 @@ func _reorganize_hand() -> void:
 	# Calculate container center for positioning
 	var container_width = card_container.size.x
 	var container_center_x = container_width / 2.0
+	var container_height = card_container.size.y
+	var vertical_center_offset = (container_height - card_height - card_wrapper_padding * 2) / 2.0
 
 	for i in range(total_cards):
 		var card_wrapper = card_container.get_child(i)
@@ -232,12 +241,13 @@ func _reorganize_hand() -> void:
 		var target_x = container_center_x + (offset_from_center * card_spacing) - (card_width / 2.0)
 		var target_rotation = offset_from_center * fan_rotation
 		var arc_offset = abs(offset_from_center) * arc_height
+		var target_y = vertical_center_offset + arc_offset
 
 		# Animate to new position smoothly
 		var tween = create_tween()
 		tween.set_parallel(true)
 		tween.tween_property(card_wrapper, "position:x", target_x, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
-		tween.tween_property(card_wrapper, "position:y", arc_offset, 0.4).set_ease(Tween.EASE_OUT)
+		tween.tween_property(card_wrapper, "position:y", target_y, 0.4).set_ease(Tween.EASE_OUT)
 		tween.tween_property(card_wrapper, "rotation_degrees", target_rotation, 0.4).set_ease(Tween.EASE_OUT)
 		tween.tween_property(card_wrapper, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
 		tween.tween_property(card_wrapper, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.3)
@@ -278,9 +288,24 @@ func display_card(card: PooledCard, index: int) -> void:
 	# Rotate card for fanning effect
 	card_wrapper.rotation_degrees = offset_from_center * fan_rotation
 
-	# Adjust vertical position to create arc curve (concave up - cards dip toward center)
+	# Calculate horizontal position (centered in container with fan spread)
+	var container_width = card_container.size.x
+	var container_center_x = container_width / 2.0
+
+	# Dynamic spacing: reduce spacing when hand is fuller to keep all cards visible
+	var dynamic_spacing = card_spacing
+	if total_cards > 8:
+		# For 9-12 cards, reduce spacing to fit them all
+		dynamic_spacing = min(card_spacing, (container_width - 100) / total_cards)
+
+	var base_x = container_center_x + (offset_from_center * dynamic_spacing) - (card_width / 2.0)
+	card_wrapper.position.x = base_x
+
+	# Calculate vertical position with arc and vertical centering
+	var container_height = card_container.size.y
+	var vertical_center_offset = (container_height - card_height - card_wrapper_padding * 2) / 2.0
 	var arc_offset = abs(offset_from_center) * arc_height
-	card_wrapper.position.y = arc_offset  # Positive y to create concave up arc
+	card_wrapper.position.y = vertical_center_offset + arc_offset
 
 	# Connect hover and input signals
 	card_wrapper.mouse_entered.connect(_on_card_mouse_entered.bind(card_wrapper))
@@ -329,14 +354,17 @@ func _on_card_mouse_exited(card: Control) -> void:
 		return  # Don't reset while this card is held
 
 	# Return card to original position
-	var original_y = 0.0
 	# Calculate arc offset based on card index (concave up)
 	var card_index = card.get_index()
 	var total_cards = hand.size()  # Use actual hand size
 	var center_index = (total_cards - 1) / 2.0
 	var offset_from_center = card_index - center_index
 	var arc_offset = abs(offset_from_center) * arc_height
-	original_y = arc_offset  # Positive for concave up
+
+	# Calculate vertical center offset to match _refresh_card_positions
+	var container_height = card_container.size.y
+	var vertical_center_offset = (container_height - card_height - card_wrapper_padding * 2) / 2.0
+	var original_y = vertical_center_offset + arc_offset
 
 	var tween = create_tween()
 	tween.set_parallel(true)

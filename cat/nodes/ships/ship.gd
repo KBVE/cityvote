@@ -52,6 +52,9 @@ var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
 # ULID for persistent entity tracking
 var ulid: PackedByteArray = PackedByteArray()
 
+# Health bar reference (acquired from pool)
+var health_bar: HealthBar = null
+
 func _ready():
 	# Register with ULID system
 	if ulid.is_empty():
@@ -70,6 +73,9 @@ func _ready():
 	target_angle = current_angle
 	_last_sector = direction
 	_update_sprite()
+
+	# Acquire health bar from pool (deferred to ensure Cluster is ready)
+	call_deferred("_setup_health_bar")
 
 # Convert direction index to Godot angle (inverse of angle_to_direction)
 func direction_to_godot_angle(dir: int) -> float:
@@ -305,3 +311,85 @@ func _process(delta):
 func _register_stats() -> void:
 	if StatsManager:
 		StatsManager.register_entity(self, "ship")
+		# Connect to stat changes to update health bar
+		StatsManager.stat_changed.connect(_on_stat_changed)
+		StatsManager.entity_died.connect(_on_entity_died)
+
+# Set up health bar (called deferred to ensure Cluster is ready)
+func _setup_health_bar() -> void:
+	if not Cluster:
+		push_error("Ship: Cluster not found! Health bar cannot be created.")
+		return
+
+	# Acquire health bar from pool
+	health_bar = Cluster.acquire("health_bar") as HealthBar
+	if not health_bar:
+		push_error("Ship: Failed to acquire health bar from pool!")
+		return
+
+	print("Ship: Health bar acquired successfully for ULID: %s" % UlidManager.to_hex(ulid))
+
+	# Add as child so it follows the ship
+	add_child(health_bar)
+
+	# Get current health values from StatsManager
+	var current_hp: float = 100.0
+	var max_hp: float = 100.0
+
+	if StatsManager and not ulid.is_empty():
+		current_hp = StatsManager.get_stat(ulid, StatsManager.STAT.HP)
+		max_hp = StatsManager.get_stat(ulid, StatsManager.STAT.MAX_HP)
+		print("Ship: Health from StatsManager: %d/%d" % [current_hp, max_hp])
+	else:
+		print("Ship: Using default health values: %d/%d" % [current_hp, max_hp])
+
+	health_bar.initialize(current_hp, max_hp)
+
+	# Configure appearance (optional - adjust as needed)
+	health_bar.set_bar_offset(Vector2(0, -35))  # Position above ship
+	health_bar.set_auto_hide(false)  # Show health bar even at full health (for visibility)
+
+	print("Ship: Health bar setup complete. Visible=%s, Position=%s" % [health_bar.visible, health_bar.position])
+
+# Release health bar back to pool (call before destroying ship or returning to pool)
+func _release_health_bar() -> void:
+	if health_bar and Cluster:
+		# Remove from ship
+		if health_bar.get_parent() == self:
+			remove_child(health_bar)
+
+		# Reset and return to pool
+		health_bar.reset_for_pool()
+		Cluster.release("health_bar", health_bar)
+		health_bar = null
+
+# Handle stat changes from StatsManager
+func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: float) -> void:
+	# Only update if this is our entity and the stat is HP or MAX_HP
+	if entity_ulid != ulid:
+		return
+
+	if not health_bar:
+		return
+
+	# Update health bar based on stat type
+	if stat_type == StatsManager.STAT.HP:
+		var max_hp = StatsManager.get_stat(ulid, StatsManager.STAT.MAX_HP)
+		health_bar.set_health_values(new_value, max_hp)
+	elif stat_type == StatsManager.STAT.MAX_HP:
+		var current_hp = StatsManager.get_stat(ulid, StatsManager.STAT.HP)
+		health_bar.set_health_values(current_hp, new_value)
+
+# Handle entity death
+func _on_entity_died(entity_ulid: PackedByteArray) -> void:
+	if entity_ulid == ulid:
+		# Release health bar before dying
+		_release_health_bar()
+
+		# Additional death logic can go here
+		# For now, just hide the ship
+		visible = false
+
+# Override _exit_tree to ensure health bar is released
+func _exit_tree() -> void:
+	_release_health_bar()

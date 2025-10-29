@@ -19,7 +19,7 @@ script = ExtResource("1_hand")
 
 [node name="HandPanel" type="PanelContainer" parent="."]
 offset_left = 400.0
-offset_top = 590.0
+offset_top = 540.0
 offset_right = 880.0
 offset_bottom = 720.0
 mouse_filter = 0
@@ -44,7 +44,7 @@ text = "Cards: 7"
 horizontal_alignment = 0
 
 [node name="CardContainer" type="Control" parent="HandPanel/MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(450, 90)
+custom_minimum_size = Vector2(450, 140)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
