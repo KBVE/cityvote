@@ -22,6 +22,7 @@ offset_left = 400.0
 offset_top = 590.0
 offset_right = 880.0
 offset_bottom = 720.0
+mouse_filter = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="MarginContainer" type="MarginContainer" parent="HandPanel"]
@@ -47,4 +48,4 @@ custom_minimum_size = Vector2(450, 90)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-mouse_filter = 2
+mouse_filter = 0

@@ -23,13 +23,15 @@ var timer: Timer
 func _ready() -> void:
 	# Create and configure timer
 	timer = Timer.new()
+	if not timer:
+		push_error("GameTimer: Failed to create timer!")
+		return
+
 	timer.wait_time = 1.0  # Tick every second
 	timer.one_shot = false
 	timer.autostart = true
 	add_child(timer)
 	timer.timeout.connect(_on_timer_timeout)
-
-	print("GameTimer: Ready - Starting 60s repeating timer")
 
 func _on_timer_timeout() -> void:
 	time_left -= 1

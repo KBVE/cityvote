@@ -28,9 +28,10 @@ func _setup_pools():
 	var jezza_scene = preload("res://nodes/npc/dino/jezza/jezza.tscn")
 	register_pool("jezza", jezza_scene, 10)
 
-	# Playing card pool (104 cards = 2 decks)
+	# Playing card pool (starts with MAX_HAND capacity)
+	# Pool grows dynamically if needed. Deck stores CardData, not instances.
 	var card_scene = preload("res://nodes/cards/pooled_card.tscn")
-	register_pool("playing_card", card_scene, 104)
+	register_pool("playing_card", card_scene, 12)  # MAX_HAND = 12
 
 	# Add more pools here as needed
 	# register_pool("city", city_scene, 10)

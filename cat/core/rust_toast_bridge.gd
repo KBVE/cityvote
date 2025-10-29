@@ -17,24 +17,14 @@ func _ready() -> void:
 	add_child(toast_bridge)
 
 	# Connect to the Rust signal
-	toast_bridge.connect("toast_message_received", _on_toast_message_received)
-
-	print("RustToastBridge: Connected to Rust ToastBridge!")
+	if not toast_bridge.connect("toast_message_received", _on_toast_message_received) == OK:
+		push_error("RustToastBridge: Failed to connect to toast_message_received signal!")
 
 	# Test: spawn a thread after 1 second
 	await get_tree().create_timer(1.0).timeout
 	test_rust_thread()
 
-func _process(_delta: float) -> void:
-	# Debug: Check queue size periodically
-	if toast_bridge and Engine.get_frames_drawn() % 60 == 0:  # Every second
-		var queue_size = toast_bridge.get_queue_size()
-		if queue_size > 0:
-			print("RustToastBridge: Queue has ", queue_size, " messages waiting!")
-
 func _on_toast_message_received(message: String) -> void:
-	print("RustToastBridge: Received message from Rust: ", message)
-
 	# Check if Toast is available
 	if not has_node("/root/Toast"):
 		push_error("RustToastBridge: Toast autoload not found!")
@@ -42,20 +32,23 @@ func _on_toast_message_received(message: String) -> void:
 
 	# Display as toast
 	var toast_node = get_node("/root/Toast")
-	toast_node.show_toast(message, 3.0)
-	print("RustToastBridge: Toast displayed!")
+	if toast_node:
+		toast_node.show_toast(message, 3.0)
+	else:
+		push_error("RustToastBridge: Failed to get Toast node!")
 
 # Test functions you can call from GDScript
 func test_rust_thread() -> void:
 	if toast_bridge:
-		print("RustToastBridge: Spawning test Rust thread...")
 		toast_bridge.spawn_test_thread()
-		print("RustToastBridge: spawn_test_thread() called successfully")
+	else:
+		push_error("RustToastBridge: Cannot spawn test thread - bridge not initialized!")
 
 func test_multi_messages(count: int = 5, delay_ms: int = 1000) -> void:
 	if toast_bridge:
-		print("RustToastBridge: Spawning multi-message Rust thread...")
 		toast_bridge.spawn_multi_message_thread(count, delay_ms)
+	else:
+		push_error("RustToastBridge: Cannot spawn multi-message thread - bridge not initialized!")
 
 func get_queue_size() -> int:
 	if toast_bridge:

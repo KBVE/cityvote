@@ -9,6 +9,9 @@ var active_decks: Dictionary = {}  # deck_id -> DeckManager instance
 var next_deck_id: int = 0
 
 func _ready() -> void:
+	# Seed the random number generator (critical for WASM builds!)
+	randomize()
+
 	# Card pool is automatically initialized in Cluster._setup_pools()
 	print("CardDeck: Ready! Using atlas-based pooling system")
 
@@ -52,7 +55,14 @@ func return_card_to_deck(deck_id: int, card: PooledCard) -> void:
 
 	var deck_data = active_decks[deck_id]
 	deck_data["drawn_cards"].erase(card)
-	deck_data["cards"].append(card)
+
+	# Convert PooledCard back to CardData
+	var card_data = DeckManager.CardData.new(card.suit, card.value, card.is_custom, card.card_id if card.is_custom else -1)
+	deck_data["cards"].append(card_data)
+
+	# Release the PooledCard instance back to pool
+	card.reset_for_pool()
+	Cluster.release("playing_card", card)
 
 ## Shuffle a deck
 func shuffle_deck(deck_id: int) -> void:
@@ -94,9 +104,15 @@ func reset_deck(deck_id: int) -> void:
 
 	var deck_data = active_decks[deck_id]
 
-	# Move drawn cards back to deck
+	# Convert drawn PooledCards back to CardData and release instances
 	for card in deck_data["drawn_cards"]:
-		deck_data["cards"].append(card)
+		if card and is_instance_valid(card):
+			var card_data = DeckManager.CardData.new(card.suit, card.value, card.is_custom, card.card_id if card.is_custom else -1)
+			deck_data["cards"].append(card_data)
+
+			# Release the instance back to pool
+			card.reset_for_pool()
+			Cluster.release("playing_card", card)
 
 	deck_data["drawn_cards"].clear()
 	shuffle_deck(deck_id)

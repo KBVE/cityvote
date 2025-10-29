@@ -5,8 +5,8 @@ shader_type canvas_item;
 // Rows 0-3: Standard suits (clubs, diamonds, hearts, spades)
 // Row 4: Custom cards (vikings-53, dino-54)
 
-// Card selection parameters (instance uniform for per-instance values)
-instance uniform int card_id = 0;  // 0-51 for standard, 52-53 for custom
+// Card selection parameters (each card has duplicated material, so regular uniform works)
+uniform int card_id = 0;  // 0-51 for standard, 52-53 for custom
 
 // Atlas dimensions
 const float COLS = 13.0;

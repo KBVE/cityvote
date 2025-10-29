@@ -253,9 +253,13 @@ func _input(event):
 
 		if event.button_index in allowed_buttons:
 			if event.pressed:
-				is_dragging = true
-				drag_start_mouse_pos = event.position
-				drag_start_camera_pos = camera.position
+				# Don't enable dragging if mouse is over hand UI
+				var mouse_pos = get_viewport().get_mouse_position()
+				var hand_rect = play_hand.hand_panel.get_global_rect()
+				if not hand_rect.has_point(mouse_pos):
+					is_dragging = true
+					drag_start_mouse_pos = event.position
+					drag_start_camera_pos = camera.position
 			else:
 				is_dragging = false
 

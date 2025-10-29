@@ -20,6 +20,9 @@ func _ready() -> void:
 	# Create a pooled card for the ghost preview (reused, not destroyed)
 	card_ghost = Cluster.acquire("playing_card")
 	if card_ghost:
+		# Mark as dynamic - this card needs to update frequently via shader parameters
+		card_ghost.is_dynamic = true
+
 		# Add as sibling to match the old CardGhost position (deferred to avoid setup conflicts)
 		get_parent().call_deferred("add_child", card_ghost)
 		card_ghost.name = "CardGhost"
@@ -109,9 +112,13 @@ func _apply_fonts() -> void:
 
 func _show_card_info(card_data: Dictionary) -> void:
 	# Show card ghost image using PooledCard
-	if card_ghost and card_data.has("card_id"):
+	if card_ghost and card_data.has("card_id") and card_data["card_id"] != null:
 		var card_id = card_data["card_id"]
-		card_ghost.set_instance_shader_parameter("card_id", card_id)
+
+		# Set shader parameter on the duplicated material (not instance parameter)
+		if card_ghost.material and card_ghost.material is ShaderMaterial:
+			card_ghost.material.set_shader_parameter("card_id", card_id)
+
 		card_ghost.visible = true
 		card_ghost.modulate = Color(1, 1, 1, 0.8)  # Slightly transparent
 

@@ -3,68 +3,81 @@ class_name DeckManager
 
 ## Deck Manager using Pool/Cluster system
 ## Efficiently manages decks of cards using object pooling
+## NEW: Decks store card DATA (suit/value), not PooledCard instances
+## PooledCard instances are only acquired when cards are drawn
 
 # Cluster configuration
 const POOL_NAME = "playing_card"
 
+# Card data structure (lightweight)
+class CardData:
+	var suit: int = -1
+	var value: int = -1
+	var is_custom: bool = false
+	var custom_id: int = -1
+
+	func _init(p_suit: int = -1, p_value: int = -1, p_is_custom: bool = false, p_custom_id: int = -1):
+		suit = p_suit
+		value = p_value
+		is_custom = p_is_custom
+		custom_id = p_custom_id
+
 ## Note: The card pool is automatically initialized in Cluster._setup_pools()
 ## No need to manually call init_pool() anymore!
 
-## Create a standard 52-card deck
-## Returns an array of PooledCard instances
-func create_deck() -> Array[PooledCard]:
-	var deck: Array[PooledCard] = []
+## Create a standard 52-card deck (returns card DATA, not instances)
+## Returns an array of CardData
+func create_deck() -> Array[CardData]:
+	var deck: Array[CardData] = []
 
-	# Create all 52 standard cards
+	# Create all 52 standard cards as DATA
 	for suit in range(4):  # Clubs, Diamonds, Hearts, Spades
 		for value in range(1, 14):  # Ace through King
-			var card = Cluster.acquire(POOL_NAME) as PooledCard
-			if card:
-				card.init_card(suit, value)
-				deck.append(card)
-			else:
-				push_error("DeckManager: Failed to acquire card from pool")
+			deck.append(CardData.new(suit, value, false, -1))
 
 	return deck
 
 ## Create a deck with custom cards included
-func create_deck_with_custom() -> Array[PooledCard]:
+func create_deck_with_custom() -> Array[CardData]:
 	var deck = create_deck()
 
-	# Add Viking card
-	var viking_card = Cluster.acquire(POOL_NAME) as PooledCard
-	if viking_card:
-		viking_card.init_custom_card(CardAtlas.CARD_VIKINGS)
-		deck.append(viking_card)
+	# Add Viking card data
+	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_VIKINGS))
 
-	# Add Dino card
-	var dino_card = Cluster.acquire(POOL_NAME) as PooledCard
-	if dino_card:
-		dino_card.init_custom_card(CardAtlas.CARD_DINO)
-		deck.append(dino_card)
+	# Add Dino card data
+	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_DINO))
 
 	return deck
 
 ## Shuffle a deck in-place
-func shuffle_deck(deck: Array[PooledCard]) -> void:
+func shuffle_deck(deck: Array[CardData]) -> void:
 	for i in range(deck.size() - 1, 0, -1):
 		var j = randi() % (i + 1)
 		var temp = deck[i]
 		deck[i] = deck[j]
 		deck[j] = temp
 
-## Return all cards in a deck back to the pool
-func return_deck(deck: Array[PooledCard]) -> void:
-	for card in deck:
-		if card:
-			card.reset_for_pool()
-			Cluster.release(POOL_NAME, card)
+## Return all cards in a deck back to the pool (NOT NEEDED ANYMORE - cards returned individually)
+func return_deck(deck: Array[CardData]) -> void:
+	# CardData is lightweight, just clear the array
 	deck.clear()
 
-## Draw a card from the deck
-func draw_card(deck: Array[PooledCard]) -> PooledCard:
+## Draw a card from the deck (acquires PooledCard instance on-demand)
+func draw_card(deck: Array[CardData]) -> PooledCard:
 	if deck.size() > 0:
-		return deck.pop_back()
+		var card_data = deck.pop_back()
+
+		# Acquire PooledCard instance from pool NOW (not during deck creation)
+		var card = Cluster.acquire(POOL_NAME) as PooledCard
+		if card:
+			if card_data.is_custom:
+				card.init_custom_card(card_data.custom_id)
+			else:
+				card.init_card(card_data.suit, card_data.value)
+			return card
+		else:
+			push_error("DeckManager: Failed to acquire card from pool")
+			return null
 	return null
 
 ## Example usage:

@@ -15,7 +15,6 @@ func _ready() -> void:
 		return
 
 	add_child(pathfinding_system)
-	print("NpcPathfindingBridge: Ready!")
 
 func _process(_delta: float) -> void:
 	# Check for completed pathfinding results

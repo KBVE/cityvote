@@ -175,8 +175,14 @@ func _update_highlight():
 func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, value: int) -> void:
 	# Get card_id from the sprite (works for both standard and custom cards)
 	var card_id = -1
-	if card_sprite.has_method("get_instance_shader_parameter"):
-		card_id = card_sprite.get_instance_shader_parameter("card_id")
+	if card_sprite is PooledCard:
+		# Access the card_id property directly from PooledCard
+		card_id = card_sprite.card_id
+	elif card_sprite.material and card_sprite.material is ShaderMaterial:
+		# Fallback: try to get from material shader parameter
+		card_id = card_sprite.material.get_shader_parameter("card_id")
+		if card_id == null:
+			card_id = -1
 
 	# Generate ULID for the card
 	var ulid = UlidManager.register_entity(card_sprite, UlidManager.TYPE_CARD, {

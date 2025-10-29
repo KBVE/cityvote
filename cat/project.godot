@@ -23,6 +23,7 @@ Pathfinding="*res://core/pathfinding.gd"
 Cluster="*res://core/pool/cluster.gd"
 Toast="*res://view/hud/toast/toast_manager.gd"
 CardAtlas="*res://nodes/cards/card_atlas.gd"
+CardAtlasMeshes="*res://nodes/cards/card_atlas_meshes.gd"
 CardDeck="*res://nodes/cards/card_deck.gd"
 UlidManager="*res://core/ulid_manager.gd"
 GameTimer="*res://core/game_timer.gd"
@@ -43,3 +44,4 @@ window/stretch/mode="canvas_items"
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+limits/global_shader_variables/buffer_size=8192

@@ -5,10 +5,18 @@ class_name PlayHand
 signal card_picked_up()  # Emitted when player picks up a card
 signal card_placed()     # Emitted when card is placed on tile
 signal card_cancelled()  # Emitted when card placement is cancelled
+signal card_swapped()    # Emitted when player swaps cards in hand
+signal card_hand_entered()  # Emitted when mouse enters hand area
+signal card_hand_exited()   # Emitted when mouse exits hand area
 
 @onready var card_container: Control = $HandPanel/MarginContainer/VBoxContainer/CardContainer
 @onready var hand_panel: PanelContainer = $HandPanel
 @onready var card_count_label: Label = $HandPanel/MarginContainer/VBoxContainer/CardCountLabel
+
+# Swap indicator UI (cached packed scene)
+const SWAP_INDICATOR_SCENE = preload("res://view/hand/tooltip/swap_indicator.tscn")
+var swap_indicator: Label = null
+var swap_indicator_target_card: Control = null
 
 # Reference to the hex map (set from main scene)
 var hex_map = null
@@ -35,6 +43,7 @@ var MAX_HAND: int = 12  # Maximum cards in hand (can be upgraded later)
 # Card size
 var card_width: float = 64.0
 var card_height: float = 90.0
+var card_wrapper_padding: float = 20.0  # Extra padding around cards for better hover detection
 
 # Card fanning settings (spreading cards in an arc)
 var card_spacing: float = 35.0  # Reduced from 50 for more overlap
@@ -65,20 +74,23 @@ var ghost_fade_speed: float = 8.0  # How fast the ghost fades in/out
 var panel_opacity_idle: float = 0.3  # Low opacity when idle
 var panel_opacity_active: float = 1.0  # Full opacity on hover
 var panel_fade_speed: float = 6.0  # How fast panel fades in/out
+var panel_opacity_tween: Tween = null  # Track current opacity tween to kill it when needed
+var is_mouse_over_panel: bool = false  # Track mouse hover state
 
 func _ready() -> void:
 	# Defer to ensure all autoloads are ready
 	call_deferred("_initialize")
 
 func _initialize() -> void:
-	draw_initial_hand()
+	# Wait for scene tree to be ready and all resources loaded (critical for WASM)
+	await get_tree().process_frame
 
 	# Set initial panel opacity to low
 	hand_panel.modulate.a = panel_opacity_idle
 
-	# Block input from passing through the entire hand UI to prevent accidental clicks on hex tiles
+	# Block input from passing through the hand panel to prevent accidental clicks on hex tiles
+	# Main.gd checks hand_panel rect to prevent camera dragging over hand area
 	hand_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	card_container.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	# Connect to GameTimer for auto-draw
 	if GameTimer:
@@ -95,8 +107,14 @@ func _initialize() -> void:
 	else:
 		push_warning("PlayHand: Could not load Alagard font from Cache")
 
+	# Create swap indicator UI
+	_create_swap_indicator()
+
 	# Update card count
 	_update_card_count()
+
+	# Draw initial hand AFTER everything else is set up and resources are loaded
+	draw_initial_hand()
 
 # Draw 9+ cards: 7 random from deck + 2 guaranteed custom cards
 # (Could have more than 2 custom if they get lucky and draw custom cards)
@@ -177,8 +195,8 @@ func _refresh_card_positions() -> void:
 		var card_wrapper = card_container.get_child(i)
 		var offset_from_center = i - center_index
 
-		# Set pivot point to bottom center of card for rotation
-		card_wrapper.pivot_offset = Vector2(card_width / 2.0, card_height)
+		# Set pivot point to bottom center of card for rotation (accounting for padding)
+		card_wrapper.pivot_offset = Vector2(card_width / 2.0 + card_wrapper_padding, card_height + card_wrapper_padding)
 
 		# Calculate horizontal position (spread cards with dynamic spacing)
 		var base_x = container_center_x + (offset_from_center * dynamic_spacing) - (card_width / 2.0)
@@ -207,8 +225,8 @@ func _reorganize_hand() -> void:
 		var card_wrapper = card_container.get_child(i)
 		var offset_from_center = i - center_index
 
-		# Set pivot point to bottom center of card for rotation
-		card_wrapper.pivot_offset = Vector2(card_width / 2.0, card_height)
+		# Set pivot point to bottom center of card for rotation (accounting for padding)
+		card_wrapper.pivot_offset = Vector2(card_width / 2.0 + card_wrapper_padding, card_height + card_wrapper_padding)
 
 		# Calculate new positions
 		var target_x = container_center_x + (offset_from_center * card_spacing) - (card_width / 2.0)
@@ -224,12 +242,16 @@ func _reorganize_hand() -> void:
 		tween.tween_property(card_wrapper, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
 		tween.tween_property(card_wrapper, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.3)
 
+	# After reorganizing, check if mouse is still over hand panel and restore opacity
+	call_deferred("_check_hand_panel_hover")
+
 # Display a single card in the hand
 func display_card(card: PooledCard, index: int) -> void:
 	# Create a control wrapper for each card to handle rotation and hover
 	var card_wrapper = Control.new()
 	card_wrapper.name = "Card_%d" % index
-	card_wrapper.custom_minimum_size = Vector2(card_width, card_height)
+	# Make wrapper larger than card to ensure good hover coverage when rotated/arced
+	card_wrapper.custom_minimum_size = Vector2(card_width + card_wrapper_padding * 2, card_height + card_wrapper_padding * 2)
 	card_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
 
 	if card == null:
@@ -241,8 +263,8 @@ func display_card(card: PooledCard, index: int) -> void:
 		card.get_parent().remove_child(card)
 	card_wrapper.add_child(card)
 
-	# Position sprite within wrapper (centered)
-	card.position = Vector2(card_width / 2.0, card_height / 2.0)
+	# Position sprite within wrapper (centered, accounting for padding)
+	card.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
 
 	# Fan the cards - rotate based on position from center
 	# Use actual hand size instead of hardcoded value
@@ -250,8 +272,8 @@ func display_card(card: PooledCard, index: int) -> void:
 	var center_index = (total_cards - 1) / 2.0
 	var offset_from_center = index - center_index
 
-	# Set pivot point to bottom center of card for rotation
-	card_wrapper.pivot_offset = Vector2(card_width / 2.0, card_height)
+	# Set pivot point to bottom center of card for rotation (accounting for padding)
+	card_wrapper.pivot_offset = Vector2(card_width / 2.0 + card_wrapper_padding, card_height + card_wrapper_padding)
 
 	# Rotate card for fanning effect
 	card_wrapper.rotation_degrees = offset_from_center * fan_rotation
@@ -270,12 +292,26 @@ func display_card(card: PooledCard, index: int) -> void:
 
 # Card hover effects
 func _on_card_mouse_entered(card: Control) -> void:
+	# If holding a card, show swap indicator
+	if card_state == CardState.HELD or card_state == CardState.PREVIEW:
+		# Keep hand panel at full opacity during swap mode
+		is_mouse_over_panel = true
+		_set_hand_panel_opacity(panel_opacity_active)
+
+		if card != held_card:
+			# Hovering over a different card while holding one - show swap indicator
+			_show_swap_indicator(card)
+			# Highlight the target card with golden tint
+			var tween = create_tween()
+			tween.tween_property(card, "modulate", Color(1.2, 1.0, 0.6, 1.0), 0.2)  # Golden highlight
+		return
+
 	if card_state != CardState.IDLE:
 		return  # Don't hover effect while card is held
 
 	# Keep hand panel at full opacity when hovering cards
-	var tween_panel = create_tween()
-	tween_panel.tween_property(hand_panel, "modulate:a", panel_opacity_active, 0.3).set_ease(Tween.EASE_OUT)
+	is_mouse_over_panel = true
+	_set_hand_panel_opacity(panel_opacity_active)
 
 	# Lift card up and make it slightly larger
 	var tween = create_tween()
@@ -285,6 +321,10 @@ func _on_card_mouse_entered(card: Control) -> void:
 	tween.tween_property(card, "modulate", Color(1.2, 1.2, 1.2, 1.0), 0.2)
 
 func _on_card_mouse_exited(card: Control) -> void:
+	# Hide swap indicator when leaving card
+	if swap_indicator_target_card == card:
+		_hide_swap_indicator()
+
 	if held_card == card:
 		return  # Don't reset while this card is held
 
@@ -306,14 +346,86 @@ func _on_card_mouse_exited(card: Control) -> void:
 
 # Hand panel hover effects
 func _on_hand_panel_mouse_entered() -> void:
-	# Fade in panel to full opacity
-	var tween = create_tween()
-	tween.tween_property(hand_panel, "modulate:a", panel_opacity_active, 0.3).set_ease(Tween.EASE_OUT)
+	is_mouse_over_panel = true
+	_set_hand_panel_opacity(panel_opacity_active)
+	card_hand_entered.emit()
 
 func _on_hand_panel_mouse_exited() -> void:
-	# Fade out panel to low opacity
-	var tween = create_tween()
-	tween.tween_property(hand_panel, "modulate:a", panel_opacity_idle, 0.3).set_ease(Tween.EASE_OUT)
+	is_mouse_over_panel = false
+	_set_hand_panel_opacity(panel_opacity_idle)
+	card_hand_exited.emit()
+
+# Check if mouse is over hand panel and restore full opacity (used after reorganizing)
+func _check_hand_panel_hover() -> void:
+	# Update the tracked state based on actual mouse position
+	var mouse_over = _is_mouse_over_hand_ui()
+	is_mouse_over_panel = mouse_over
+	# Always set opacity to ensure it's correct after reorganization
+	_set_hand_panel_opacity(panel_opacity_active if mouse_over else panel_opacity_idle)
+
+# Set hand panel opacity with proper tween management (kills existing tween first)
+func _set_hand_panel_opacity(target_opacity: float) -> void:
+	# Kill existing tween to avoid conflicts
+	if panel_opacity_tween and panel_opacity_tween.is_valid():
+		panel_opacity_tween.kill()
+
+	# Create new tween
+	panel_opacity_tween = create_tween()
+	panel_opacity_tween.tween_property(hand_panel, "modulate:a", target_opacity, 0.3).set_ease(Tween.EASE_OUT)
+
+# Create the swap indicator UI from cached packed scene
+func _create_swap_indicator() -> void:
+	swap_indicator = SWAP_INDICATOR_SCENE.instantiate()
+
+	if not swap_indicator:
+		push_error("PlayHand: Failed to instantiate swap indicator scene!")
+		return
+
+	# Apply Alagard font
+	var font = Cache.get_font("alagard")
+	if font:
+		swap_indicator.add_theme_font_override("font", font)
+
+	# Position it centered above the card container (fixed position)
+	if not is_instance_valid(card_container):
+		push_error("PlayHand: card_container is invalid!")
+		return
+
+	card_container.add_child(swap_indicator)
+
+	# Position above the card container, centered
+	# Wait one frame to get proper sizing
+	await get_tree().process_frame
+
+	# Validate objects after await
+	if not is_instance_valid(swap_indicator) or not is_instance_valid(card_container):
+		return
+
+	var container_width = card_container.size.x
+	swap_indicator.position = Vector2(
+		container_width / 2 - swap_indicator.size.x / 2,
+		-swap_indicator.size.y - 10  # 10px above the card container
+	)
+
+# Show swap indicator (fixed position above hand panel)
+func _show_swap_indicator(target_card: Control) -> void:
+	if not swap_indicator:
+		return
+
+	swap_indicator_target_card = target_card
+	swap_indicator.visible = true
+
+# Hide swap indicator
+func _hide_swap_indicator() -> void:
+	if swap_indicator:
+		swap_indicator.visible = false
+
+	# Reset the golden highlight on the target card (if any)
+	if swap_indicator_target_card and is_instance_valid(swap_indicator_target_card):
+		var tween = create_tween()
+		tween.tween_property(swap_indicator_target_card, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.2)
+
+	swap_indicator_target_card = null
 
 # === EVENT: Pick Card ===
 func _on_card_gui_input(event: InputEvent, card: Control) -> void:
@@ -326,6 +438,9 @@ func _process(delta: float) -> void:
 		_update_camera_follow(delta)
 
 func _input(event: InputEvent) -> void:
+	# Don't block input here - let card wrappers handle clicks via gui_input
+	# Main.gd handles blocking drag/camera panning when over hand UI
+
 	if card_state == CardState.IDLE or card_state == CardState.HOVER:
 		return
 
@@ -359,6 +474,9 @@ func _event_pick_card(card: Control) -> void:
 		# Return the previous card to its position
 		_return_card_to_source()
 		print("State: Swapping cards - returned previous card to hand")
+
+		# Emit signal that cards were swapped
+		card_swapped.emit()
 
 	held_card = card
 	held_card_source_index = card.get_index()
@@ -397,17 +515,20 @@ func _event_confirm_place() -> void:
 
 	if preview_ghost_target_tile != Vector2i(-1, -1):
 		_place_card_on_tile(preview_ghost_target_tile)
-		card_state = CardState.PLACED
+		card_state = CardState.IDLE  # Return to IDLE state after placing
 
 		# Emit signal to re-enable manual camera panning
 		card_placed.emit()
 
-		print("State: PREVIEW → PLACED")
+		print("State: PREVIEW → PLACED → IDLE")
 
 # EVENT: Cancel - Transition * → CANCELED → IDLE
 func _event_cancel() -> void:
 	_return_card_to_source()
 	card_state = CardState.IDLE
+
+	# Hide swap indicator
+	_hide_swap_indicator()
 
 	# Emit signal to re-enable manual camera panning
 	card_cancelled.emit()
@@ -567,11 +688,11 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 
 	# Clean up
 	_destroy_preview_ghost()
+	_hide_swap_indicator()
 	held_card = null
 	held_card_pooled = null
 
-	print("Car
-	d placed on tile ", tile_coords, " at world pos ", world_pos)
+	print("Card placed on tile ", tile_coords, " at world pos ", world_pos)
 
 func _return_card_to_source() -> void:
 	if held_card == null or held_card_pooled == null:
@@ -582,8 +703,8 @@ func _return_card_to_source() -> void:
 		held_card_pooled.get_parent().remove_child(held_card_pooled)
 	held_card.add_child(held_card_pooled)
 
-	# Reset PooledCard transform
-	held_card_pooled.position = Vector2(card_width / 2.0, card_height / 2.0)
+	# Reset PooledCard transform (accounting for wrapper padding)
+	held_card_pooled.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
 	held_card_pooled.rotation = 0
 	held_card_pooled.scale = Vector2.ONE
 	held_card_pooled.modulate = Color.WHITE
