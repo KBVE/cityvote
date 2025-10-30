@@ -4,6 +4,13 @@ extends Node
 ## Handles spawning/despawning of all game entities (NPCs, Ships, etc.)
 ## Manages health bar pooling to ensure proper setup and cleanup
 
+## Entity type definitions for spawn_multiple
+enum TileType {
+	LAND,   # Non-water tiles (for ground units like Jezzas)
+	WATER,  # Water tiles (for ships like Vikings)
+	ANY     # Any tile (for flying units, etc.)
+}
+
 ## Spawn an entity (NPC, Ship, etc.) with proper initialization
 ## @param entity: The entity node acquired from Cluster
 ## @param parent: Parent node to add entity to (usually hex_map)
@@ -124,3 +131,156 @@ func _cleanup_entity_health_bar(entity: Node) -> void:
 	# Clear reference
 	entity.health_bar = null
 	print("EntityManager: Health bar cleaned up and returned to pool")
+
+## Generic function to spawn multiple entities of a specific type
+## This replaces the need for separate _spawn_jezza_for_player, _spawn_vikings_for_player, etc.
+## @param spawn_config: Dictionary with required fields:
+##   - pool_key: String - Pool key to acquire from (e.g., "jezza", "viking")
+##   - count: int - Number of entities to spawn
+##   - tile_type: TileType - What type of tiles to spawn on (LAND, WATER, ANY)
+##   - hex_map: Node - Reference to hex map
+##   - tile_map: TileMap - Reference to the tile map
+##   - occupied_tiles: Dictionary - Reference to occupied tiles dict
+##   - storage_array: Array - Array to store spawned entity data in
+##   - player_ulid: PackedByteArray - Player ownership
+##   - near_pos: Vector2i (optional) - Card position to spawn near (default: Vector2i(-1, -1))
+##   - entity_name: String (optional) - Display name for logging (default: pool_key)
+##   - post_spawn_callback: Callable (optional) - Function to call after each spawn (receives entity as parameter)
+## @return: int - Number of entities successfully spawned
+func spawn_multiple(spawn_config: Dictionary) -> int:
+	# Validate required fields
+	var required_fields = ["pool_key", "count", "tile_type", "hex_map", "tile_map", "occupied_tiles", "storage_array", "player_ulid"]
+	for field in required_fields:
+		if not spawn_config.has(field):
+			push_error("EntityManager.spawn_multiple: Missing required field '%s'" % field)
+			return 0
+
+	# Extract config
+	var pool_key: String = spawn_config["pool_key"]
+	var count: int = spawn_config["count"]
+	var tile_type: TileType = spawn_config["tile_type"]
+	var hex_map = spawn_config["hex_map"]
+	var tile_map = spawn_config["tile_map"]
+	var occupied_tiles: Dictionary = spawn_config["occupied_tiles"]
+	var storage_array: Array = spawn_config["storage_array"]
+	var player_ulid: PackedByteArray = spawn_config["player_ulid"]
+	var near_pos: Vector2i = spawn_config.get("near_pos", Vector2i(-1, -1))
+	var entity_name: String = spawn_config.get("entity_name", pool_key)
+	var post_spawn_callback: Callable = spawn_config.get("post_spawn_callback", Callable())
+
+	print("EntityManager: Spawning %d %s(s) for player %s%s" % [
+		count,
+		entity_name,
+		UlidManager.to_hex(player_ulid),
+		" near position %v" % near_pos if near_pos != Vector2i(-1, -1) else ""
+	])
+
+	# Find valid tiles based on tile_type
+	var valid_tiles: Array = _find_valid_tiles(tile_type, tile_map, occupied_tiles, near_pos)
+
+	if valid_tiles.size() < count:
+		push_error("EntityManager: Not enough valid tiles to spawn %d %s(s) (found %d)" % [count, entity_name, valid_tiles.size()])
+		return 0
+
+	# Spawn entities
+	var spawned_count = 0
+	print("EntityManager: Starting spawn loop for %d %s(s)" % [count, entity_name])
+
+	for i in range(count):
+		var entity = Cluster.acquire(pool_key)
+
+		if entity:
+			# Get spawn tile (closest if near_pos provided, otherwise first available)
+			var spawn_tile: Vector2i = valid_tiles[0]
+			valid_tiles.remove_at(0)
+
+			# Convert to world position
+			var world_pos = tile_map.map_to_local(spawn_tile)
+
+			# Configure entity
+			var entity_config = {
+				"player_ulid": player_ulid,
+				"direction": randi() % 16,
+				"occupied_tiles": occupied_tiles
+			}
+
+			# Spawn using base spawn_entity
+			spawn_entity(entity, hex_map, world_pos, entity_config)
+
+			# Call post-spawn callback if provided (e.g., for wave shader on Vikings)
+			if post_spawn_callback.is_valid():
+				post_spawn_callback.call(entity)
+
+			# Mark tile as occupied
+			occupied_tiles[spawn_tile] = entity
+
+			# Store in tracking array (using "entity" for both NPCs and Ships)
+			storage_array.append({"entity": entity, "tile": spawn_tile})
+
+			spawned_count += 1
+			print("  -> Spawned %s %d/%d at tile %v" % [entity_name, i + 1, count, spawn_tile])
+		else:
+			push_error("EntityManager: Failed to acquire %s %d from pool '%s'" % [entity_name, i + 1, pool_key])
+
+	print("EntityManager: Finished spawning. %d %s(s) spawned. Total in storage: %d" % [spawned_count, entity_name, storage_array.size()])
+	return spawned_count
+
+## Helper: Find valid tiles for spawning based on tile type
+## @param tile_type: TileType - What type of tiles to find
+## @param tile_map: TileMap - The tile map to search
+## @param occupied_tiles: Dictionary - Tiles that are already occupied
+## @param near_pos: Vector2i - Optional position to sort tiles by distance from
+## @return: Array of Vector2i - Valid spawn tiles (sorted by distance if near_pos provided)
+func _find_valid_tiles(tile_type: TileType, tile_map, occupied_tiles: Dictionary, near_pos: Vector2i) -> Array:
+	var tiles_with_distance: Array = []
+	var has_near_pos = near_pos != Vector2i(-1, -1)
+
+	# Helper for hex distance calculation
+	var hex_distance = func(a: Vector2i, b: Vector2i) -> int:
+		var dx = abs(a.x - b.x)
+		var dy = abs(a.y - b.y)
+		var dz = abs(dx + dy)
+		return (dx + dy + dz) / 2
+
+	# Scan all tiles
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
+			var tile_coords = Vector2i(x, y)
+
+			# Skip occupied tiles
+			if occupied_tiles.has(tile_coords):
+				continue
+
+			# Get tile source
+			var source_id = tile_map.get_cell_source_id(0, tile_coords)
+
+			# Check if tile matches the required type
+			var is_valid = false
+			match tile_type:
+				TileType.LAND:
+					is_valid = source_id != MapConfig.SOURCE_ID_WATER
+				TileType.WATER:
+					is_valid = source_id == MapConfig.SOURCE_ID_WATER
+				TileType.ANY:
+					is_valid = true
+
+			if is_valid:
+				if has_near_pos:
+					var distance = hex_distance.call(near_pos, tile_coords)
+					tiles_with_distance.append({"pos": tile_coords, "dist": distance})
+				else:
+					tiles_with_distance.append({"pos": tile_coords, "dist": 0})
+
+	# Sort by distance if near_pos provided
+	if has_near_pos:
+		tiles_with_distance.sort_custom(func(a, b): return a["dist"] < b["dist"])
+		print("EntityManager: Found %d valid tiles sorted by distance from %v" % [tiles_with_distance.size(), near_pos])
+	else:
+		print("EntityManager: Found %d valid tiles (no sorting)" % tiles_with_distance.size())
+
+	# Extract just the positions
+	var result: Array = []
+	for tile_data in tiles_with_distance:
+		result.append(tile_data["pos"])
+
+	return result

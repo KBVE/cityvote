@@ -1,57 +1,37 @@
-[gd_scene load_steps=3 format=3 uid="uid://dq8h7k5m9n2p4"]
+[gd_scene load_steps=2 format=3 uid="uid://dq8h7k5m9n2p4"]
 
 [ext_resource type="Script" path="res://view/hand/play_hand.gd" id="1_hand"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
-bg_color = Color(0.15, 0.15, 0.15, 0.7)
-border_width_left = 3
-border_width_top = 3
-border_width_right = 3
-border_width_bottom = 3
-border_color = Color(0.8, 0.6, 0.2, 1)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
 
 [node name="PlayHand" type="CanvasLayer"]
 script = ExtResource("1_hand")
 
-[node name="HandPanel" type="PanelContainer" parent="."]
+[node name="HandContainer" type="Control" parent="."]
+anchors_preset = 0
 offset_left = 400.0
 offset_top = 540.0
 offset_right = 880.0
 offset_bottom = 720.0
-mouse_filter = 0
-theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
-
-[node name="MarginContainer" type="MarginContainer" parent="HandPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 15
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 15
-theme_override_constants/margin_bottom = 10
-
-[node name="VBoxContainer" type="VBoxContainer" parent="HandPanel/MarginContainer"]
-layout_mode = 2
-theme_override_constants/separation = 5
-
-[node name="TopBar" type="HBoxContainer" parent="HandPanel/MarginContainer/VBoxContainer"]
-layout_mode = 2
 mouse_filter = 2
-theme_override_constants/separation = 10
 
-[node name="CardCountLabel" type="Label" parent="HandPanel/MarginContainer/VBoxContainer/TopBar"]
-layout_mode = 2
-size_flags_horizontal = 3
+[node name="CardCountLabel" type="Label" parent="HandContainer"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 5.0
+offset_right = 100.0
+offset_bottom = 25.0
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
 theme_override_font_sizes/font_size = 12
 text = "Cards: 7"
 horizontal_alignment = 0
 
-[node name="MulliganButton" type="Button" parent="HandPanel/MarginContainer/VBoxContainer/TopBar"]
-layout_mode = 2
+[node name="MulliganButton" type="Button" parent="HandContainer"]
+layout_mode = 0
+offset_left = 110.0
+offset_top = 5.0
+offset_right = 240.0
+offset_bottom = 28.0
+mouse_filter = 0
 theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
 theme_override_colors/font_disabled_color = Color(0.5, 0.4, 0.2, 1)
 theme_override_font_sizes/font_size = 11
@@ -59,9 +39,10 @@ text = "Mull Again (1 Gold)"
 disabled = true
 focus_mode = 0
 
-[node name="CardContainer" type="Control" parent="HandPanel/MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(450, 140)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
+[node name="CardContainer" type="Control" parent="HandContainer"]
+layout_mode = 0
+offset_left = 15.0
+offset_top = 35.0
+offset_right = 465.0
+offset_bottom = 175.0
 mouse_filter = 2

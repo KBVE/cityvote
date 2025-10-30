@@ -262,6 +262,13 @@ var translations: Dictionary = {
 		Language.HINDI: "काल्पनिक योद्धा",
 		Language.SPANISH: "Guerrero Fantástico"
 	},
+	"entity.king.name": {
+		Language.ENGLISH: "King",
+		Language.JAPANESE: "王",
+		Language.CHINESE: "国王",
+		Language.HINDI: "राजा",
+		Language.SPANISH: "Rey"
+	},
 
 	# Tile Types
 	"tile.grassland": {
@@ -358,6 +365,13 @@ var translations: Dictionary = {
 		Language.CHINESE: "来自神秘领域的传奇战士。精通剑术和魔法，以无与伦比的优雅姿态穿越战场。他们的勇气激励盟友，令敌人恐惧。",
 		Language.HINDI: "रहस्यमय क्षेत्रों से आया एक पौराणिक योद्धा। तलवार और जादू के मास्टर, वे अद्वितीय सुंदरता के साथ युद्धक्षेत्र में चलते हैं। उनकी साहस सहयोगियों को प्रेरित करती है और दुश्मनों में डर पैदा करती है।",
 		Language.SPANISH: "Un guerrero legendario de reinos místicos. Maestro de la espada y la magia, atraviesa campos de batalla con gracia incomparable. Su valentía inspira a aliados y siembra terror en enemigos."
+	},
+	"entity.king.flavor": {
+		Language.ENGLISH: "A noble ruler from a distant kingdom. Bearer of the crown and defender of the realm, he commands respect with wisdom and strength. His presence on the battlefield turns the tide of war.",
+		Language.JAPANESE: "遠い王国からの高貴な支配者。王冠の持ち主であり領域の守護者であり、知恵と力で尊敬を集める。戦場での彼の存在は戦争の流れを変える。",
+		Language.CHINESE: "来自遥远王国的尊贵统治者。王冠的承载者和领域的守护者，他以智慧和力量赢得尊重。他在战场上的出现扭转了战争的局势。",
+		Language.HINDI: "एक दूर के राज्य से एक महान शासक। मुकुट के धारक और क्षेत्र के रक्षक, वह ज्ञान और शक्ति से सम्मान प्राप्त करते हैं। युद्धक्षेत्र पर उनकी उपस्थिति युद्ध की दिशा बदल देती है।",
+		Language.SPANISH: "Un noble gobernante de un reino distante. Portador de la corona y defensor del reino, comanda respeto con sabiduría y fuerza. Su presencia en el campo de batalla cambia el curso de la guerra."
 	},
 
 	# Stats

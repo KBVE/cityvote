@@ -9,11 +9,10 @@ signal card_swapped()    # Emitted when player swaps cards in hand
 signal card_hand_entered()  # Emitted when mouse enters hand area
 signal card_hand_exited()   # Emitted when mouse exits hand area
 
-@onready var card_container: Control = $HandPanel/MarginContainer/VBoxContainer/CardContainer
-@onready var hand_panel: PanelContainer = $HandPanel
-@onready var top_bar: HBoxContainer = $HandPanel/MarginContainer/VBoxContainer/TopBar
-@onready var card_count_label: Label = $HandPanel/MarginContainer/VBoxContainer/TopBar/CardCountLabel
-@onready var mulligan_button: Button = $HandPanel/MarginContainer/VBoxContainer/TopBar/MulliganButton
+@onready var hand_container: Control = $HandContainer
+@onready var card_container: Control = $HandContainer/CardContainer
+@onready var card_count_label: Label = $HandContainer/CardCountLabel
+@onready var mulligan_button: Button = $HandContainer/MulliganButton
 
 # Swap indicator UI (cached packed scene)
 const SWAP_INDICATOR_SCENE = preload("res://view/hand/tooltip/swap_indicator.tscn")
@@ -80,13 +79,6 @@ var ghost_alpha_moving: float = 0.15  # Super transparent while moving
 var ghost_alpha_snapped: float = 0.85  # More visible when snapped to tile
 var ghost_fade_speed: float = 8.0  # How fast the ghost fades in/out
 
-# Hand panel opacity settings
-var panel_opacity_idle: float = 0.3  # Low opacity when idle
-var panel_opacity_active: float = 1.0  # Full opacity on hover
-var panel_fade_speed: float = 6.0  # How fast panel fades in/out
-var panel_opacity_tween: Tween = null  # Track current opacity tween to kill it when needed
-var is_mouse_over_panel: bool = false  # Track mouse hover state
-
 func _ready() -> void:
 	# Defer to ensure all autoloads are ready
 	call_deferred("_initialize")
@@ -94,17 +86,6 @@ func _ready() -> void:
 func _initialize() -> void:
 	# Wait for scene tree to be ready and all resources loaded (critical for WASM)
 	await get_tree().process_frame
-
-	# Set initial panel opacity to low
-	hand_panel.modulate.a = panel_opacity_idle
-
-	# Keep TopBar always at full opacity (so mulligan button doesn't fade)
-	if top_bar:
-		top_bar.modulate.a = 1.0
-
-	# Block input from passing through the hand panel to prevent accidental clicks on hex tiles
-	# Main.gd checks hand_panel rect to prevent camera dragging over hand area
-	hand_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	# Connect to GameTimer for auto-draw and turn tracking
 	if GameTimer:
@@ -116,9 +97,10 @@ func _initialize() -> void:
 		mulligan_button.pressed.connect(_on_mulligan_pressed)
 		_update_mulligan_button()  # Set initial state
 
-	# Connect hover signals for panel
-	hand_panel.mouse_entered.connect(_on_hand_panel_mouse_entered)
-	hand_panel.mouse_exited.connect(_on_hand_panel_mouse_exited)
+	# Connect hover signals for hand container (for card_hand_entered/exited signals)
+	if hand_container:
+		hand_container.mouse_entered.connect(_on_hand_container_mouse_entered)
+		hand_container.mouse_exited.connect(_on_hand_container_mouse_exited)
 
 	# Apply Alagard font to card count label
 	var font = Cache.get_font_for_current_language()
@@ -277,9 +259,6 @@ func _reorganize_hand() -> void:
 		tween.tween_property(card_wrapper, "scale", Vector2(1.0, 1.0), 0.3).set_ease(Tween.EASE_OUT)
 		tween.tween_property(card_wrapper, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.3)
 
-	# After reorganizing, check if mouse is still over hand panel and restore opacity
-	call_deferred("_check_hand_panel_hover")
-
 # Display a single card in the hand
 func display_card(card: PooledCard, index: int) -> void:
 	# Create a control wrapper for each card to handle rotation and hover
@@ -347,10 +326,6 @@ func display_card(card: PooledCard, index: int) -> void:
 func _on_card_mouse_entered(card: Control) -> void:
 	# If holding a card, show swap indicator
 	if card_state == CardState.HELD or card_state == CardState.PREVIEW:
-		# Keep hand panel at full opacity during swap mode
-		is_mouse_over_panel = true
-		_set_hand_panel_opacity(panel_opacity_active)
-
 		if card != held_card:
 			# Hovering over a different card while holding one - show swap indicator
 			_show_swap_indicator(card)
@@ -361,10 +336,6 @@ func _on_card_mouse_entered(card: Control) -> void:
 
 	if card_state != CardState.IDLE:
 		return  # Don't hover effect while card is held
-
-	# Keep hand panel at full opacity when hovering cards
-	is_mouse_over_panel = true
-	_set_hand_panel_opacity(panel_opacity_active)
 
 	# Lift card up and make it slightly larger
 	var tween = create_tween()
@@ -401,37 +372,11 @@ func _on_card_mouse_exited(card: Control) -> void:
 	tween.tween_property(card, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.2)
 
 # Hand panel hover effects
-func _on_hand_panel_mouse_entered() -> void:
-	is_mouse_over_panel = true
-	_set_hand_panel_opacity(panel_opacity_active)
+func _on_hand_container_mouse_entered() -> void:
 	card_hand_entered.emit()
 
-func _on_hand_panel_mouse_exited() -> void:
-	is_mouse_over_panel = false
-	_set_hand_panel_opacity(panel_opacity_idle)
+func _on_hand_container_mouse_exited() -> void:
 	card_hand_exited.emit()
-
-# Check if mouse is over hand panel and restore full opacity (used after reorganizing)
-func _check_hand_panel_hover() -> void:
-	# Update the tracked state based on actual mouse position
-	var mouse_over = _is_mouse_over_hand_ui()
-	is_mouse_over_panel = mouse_over
-	# Always set opacity to ensure it's correct after reorganization
-	_set_hand_panel_opacity(panel_opacity_active if mouse_over else panel_opacity_idle)
-
-# Set hand panel opacity with proper tween management (kills existing tween first)
-func _set_hand_panel_opacity(target_opacity: float) -> void:
-	# Kill existing tween to avoid conflicts
-	if panel_opacity_tween and panel_opacity_tween.is_valid():
-		panel_opacity_tween.kill()
-
-	# Create new tween
-	panel_opacity_tween = create_tween()
-	panel_opacity_tween.tween_property(hand_panel, "modulate:a", target_opacity, 0.3).set_ease(Tween.EASE_OUT)
-
-	# Keep TopBar (with mulligan button) always at full opacity
-	if top_bar:
-		top_bar.modulate.a = 1.0
 
 # Create the swap indicator UI from cached packed scene
 func _create_swap_indicator() -> void:
@@ -473,10 +418,12 @@ func _create_swap_indicator() -> void:
 # Show swap indicator (fixed position above hand panel)
 func _show_swap_indicator(target_card: Control) -> void:
 	if not swap_indicator:
+		print("PlayHand: swap_indicator is null!")
 		return
 
 	swap_indicator_target_card = target_card
 	swap_indicator.visible = true
+	print("PlayHand: Showing swap indicator at position ", swap_indicator.position, " visible=", swap_indicator.visible)
 
 # Hide swap indicator
 func _hide_swap_indicator() -> void:
@@ -831,7 +778,7 @@ func get_card_name(suit: int, value: int) -> String:
 # Check if mouse is currently over the hand UI
 func _is_mouse_over_hand_ui() -> bool:
 	var mouse_pos = get_viewport().get_mouse_position()
-	var hand_rect = hand_panel.get_global_rect()
+	var hand_rect = hand_container.get_global_rect()
 	return hand_rect.has_point(mouse_pos)
 
 # Auto-draw card when timer resets (every 60 seconds)
@@ -985,14 +932,15 @@ func _get_suit_name(suit: int) -> String:
 
 ## Highlight combo cards with outline shader
 func _highlight_combo_cards(combo_data: Dictionary) -> void:
-	var card_indices = combo_data.get("card_indices", [])
+	var positions = combo_data.get("positions", [])
 	var combo_shader = load("res://view/hand/combo/combo.gdshader")
 
-	for idx in card_indices:
-		var tile_coords_list = hex_map.card_data.keys()
-		if idx < tile_coords_list.size():
-			var tile_coords = tile_coords_list[idx]
-			var card_info = hex_map.card_data[tile_coords]
+	for pos in positions:
+		# pos is a Dictionary with "x" and "y" keys from Rust
+		var tile_coords = Vector2i(pos["x"], pos["y"])
+		var card_info = hex_map.card_data.get(tile_coords)
+
+		if card_info:
 			var card_sprite = card_info.get("sprite")
 
 			if card_sprite is PooledCard:
@@ -1019,13 +967,14 @@ func _on_combo_declined_by_player(combo_data: Dictionary) -> void:
 
 ## Remove highlight shader from combo cards
 func _remove_combo_highlights(combo_data: Dictionary) -> void:
-	var card_indices = combo_data.get("card_indices", [])
-	var tile_coords_list = hex_map.card_data.keys()
+	var positions = combo_data.get("positions", [])
 
-	for idx in card_indices:
-		if idx < tile_coords_list.size():
-			var tile_coords = tile_coords_list[idx]
-			var card_info = hex_map.card_data[tile_coords]
+	for pos in positions:
+		# pos is a Dictionary with "x" and "y" keys from Rust
+		var tile_coords = Vector2i(pos["x"], pos["y"])
+		var card_info = hex_map.card_data.get(tile_coords)
+
+		if card_info:
 			var card_sprite = card_info.get("sprite")
 
 			if card_sprite is PooledCard:
@@ -1034,27 +983,28 @@ func _remove_combo_highlights(combo_data: Dictionary) -> void:
 				print("  Removed highlight from card at %s" % [tile_coords])
 
 ## Clear combo cards from board (called when player accepts combo)
+## Removes ALL cards that were used in the combo (regular cards + wildcards)
+## Cards NOT in the combo remain on the board
 func _clear_combo_cards(combo_data: Dictionary) -> void:
-	var card_indices = combo_data.get("card_indices", [])
-	var tile_coords_list = hex_map.card_data.keys()
+	var positions = combo_data.get("positions", [])
 
-	print("PlayHand: Clearing %d combo cards from board" % card_indices.size())
+	print("PlayHand: Clearing %d combo cards from board" % positions.size())
 
-	for idx in card_indices:
-		if idx < tile_coords_list.size():
-			var tile_coords = tile_coords_list[idx]
-			var card_info = hex_map.card_data.get(tile_coords)
+	for pos in positions:
+		# pos is a Dictionary with "x" and "y" keys from Rust
+		var tile_coords = Vector2i(pos["x"], pos["y"])
+		var card_info = hex_map.card_data.get(tile_coords)
 
-			if card_info:
-				var card_sprite = card_info.get("sprite")
+		if card_info:
+			var card_sprite = card_info.get("sprite")
 
-				# Remove from hex_map
-				hex_map.card_data.erase(tile_coords)
+			# Remove from hex_map
+			hex_map.card_data.erase(tile_coords)
 
-				# Remove from Rust CardRegistry
-				var card_registry = get_node("/root/CardRegistryBridge")
-				if card_registry:
-					card_registry.remove_card_at(tile_coords.x, tile_coords.y)
+			# Remove from Rust CardRegistry
+			var card_registry = get_node("/root/CardRegistryBridge")
+			if card_registry:
+				card_registry.remove_card_at(tile_coords.x, tile_coords.y)
 
 				# Return card to pool (not queue_free - reuse for performance!)
 				if card_sprite and is_instance_valid(card_sprite):

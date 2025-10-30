@@ -335,13 +335,66 @@ impl ComboDetector {
         a_sorted == b_sorted
     }
 
+    /// Select the best 5 cards from a group for a specific poker hand
+    /// This is a simplified implementation - just takes first 5 standard cards
+    /// TODO: Implement proper selection logic for each hand type
+    fn select_best_5_for_hand(
+        indices: &[usize],
+        _cards: &[&CardData],
+        _all_cards: &[PositionedCard],
+        _hand: PokerHand
+    ) -> Vec<usize> {
+        // For now, just return the first 5 indices
+        // In the future, this should select the best 5 cards for the specific hand type
+        indices.iter().take(5).copied().collect()
+    }
+
+    /// Helper to build ComboResult from original indices
+    /// Looks up positions and cards using the original indices
+    /// Includes both combo cards and wildcards in the result
+    fn build_combo_result(
+        hand: PokerHand,
+        combo_card_indices: Vec<usize>,
+        wildcard_indices: &[usize],
+        all_cards: &[PositionedCard]
+    ) -> ComboResult {
+        // Combine combo cards and wildcards into one list
+        let mut all_indices = combo_card_indices;
+        all_indices.extend_from_slice(wildcard_indices);
+
+        let positions: Vec<(i32, i32)> = all_indices.iter()
+            .filter_map(|&orig_idx| all_cards.iter().find(|c| c.index == orig_idx))
+            .map(|c| (c.x, c.y))
+            .collect();
+
+        let cards: Vec<&CardData> = all_indices.iter()
+            .filter_map(|&orig_idx| all_cards.iter().find(|c| c.index == orig_idx))
+            .map(|c| &c.card)
+            .collect();
+
+        ComboResult::with_resources(hand, all_indices, positions, &cards)
+    }
+
     /// Check a group of adjacent cards for poker combos (skipping jokers)
     fn check_group_for_combos(group: &[usize], all_cards: &[PositionedCard]) -> Option<ComboResult> {
-        // Extract standard cards from group (skip jokers/custom cards)
-        let group_cards: Vec<&CardData> = group.iter()
-            .map(|&idx| &all_cards[idx].card)
-            .filter(|c| !c.is_custom)
-            .collect();
+        // Extract standard cards from group (skip jokers/custom cards for combo detection)
+        // Keep track of ORIGINAL indices (from GDScript input) for both standard and wildcard cards
+        let mut standard_card_original_indices = Vec::new();
+        let mut wildcard_original_indices = Vec::new();
+        let mut group_cards = Vec::new();
+
+        for &local_idx in group.iter() {
+            let positioned_card = &all_cards[local_idx];
+            let card = &positioned_card.card;
+            if !card.is_custom {
+                // Use the ORIGINAL index from GDScript input, not the local array index
+                standard_card_original_indices.push(positioned_card.index);
+                group_cards.push(card);
+            } else {
+                // Track wildcard indices to include in final result (so they get cleared too)
+                wildcard_original_indices.push(positioned_card.index);
+            }
+        }
 
         // Need at least 2 cards for any combo (pairs)
         if group_cards.len() < 2 {
@@ -349,50 +402,50 @@ impl ComboDetector {
         }
 
         // Check for hands (from strongest to weakest)
-        // Note: Some hands require 5 cards, others can work with fewer
+        // For hands that require exactly 5 cards, limit to best 5
         if let Some(_) = Self::check_royal_flush(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::RoyalFlush, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::RoyalFlush);
+            return Some(Self::build_combo_result(PokerHand::RoyalFlush, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_straight_flush(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::StraightFlush, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::StraightFlush);
+            return Some(Self::build_combo_result(PokerHand::StraightFlush, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_four_of_a_kind(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::FourOfAKind, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::FourOfAKind);
+            return Some(Self::build_combo_result(PokerHand::FourOfAKind, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_full_house(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::FullHouse, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::FullHouse);
+            return Some(Self::build_combo_result(PokerHand::FullHouse, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_flush(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::Flush, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::Flush);
+            return Some(Self::build_combo_result(PokerHand::Flush, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_straight(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::Straight, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::Straight);
+            return Some(Self::build_combo_result(PokerHand::Straight, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_three_of_a_kind(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::ThreeOfAKind, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::ThreeOfAKind);
+            return Some(Self::build_combo_result(PokerHand::ThreeOfAKind, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_two_pair(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::TwoPair, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::TwoPair);
+            return Some(Self::build_combo_result(PokerHand::TwoPair, best_5, &wildcard_original_indices, all_cards));
         }
 
         if let Some(_) = Self::check_one_pair(&group_cards) {
-            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::OnePair, group.to_vec(), positions, &group_cards));
+            let best_5 = Self::select_best_5_for_hand(&standard_card_original_indices, &group_cards, all_cards, PokerHand::OnePair);
+            return Some(Self::build_combo_result(PokerHand::OnePair, best_5, &wildcard_original_indices, all_cards));
         }
 
         None

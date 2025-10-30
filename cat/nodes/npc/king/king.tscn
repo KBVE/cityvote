@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3 uid="uid://king_npc_001"]
+
+[ext_resource type="Script" path="res://nodes/npc/king/king.gd" id="1_king"]
+[ext_resource type="Texture2D" path="res://nodes/npc/king/king_atlas.png" id="2_king_atlas"]
+
+[node name="King" type="Node2D"]
+scale = Vector2(1.0, 1.0)
+script = ExtResource("1_king")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_king_atlas")
