@@ -9,9 +9,9 @@ use crate::ui::toast;
 
 /// Map configuration constants (must match MapConfig in GDScript)
 pub mod map_config {
-    pub const MAP_WIDTH: i32 = 80;
-    pub const MAP_HEIGHT: i32 = 65;
-    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 5200
+    pub const MAP_WIDTH: i32 = 200;
+    pub const MAP_HEIGHT: i32 = 150;
+    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 30,000
 }
 
 /// Tile types for ground NPC pathfinding

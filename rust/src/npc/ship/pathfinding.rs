@@ -12,11 +12,11 @@ use crate::ui::toast;
 /// IMPORTANT: These values MUST be kept in sync with:
 /// - cat/core/map_config.gd (GDScript autoload)
 ///
-/// Current map size: 80x65 = 5,200 tiles
+/// Current map size: 200x150 = 30,000 tiles
 pub mod map_config {
-    pub const MAP_WIDTH: i32 = 80;
-    pub const MAP_HEIGHT: i32 = 65;
-    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 5200
+    pub const MAP_WIDTH: i32 = 200;
+    pub const MAP_HEIGHT: i32 = 150;
+    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 30,000
 }
 
 /// Tile types for pathfinding

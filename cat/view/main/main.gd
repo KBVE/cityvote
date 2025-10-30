@@ -92,6 +92,9 @@ func _ready():
 	# Calculate camera bounds based on actual tilemap (must be done first!)
 	_calculate_camera_bounds()
 
+	# Setup CameraManager with camera reference
+	CameraManager.set_camera(camera)
+
 	#; TEST
 	# Connect hex_map to play_hand for card placement
 	play_hand.hex_map = hex_map
@@ -130,6 +133,9 @@ func _ready():
 
 	# Spawn test Kings on land tiles
 	_spawn_test_kings()
+
+	# Position camera at a city for a nice starting view
+	_position_camera_at_city()
 
 	# Connect to joker consumption signal
 	if CardComboBridge:
@@ -777,6 +783,33 @@ func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int
 		return candidates[randi() % candidates.size()]
 
 	return start  # No valid destination found
+
+## Position camera at a city on startup for a nice view
+func _position_camera_at_city() -> void:
+	# Search for a city tile in the tilemap
+	var city_tile: Vector2i = Vector2i(-1, -1)
+
+	# Search for city1 or city2 (source IDs 7 or 8)
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
+			var tile_coords = Vector2i(x, y)
+			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+
+			# Found a city!
+			if source_id == 7 or source_id == 8:
+				city_tile = tile_coords
+				break
+
+		if city_tile != Vector2i(-1, -1):
+			break
+
+	# If we found a city, pan camera to it
+	if city_tile != Vector2i(-1, -1):
+		var world_pos = hex_map.tile_map.map_to_local(city_tile)
+		print("Main: Positioning camera at city tile %v (world pos: %v)" % [city_tile, world_pos])
+		CameraManager.set_position_instant(world_pos)
+	else:
+		print("Main: No city found, camera remains at default position")
 
 # Clamp camera position within bounds
 # TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping
