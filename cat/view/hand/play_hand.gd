@@ -11,6 +11,7 @@ signal card_hand_exited()   # Emitted when mouse exits hand area
 
 @onready var card_container: Control = $HandPanel/MarginContainer/VBoxContainer/CardContainer
 @onready var hand_panel: PanelContainer = $HandPanel
+@onready var top_bar: HBoxContainer = $HandPanel/MarginContainer/VBoxContainer/TopBar
 @onready var card_count_label: Label = $HandPanel/MarginContainer/VBoxContainer/TopBar/CardCountLabel
 @onready var mulligan_button: Button = $HandPanel/MarginContainer/VBoxContainer/TopBar/MulliganButton
 
@@ -96,6 +97,10 @@ func _initialize() -> void:
 
 	# Set initial panel opacity to low
 	hand_panel.modulate.a = panel_opacity_idle
+
+	# Keep TopBar always at full opacity (so mulligan button doesn't fade)
+	if top_bar:
+		top_bar.modulate.a = 1.0
 
 	# Block input from passing through the hand panel to prevent accidental clicks on hex tiles
 	# Main.gd checks hand_panel rect to prevent camera dragging over hand area
@@ -423,6 +428,10 @@ func _set_hand_panel_opacity(target_opacity: float) -> void:
 	# Create new tween
 	panel_opacity_tween = create_tween()
 	panel_opacity_tween.tween_property(hand_panel, "modulate:a", target_opacity, 0.3).set_ease(Tween.EASE_OUT)
+
+	# Keep TopBar (with mulligan button) always at full opacity
+	if top_bar:
+		top_bar.modulate.a = 1.0
 
 # Create the swap indicator UI from cached packed scene
 func _create_swap_indicator() -> void:
@@ -1067,32 +1076,66 @@ func _on_mulligan_pressed() -> void:
 	if not _can_mulligan():
 		return
 
-	# Check if player has enough gold and spend it (via Rust ledger)
-	var cost = {ResourceLedger.R.GOLD: MULLIGAN_COST}
-	if not ResourceLedger.can_spend(cost):
-		Toast.show_toast("Not enough gold! Need %d gold to mulligan." % MULLIGAN_COST, 3.0)
-		return
-
 	# Pause the game timer during mulligan
 	if GameTimer:
 		GameTimer.pause()
 
-	# Deduct gold via Rust ledger (source of truth)
+	# Deduct gold via Rust ledger (source of truth) - Issue #3 fix
+	# Use float explicitly to match Rust's f32 expectation
+	var cost = {ResourceLedger.R.GOLD: float(MULLIGAN_COST)}
+
+	var gold_before = ResourceLedger.get_current(ResourceLedger.R.GOLD)
+	print("PlayHand: Gold before mulligan: %.1f" % gold_before)
+
+	if not ResourceLedger.can_spend(cost):
+		Toast.show_toast("Not enough gold! Need %d gold to mulligan." % MULLIGAN_COST, 3.0)
+		if GameTimer:
+			GameTimer.resume()
+		return
+
 	if not ResourceLedger.spend(cost):
 		push_error("PlayHand: Failed to spend gold for mulligan (should have been caught by can_spend)!")
 		if GameTimer:
 			GameTimer.resume()
 		return
 
-	# Clear current hand
+	var gold_after = ResourceLedger.get_current(ResourceLedger.R.GOLD)
+	print("PlayHand: Gold after mulligan: %.1f (spent %.1f)" % [gold_after, gold_before - gold_after])
+
+	# Separate bonus cards (custom cards) from deck cards
+	var bonus_cards: Array[PooledCard] = []
+	var deck_cards: Array[PooledCard] = []
+
 	for card in hand:
 		if card and is_instance_valid(card):
-			Cluster.release("playing_card", card)
+			if card.is_custom:
+				bonus_cards.append(card)
+			else:
+				deck_cards.append(card)
+
+	# Only release deck cards back to pool
+	for card in deck_cards:
+		Cluster.release("playing_card", card)
+
+	# Clear hand and display
 	hand.clear()
 	clear_hand_display()
 
-	# Redraw hand
-	draw_initial_hand()
+	# Draw 7 new cards from deck
+	var card_deck = get_node("/root/CardDeck")
+	for i in range(7):
+		var card = card_deck.draw_card(deck_id)
+		if card == null:
+			push_warning("PlayHand: Failed to draw card %d during mulligan" % i)
+			continue
+
+		hand.append(card)
+		display_card(card, i)
+
+	# Re-add bonus cards to hand
+	for bonus_card in bonus_cards:
+		hand.append(bonus_card)
+		display_card(bonus_card, hand.size() - 1)
 
 	# Update button state
 	_update_mulligan_button()
@@ -1123,20 +1166,30 @@ func _update_mulligan_button() -> void:
 		return
 
 	var can_mull = _can_mulligan()
+
+	# HIDE button after turn 0 or after placing any cards
+	if not can_mull:
+		if mulligan_button.visible:  # Only hide if currently visible
+			var current_turn = GameTimer.get_current_turn() if GameTimer else -1
+			print("PlayHand: Hiding mulligan button - Turn: %d, Cards placed: %d" % [current_turn, cards_placed_this_game])
+			mulligan_button.visible = false
+		return
+
+	# Check if player has enough gold
 	var cost = {ResourceLedger.R.GOLD: MULLIGAN_COST}
 	var has_gold = ResourceLedger.can_spend(cost)
 
-	mulligan_button.disabled = not (can_mull and has_gold)
+	# Show button (only if currently hidden)
+	if not mulligan_button.visible:
+		mulligan_button.visible = true
+
+	# Only update disabled state if it changed (prevents unnecessary transitions)
+	var should_disable = not has_gold
+	if mulligan_button.disabled != should_disable:
+		mulligan_button.disabled = should_disable
 
 	# Update tooltip
-	if not can_mull:
-		if GameTimer and GameTimer.get_current_turn() > 0:
-			mulligan_button.tooltip_text = "Mulligan only available on turn 0"
-		elif cards_placed_this_game > 0:
-			mulligan_button.tooltip_text = "Cannot mulligan after placing cards"
-		else:
-			mulligan_button.tooltip_text = "Cannot mulligan"
-	elif not has_gold:
+	if not has_gold:
 		mulligan_button.tooltip_text = "Not enough gold (need %d)" % MULLIGAN_COST
 	else:
 		mulligan_button.tooltip_text = "Redraw your entire hand for %d gold" % MULLIGAN_COST

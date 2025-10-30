@@ -98,6 +98,10 @@ func show_combo(combo_data: Dictionary) -> void:
 
 	# Store combo data for later use
 	current_combo_data = combo_data
+	print("ComboPopup.show_combo: Stored combo_data")
+	print("  has request_id: %s" % current_combo_data.has("request_id"))
+	if current_combo_data.has("request_id"):
+		print("  request_id value: %d" % current_combo_data["request_id"])
 
 	# Activate and show
 	_is_active = true
@@ -109,6 +113,13 @@ func show_combo(combo_data: Dictionary) -> void:
 
 ## Called when player presses Accept button
 func _on_accept_pressed() -> void:
+	print("ComboPopup._on_accept_pressed called")
+	print("  current_combo_data keys: ", current_combo_data.keys())
+	print("  has request_id: ", current_combo_data.has("request_id"))
+	if current_combo_data.has("request_id"):
+		print("  request_id value: ", current_combo_data["request_id"])
+	else:
+		print("  ERROR: No request_id in current_combo_data!")
 	combo_accepted.emit(current_combo_data)
 	dismiss()
 

@@ -102,8 +102,14 @@ func _exit_tree() -> void:
 
 ## Callback when Rust thread finishes combo detection
 func _on_combo_found(request_id: int, result: Dictionary) -> void:
+	print("CardComboBridge._on_combo_found called:")
+	print("  request_id: ", request_id)
+	print("  result keys before adding request_id: ", result.keys())
+
 	# Add request_id to result for tracking (needed for accept/decline)
 	result["request_id"] = request_id
+	print("  result keys after adding request_id: ", result.keys())
+	print("  result['request_id']: ", result["request_id"])
 
 	# Call callback if registered
 	if pending_requests.has(request_id):
@@ -112,6 +118,7 @@ func _on_combo_found(request_id: int, result: Dictionary) -> void:
 		callback.call(result)
 
 	# Emit signal
+	print("  Emitting combo_detected signal with request_id=", request_id)
 	combo_detected.emit(request_id, result)
 
 ## Request combo detection (ASYNC - result via callback or signal)

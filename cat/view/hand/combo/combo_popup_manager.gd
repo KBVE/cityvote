@@ -61,13 +61,24 @@ func show_combo(combo_data: Dictionary) -> void:
 
 ## Called when CardComboBridge detects a combo (from signal)
 func _on_combo_detected_bridge(request_id: int, result: Dictionary) -> void:
+	print("ComboPopupManager._on_combo_detected_bridge called:")
+	print("  request_id parameter: ", request_id)
+	print("  result.has('request_id'): ", result.has("request_id"))
+	if result.has("request_id"):
+		print("  result['request_id']: ", result["request_id"])
+	print("  result keys: ", result.keys())
+
 	# The result already has all the data we need including resources
 	# Ensure request_id is in the result (should already be there from CardComboBridge)
 	if not result.has("request_id"):
+		print("  WARNING: request_id missing from result, adding it now")
 		result["request_id"] = request_id
 
 	if result.has("hand_name"):
+		print("  Calling show_combo with result")
 		show_combo(result)
+	else:
+		print("  ERROR: result missing hand_name, not showing combo")
 
 func _on_popup_dismissed() -> void:
 	is_popup_active = false

@@ -698,12 +698,11 @@ impl CardComboDetector {
             return 0; // Invalid request
         }
 
-        // Generate request ID
+        // Generate request ID (start from 1, not 0, since 0 is treated as invalid)
         let request_id = {
             let mut next_id = self.next_request_id.lock().unwrap();
-            let id = *next_id;
             *next_id += 1;
-            id
+            *next_id
         };
 
         // Send request to worker thread
