@@ -119,6 +119,13 @@ var translations: Dictionary = {
 		Language.HINDI: "डायनो जोकर को जमीन पर रखा जाना चाहिए!",
 		Language.SPANISH: "¡El comodín dino debe colocarse en tierra!"
 	},
+	"ui.hand.hint_place_card": {
+		Language.ENGLISH: "Double click or tap to place",
+		Language.JAPANESE: "ダブルクリックまたはタップして配置",
+		Language.CHINESE: "双击或点击放置",
+		Language.HINDI: "रखने के लिए डबल क्लिक या टैप करें",
+		Language.SPANISH: "Doble clic o toca para colocar"
+	},
 
 	# HUD - Timer and Turns
 	"ui.hud.timer": {

@@ -1,0 +1,43 @@
+[gd_scene load_steps=3 format=3 uid="uid://c4h7nak2xqw1p"]
+
+[ext_resource type="Script" path="res://view/hud/pointer/hint_ui.gd" id="1_hint"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hint"]
+bg_color = Color(0.1, 0.1, 0.12, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.7, 0.7, 0.7, 0.6)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+shadow_color = Color(0, 0, 0, 0.4)
+shadow_size = 4
+shadow_offset = Vector2(2, 2)
+
+[node name="HintUI" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_hint")
+
+[node name="HintContainer" type="PanelContainer" parent="."]
+z_index = 1000
+offset_right = 200.0
+offset_bottom = 40.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_hint")
+
+[node name="MarginContainer" type="MarginContainer" parent="HintContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="Label" type="Label" parent="HintContainer/MarginContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.9, 1)
+theme_override_font_sizes/font_size = 14
+text = "Double click or tap to place"
+autowrap_mode = 2

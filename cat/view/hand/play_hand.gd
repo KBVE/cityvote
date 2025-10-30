@@ -386,20 +386,22 @@ func _create_swap_indicator() -> void:
 		push_error("PlayHand: Failed to instantiate swap indicator scene!")
 		return
 
+	print("PlayHand: Created swap_indicator")
+
 	# Set translated text
 	swap_indicator.text = I18n.translate("ui.hand.swap")
+	print("PlayHand: swap_indicator.text = ", swap_indicator.text)
 
 	# Apply Alagard font
 	var font = Cache.get_font_for_current_language()
 	if font:
 		swap_indicator.add_theme_font_override("font", font)
 
-	# Position it centered above the card container (fixed position)
-	if not is_instance_valid(card_container):
-		push_error("PlayHand: card_container is invalid!")
-		return
-
-	card_container.add_child(swap_indicator)
+	# Add to self (PlayHand root) instead of card_container to avoid clipping
+	# Set very high z-index to render on top of everything
+	swap_indicator.z_index = 1000
+	add_child(swap_indicator)
+	print("PlayHand: Added swap_indicator as child with z_index=1000")
 
 	# Position above the card container, centered
 	# Wait one frame to get proper sizing
@@ -407,13 +409,19 @@ func _create_swap_indicator() -> void:
 
 	# Validate objects after await
 	if not is_instance_valid(swap_indicator) or not is_instance_valid(card_container):
+		print("PlayHand: swap_indicator or card_container became invalid after await!")
 		return
 
+	# Position relative to card_container's global position
+	var container_global_pos = card_container.global_position
 	var container_width = card_container.size.x
-	swap_indicator.position = Vector2(
-		container_width / 2 - swap_indicator.size.x / 2,
-		-swap_indicator.size.y - 10  # 10px above the card container
+
+	# Center horizontally above the card container
+	swap_indicator.global_position = Vector2(
+		container_global_pos.x + container_width / 2 - swap_indicator.size.x / 2,
+		container_global_pos.y - swap_indicator.size.y - 10  # 10px above
 	)
+	print("PlayHand: Positioned swap_indicator at global ", swap_indicator.global_position, " size=", swap_indicator.size)
 
 # Show swap indicator (fixed position above hand panel)
 func _show_swap_indicator(target_card: Control) -> void:
@@ -592,6 +600,13 @@ func _update_preview_ghost(delta: float) -> void:
 		preview_ghost.position = tile_world_pos + ghost_offset
 		preview_ghost_target_tile = tile_coords
 
+		# Check if tile is occupied
+		var is_tile_occupied = hex_map.card_data.has(tile_coords)
+
+		if not is_tile_occupied:
+			# Show hint for placing card on empty tile
+			GlobalHint.show_hint(I18n.translate("ui.hand.hint_place_card"))
+
 		# Transition to PREVIEW state if hovering valid tile
 		if card_state == CardState.HELD:
 			card_state = CardState.PREVIEW
@@ -603,6 +618,9 @@ func _update_preview_ghost(delta: float) -> void:
 		# Invalid tile - follow mouse freely with offset
 		preview_ghost.position = mouse_world_pos + ghost_offset
 		preview_ghost_target_tile = Vector2i(-1, -1)
+
+		# Hide hint when not over valid tile
+		GlobalHint.hide_hint()
 
 		# Transition back to HELD if not over valid tile
 		if card_state == CardState.PREVIEW:
@@ -616,6 +634,8 @@ func _destroy_preview_ghost() -> void:
 	# Don't destroy the ghost - it's the actual PooledCard that will be returned to hand or placed
 	preview_ghost = null
 	preview_ghost_target_tile = Vector2i(-1, -1)
+	# Hide hint when card interaction ends
+	GlobalHint.hide_hint()
 
 func _update_camera_follow(delta: float) -> void:
 	if not camera_follow_enabled or camera == null or hex_map == null:

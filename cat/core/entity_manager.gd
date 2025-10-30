@@ -3,12 +3,25 @@ extends Node
 ## EntityManager - Centralized entity lifecycle management
 ## Handles spawning/despawning of all game entities (NPCs, Ships, etc.)
 ## Manages health bar pooling to ensure proper setup and cleanup
+## Tracks all entities in a unified registry for movement and querying
 
 ## Entity type definitions for spawn_multiple
 enum TileType {
 	LAND,   # Non-water tiles (for ground units like Jezzas)
 	WATER,  # Water tiles (for ships like Vikings)
 	ANY     # Any tile (for flying units, etc.)
+}
+
+## Unified entity registry - tracks all spawned entities
+## Each entry: {entity: Node, type: String, pool_key: String, move_timer: float, move_interval: float, tile: Vector2i}
+var registered_entities: Array = []
+
+## Entity type configurations (movement intervals, etc.)
+const ENTITY_CONFIGS = {
+	"viking": {"move_interval": 2.0, "tile_type": TileType.WATER},
+	"jezza": {"move_interval": 3.0, "tile_type": TileType.LAND},
+	"fantasywarrior": {"move_interval": 2.5, "tile_type": TileType.LAND},
+	"king": {"move_interval": 2.0, "tile_type": TileType.LAND},
 }
 
 ## Spawn an entity (NPC, Ship, etc.) with proper initialization
@@ -47,6 +60,58 @@ func spawn_entity(entity: Node, parent: Node, world_pos: Vector2, config: Dictio
 	print("EntityManager: Spawned %s at %v" % [entity.get_class() if entity.has_method("get_class") else entity.name, world_pos])
 	return entity
 
+## Register an entity in the unified registry for tracking and movement
+## @param entity: The entity node to register
+## @param pool_key: Pool key (e.g., "viking", "jezza", "king")
+## @param tile: Current tile coordinates
+## @return: bool - True if registered successfully
+func register_entity(entity: Node, pool_key: String, tile: Vector2i) -> bool:
+	if not entity or not is_instance_valid(entity):
+		push_error("EntityManager: Cannot register invalid entity")
+		return false
+
+	# Get entity config
+	var config = ENTITY_CONFIGS.get(pool_key, {"move_interval": 2.0})
+
+	# Create registry entry
+	var entry = {
+		"entity": entity,
+		"type": pool_key,
+		"pool_key": pool_key,
+		"move_timer": 0.0,
+		"move_interval": config.get("move_interval", 2.0),
+		"tile": tile
+	}
+
+	registered_entities.append(entry)
+	print("EntityManager: Registered %s (total entities: %d)" % [pool_key, registered_entities.size()])
+	return true
+
+## Unregister an entity from the registry
+## @param entity: The entity to unregister
+## @return: bool - True if found and unregistered
+func unregister_entity(entity: Node) -> bool:
+	for i in range(registered_entities.size()):
+		if registered_entities[i]["entity"] == entity:
+			registered_entities.remove_at(i)
+			print("EntityManager: Unregistered entity (remaining: %d)" % registered_entities.size())
+			return true
+	return false
+
+## Get all registered entities (for debugging/inspection)
+func get_registered_entities() -> Array:
+	return registered_entities
+
+## Get registered entities by type
+## @param pool_key: Type to filter by (e.g., "viking", "jezza")
+## @return: Array of entity nodes
+func get_entities_by_type(pool_key: String) -> Array:
+	var result: Array = []
+	for entry in registered_entities:
+		if entry["pool_key"] == pool_key:
+			result.append(entry["entity"])
+	return result
+
 ## Despawn an entity, returning it to the pool
 ## @param entity: The entity to despawn
 ## @param pool_key: Pool key to return entity to (e.g., "jezza", "viking")
@@ -54,6 +119,9 @@ func despawn_entity(entity: Node, pool_key: String) -> void:
 	if not entity or not is_instance_valid(entity):
 		push_warning("EntityManager: Cannot despawn - entity is invalid!")
 		return
+
+	# Unregister from tracking
+	unregister_entity(entity)
 
 	# Remove and reset health bar BEFORE returning to pool
 	_cleanup_entity_health_bar(entity)
@@ -207,6 +275,9 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 			# Spawn using base spawn_entity
 			spawn_entity(entity, hex_map, world_pos, entity_config)
 
+			# Register with EntityManager for movement tracking
+			register_entity(entity, pool_key, spawn_tile)
+
 			# Call post-spawn callback if provided (e.g., for wave shader on Vikings)
 			if post_spawn_callback.is_valid():
 				post_spawn_callback.call(entity)
@@ -284,3 +355,56 @@ func _find_valid_tiles(tile_type: TileType, tile_map, occupied_tiles: Dictionary
 		result.append(tile_data["pos"])
 
 	return result
+
+## Update all registered entities (movement timers)
+## Call this from main scene's _process(delta)
+## @param delta: Time since last frame
+## @param movement_callback: Callable that handles pathfinding for an entity
+##   Signature: func(entity: Node, current_tile: Vector2i, pool_key: String)
+func update_entities(delta: float, movement_callback: Callable) -> void:
+	for entry in registered_entities:
+		var entity = entry["entity"]
+
+		# Skip invalid entities
+		if not entity or not is_instance_valid(entity):
+			continue
+
+		# Update movement timer
+		entry["move_timer"] += delta
+
+		# Check if it's time to move
+		if entry["move_timer"] >= entry["move_interval"]:
+			entry["move_timer"] = 0.0
+
+			# Call the movement callback to handle pathfinding
+			if movement_callback.is_valid():
+				movement_callback.call(entity, entry["tile"], entry["pool_key"], entry)
+
+## Find entity near a world position (spatial query)
+## @param world_pos: World position to search near
+## @param search_radius: Search radius in pixels
+## @return: Node - Closest entity within radius, or null
+func find_entity_near_position(world_pos: Vector2, search_radius: float) -> Node:
+	var closest_entity = null
+	var closest_distance = search_radius
+
+	for entry in registered_entities:
+		var entity = entry["entity"]
+		if entity and is_instance_valid(entity):
+			var distance = entity.position.distance_to(world_pos)
+			if distance < closest_distance:
+				closest_distance = distance
+				closest_entity = entity
+
+	return closest_entity
+
+## Update an entity's tile position in the registry
+## Call this after an entity completes movement
+## @param entity: The entity that moved
+## @param new_tile: The new tile coordinates
+func update_entity_tile(entity: Node, new_tile: Vector2i) -> bool:
+	for entry in registered_entities:
+		if entry["entity"] == entity:
+			entry["tile"] = new_tile
+			return true
+	return false

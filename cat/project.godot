@@ -37,6 +37,8 @@ RustToastBridge="*res://core/rust_toast_bridge.gd"
 ShipPathfindingBridge="*res://core/ship_pathfinding_bridge.gd"
 NpcPathfindingBridge="*res://core/npc_pathfinding_bridge.gd"
 CardRegistryBridge="*res://core/card_registry_bridge.gd"
+GlobalPointer="*res://view/hud/pointer/global_pointer_ui.tscn"
+GlobalHint="*res://view/hud/pointer/hint_panel.tscn"
 
 [display]
 

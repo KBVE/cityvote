@@ -1,4 +1,4 @@
-[gd_scene load_steps=3 format=3 uid="uid://da77antahp6oi"]
+[gd_scene load_steps=7 format=3 uid="uid://da77antahp6oi"]
 
 [ext_resource type="Script" path="res://view/hand/combo/combo_popup.gd" id="1"]
 
@@ -15,6 +15,54 @@ corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
 shadow_color = Color(0, 0, 0, 0.5)
 shadow_size = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_accept_normal"]
+bg_color = Color(0.15, 0.3, 0.15, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.85, 0.7, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_accept_hover"]
+bg_color = Color(0.2, 0.4, 0.2, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 0.85, 0.5, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_decline_normal"]
+bg_color = Color(0.3, 0.15, 0.15, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.85, 0.7, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_decline_hover"]
+bg_color = Color(0.4, 0.2, 0.2, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 0.85, 0.5, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
 
 [node name="ComboPopup" type="PanelContainer"]
 custom_minimum_size = Vector2(300, 0)
@@ -53,9 +101,21 @@ alignment = 1
 [node name="AcceptButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.9, 1, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("StyleBoxFlat_accept_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_accept_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_accept_hover")
 text = "Accept"
 
 [node name="DeclineButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.9, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("StyleBoxFlat_decline_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_decline_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_decline_hover")
 text = "Decline"

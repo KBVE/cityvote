@@ -1,0 +1,41 @@
+[gd_scene load_steps=2 format=3 uid="uid://dgm8k5n7wqc8v"]
+
+[ext_resource type="Script" path="res://view/hud/pointer/global_pointer_ui.gd" id="1_pointer"]
+
+[node name="GlobalPointerUI" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_pointer")
+
+[node name="PointerContainer" type="Control" parent="."]
+z_index = 1000
+layout_mode = 3
+anchors_preset = 0
+mouse_filter = 2
+
+[node name="Arrow" type="Polygon2D" parent="PointerContainer"]
+z_index = 1
+color = Color(1, 0.8, 0.2, 1)
+polygon = PackedVector2Array(-10, -30, 0, 0, 10, -30, 0, -20)
+
+[node name="PulseCircle" type="ColorRect" parent="PointerContainer"]
+modulate = Color(1, 0.8, 0.2, 0.5)
+offset_left = -30.0
+offset_top = -30.0
+offset_right = 30.0
+offset_bottom = 30.0
+pivot_offset = Vector2(30, 30)
+mouse_filter = 2
+
+[node name="Label" type="Label" parent="PointerContainer"]
+offset_left = -80.0
+offset_top = -60.0
+offset_right = 80.0
+offset_bottom = -35.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 16
+text = "Look here!"
+horizontal_alignment = 1
+vertical_alignment = 1

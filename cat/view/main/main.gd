@@ -257,29 +257,8 @@ func _process(delta):
 	#; TEST
 
 	#### TEST ####
-	# Move vikings periodically
-	viking_move_timer += delta
-	if viking_move_timer >= viking_move_interval:
-		viking_move_timer = 0.0
-		_move_test_vikings()
-
-	# Move Jezza NPCs periodically
-	jezza_move_timer += delta
-	if jezza_move_timer >= jezza_move_interval:
-		jezza_move_timer = 0.0
-		_move_test_jezzas()
-
-	# Move Fantasy Warrior NPCs periodically
-	fantasy_warrior_move_timer += delta
-	if fantasy_warrior_move_timer >= fantasy_warrior_move_interval:
-		fantasy_warrior_move_timer = 0.0
-		_move_test_fantasy_warriors()
-
-	# Move King NPCs periodically
-	king_move_timer += delta
-	if king_move_timer >= king_move_interval:
-		king_move_timer = 0.0
-		_move_test_kings()
+	# Update all entities through EntityManager (handles movement timers)
+	EntityManager.update_entities(delta, _handle_entity_movement)
 
 func _input(event):
 	# Handle right-click to open entity stats panel
@@ -289,7 +268,7 @@ func _input(event):
 			var world_pos = camera.get_global_mouse_position()
 
 			# Find entity near click position (spatial query with generous radius)
-			var entity = _find_entity_near_position(world_pos, 32.0)  # 32px search radius
+			var entity = EntityManager.find_entity_near_position(world_pos, 32.0)  # 32px search radius
 
 			if entity:
 				# Debug: Print entity type
@@ -413,6 +392,9 @@ func _spawn_test_vikings():
 
 			EntityManager.spawn_entity(viking, hex_map, world_pos, spawn_config)
 
+			# Register with EntityManager for tracking and movement
+			EntityManager.register_entity(viking, "viking", random_tile)
+
 			# Apply wave shader to viking (they're on water!)
 			_apply_wave_shader_to_viking(viking)
 
@@ -426,6 +408,121 @@ func _spawn_test_vikings():
 			print("Failed to acquire viking ", i, " from Cluster")
 
 	print("Total vikings spawned: ", test_vikings.size())
+
+## Generic entity movement handler (called by EntityManager.update_entities)
+## @param entity: The entity to move
+## @param current_tile: Entity's current tile position
+## @param pool_key: Entity type ("viking", "jezza", "fantasywarrior", "king")
+## @param registry_entry: Reference to the registry entry (for updating tile)
+func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: String, registry_entry: Dictionary) -> void:
+	# Skip if still moving
+	if entity.is_moving:
+		return
+
+	# Handle Vikings (ships) separately - they use different pathfinding
+	if pool_key == "viking":
+		_handle_viking_movement(entity, current_tile)
+		return
+
+	# Land units (jezza, fantasywarrior, king) use NPC pathfinding
+	var destination = _find_random_land_destination(current_tile, 3, 8)
+
+	# If no destination found or same as current, skip
+	if destination == current_tile:
+		return
+
+	# Use Rust NPC pathfinding (async via callback)
+	var npc_id = entity.get_instance_id()
+	var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
+
+	# Request pathfinding from Rust
+	npc_pathfinding_bridge.request_path(
+		npc_id,
+		current_tile,
+		destination,
+		func(path: Array[Vector2i], success: bool):
+			# Callback when path is found
+			if success and path.size() > 1:
+				# Free up current tile
+				occupied_tiles.erase(current_tile)
+
+				# Capture final destination
+				var final_destination = path[path.size() - 1]
+
+				# Follow the full path calculated by Rust
+				entity.follow_path(
+					path,
+					hex_map.tile_map,
+					func():  # On path complete
+						# Update occupied tiles
+						occupied_tiles[final_destination] = entity
+						# Update EntityManager registry
+						EntityManager.update_entity_tile(entity, final_destination)
+				)
+	)
+
+## Handle Viking (ship) movement separately
+func _handle_viking_movement(viking: Node, current_tile: Vector2i) -> void:
+	# Find a random water destination
+	var destination = Pathfinding.find_random_destination(
+		current_tile,
+		hex_map,
+		occupied_tiles,
+		viking,
+		3,  # min_distance
+		10  # max_distance
+	)
+
+	# If no destination found, try adjacent tiles
+	if destination == current_tile:
+		var adjacent_tiles = Pathfinding.find_valid_adjacent_water_tiles(
+			current_tile,
+			hex_map,
+			occupied_tiles,
+			viking
+		)
+
+		if adjacent_tiles.size() > 0:
+			destination = adjacent_tiles[randi() % adjacent_tiles.size()]
+		else:
+			return  # No valid tiles found
+
+	# Use Rust ship pathfinding
+	var ship_ulid = viking.ulid
+	var pathfinding_bridge = get_node("/root/ShipPathfindingBridge")
+
+	# Update ship position in Rust
+	pathfinding_bridge.update_ship_position(ship_ulid, current_tile)
+
+	# Request pathfinding from Rust
+	pathfinding_bridge.request_path(
+		ship_ulid,
+		current_tile,
+		destination,
+		true,  # avoid_ships
+		func(path: Array[Vector2i], success: bool, _cost: float):
+			if success and path.size() > 1:
+				# Free up current tile
+				occupied_tiles.erase(current_tile)
+
+				# Capture final destination
+				var final_destination = path[path.size() - 1]
+
+				# Mark ship as MOVING in Rust
+				pathfinding_bridge.set_ship_moving(ship_ulid)
+
+				# Follow the full path
+				viking.follow_path(
+					path,
+					hex_map.tile_map,
+					func():  # On path complete
+						occupied_tiles[final_destination] = viking
+						# Update EntityManager registry
+						EntityManager.update_entity_tile(viking, final_destination)
+						# Mark ship as IDLE in Rust
+						pathfinding_bridge.set_ship_idle(ship_ulid)
+				)
+	)
 
 func _move_test_vikings():
 	# Move each viking using Rust pathfinding
@@ -749,10 +846,13 @@ func _spawn_test_jezza():
 
 			EntityManager.spawn_entity(jezza, hex_map, world_pos, spawn_config)
 
+			# Register with EntityManager for tracking and movement
+			EntityManager.register_entity(jezza, "jezza", random_tile)
+
 			# Mark tile as occupied
 			occupied_tiles[random_tile] = jezza
 
-			# Store jezza and its current tile
+			# Store jezza and its current tile (for backward compatibility, can be removed later)
 			test_jezzas.append({"entity": jezza, "tile": random_tile})
 			print("Spawned Jezza ", i, " at tile ", random_tile, " world pos ", world_pos)
 		else:
@@ -802,6 +902,9 @@ func _spawn_test_fantasy_warriors():
 			}
 
 			EntityManager.spawn_entity(warrior, hex_map, world_pos, spawn_config)
+
+			# Register with EntityManager for tracking and movement
+			EntityManager.register_entity(warrior, "fantasywarrior", random_tile)
 
 			# Mark tile as occupied
 			occupied_tiles[random_tile] = warrior
@@ -857,6 +960,9 @@ func _spawn_test_kings():
 			}
 
 			EntityManager.spawn_entity(king, hex_map, world_pos, spawn_config)
+
+			# Register with EntityManager for tracking and movement
+			EntityManager.register_entity(king, "king", random_tile)
 
 			# Mark tile as occupied
 			occupied_tiles[random_tile] = king
