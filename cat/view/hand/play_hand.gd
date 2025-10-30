@@ -11,7 +11,8 @@ signal card_hand_exited()   # Emitted when mouse exits hand area
 
 @onready var card_container: Control = $HandPanel/MarginContainer/VBoxContainer/CardContainer
 @onready var hand_panel: PanelContainer = $HandPanel
-@onready var card_count_label: Label = $HandPanel/MarginContainer/VBoxContainer/CardCountLabel
+@onready var card_count_label: Label = $HandPanel/MarginContainer/VBoxContainer/TopBar/CardCountLabel
+@onready var mulligan_button: Button = $HandPanel/MarginContainer/VBoxContainer/TopBar/MulliganButton
 
 # Swap indicator UI (cached packed scene)
 const SWAP_INDICATOR_SCENE = preload("res://view/hand/tooltip/swap_indicator.tscn")
@@ -39,6 +40,14 @@ var deck_id: int = -1  # Deck ID from CardDeck
 
 # Hand size limit
 var MAX_HAND: int = 12  # Maximum cards in hand (can be upgraded later)
+
+# Last placed card position (for combo detection optimization)
+var last_placed_card_pos: Vector2i = Vector2i(-1, -1)
+const COMBO_CHECK_RADIUS: int = 7  # Only check cards within this hex distance
+
+# Mulligan tracking
+var cards_placed_this_game: int = 0  # Track if any cards have been placed
+const MULLIGAN_COST: int = 1  # Gold cost per mulligan
 
 # Card size
 var card_width: float = 64.0
@@ -92,9 +101,15 @@ func _initialize() -> void:
 	# Main.gd checks hand_panel rect to prevent camera dragging over hand area
 	hand_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 
-	# Connect to GameTimer for auto-draw
+	# Connect to GameTimer for auto-draw and turn tracking
 	if GameTimer:
 		GameTimer.timer_reset.connect(_on_timer_reset)
+		GameTimer.turn_changed.connect(_on_turn_changed)
+
+	# Connect mulligan button
+	if mulligan_button:
+		mulligan_button.pressed.connect(_on_mulligan_pressed)
+		_update_mulligan_button()  # Set initial state
 
 	# Connect hover signals for panel
 	hand_panel.mouse_entered.connect(_on_hand_panel_mouse_entered)
@@ -106,6 +121,11 @@ func _initialize() -> void:
 		card_count_label.add_theme_font_override("font", font)
 	else:
 		push_warning("PlayHand: Could not load Alagard font from Cache")
+
+	# Connect to ComboPopupManager signals for card clearing
+	if ComboPopup:
+		ComboPopup.combo_accepted_by_player.connect(_on_combo_accepted_by_player)
+		ComboPopup.combo_declined_by_player.connect(_on_combo_declined_by_player)
 
 	# Create swap indicator UI (await since it's async)
 	await _create_swap_indicator()
@@ -272,6 +292,9 @@ func display_card(card: PooledCard, index: int) -> void:
 	if card.get_parent():
 		card.get_parent().remove_child(card)
 	card_wrapper.add_child(card)
+
+	# Ensure card scale is correct (reset to 1.0 in case it was modified)
+	card.scale = Vector2.ONE
 
 	# Position sprite within wrapper (centered, accounting for padding)
 	card.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
@@ -469,6 +492,11 @@ func _process(delta: float) -> void:
 		_update_camera_follow(delta)
 
 func _input(event: InputEvent) -> void:
+	# Block all input while combo popup is active
+	if ComboPopup and ComboPopup.is_popup_active:
+		get_viewport().set_input_as_handled()
+		return
+
 	# Don't block input here - let card wrappers handle clicks via gui_input
 	# Main.gd handles blocking drag/camera panning when over hand UI
 
@@ -701,11 +729,25 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	# display correctly. If wave effect is needed, a combined shader would be required.
 
 	# Register card with hex map (using PooledCard's suit/value)
-	hex_map.place_card_on_tile(tile_coords, card_sprite, card_sprite.suit, card_sprite.value)
+	var success = hex_map.place_card_on_tile(tile_coords, card_sprite, card_sprite.suit, card_sprite.value)
+
+	if not success:
+		# Tile is occupied - return card to hand
+		push_warning("PlayHand: Cannot place card - tile is occupied!")
+		Toast.show_toast(I18n.translate("ui.hand.tile_occupied"), 2.0)
+		_return_card_to_source()
+		return
 
 	# Show toast notification for card placement
 	var card_name = card_sprite.get_card_name()
 	Toast.show_toast(I18n.translate("ui.hand.card_placed", [card_name]), 2.0)
+
+	# Track last placed card position for combo detection
+	last_placed_card_pos = tile_coords
+
+	# Track card placement (for mulligan prevention)
+	cards_placed_this_game += 1
+	_update_mulligan_button()  # Disable mulligan after first card
 
 	# Check for card combos after placement
 	_check_for_combos()
@@ -813,15 +855,30 @@ func _on_timer_reset() -> void:
 # ===================================================================
 
 ## Check for card combos on the hex grid (ASYNC - runs on worker thread)
+## Only checks cards near the last placed card for performance and relevance
 func _check_for_combos() -> void:
 	if not hex_map or not CardComboBridge:
 		return
 
-	# Collect all placed cards from hex_map (explicitly typed for godot-rust)
+	# If no last placed card position, can't filter
+	if last_placed_card_pos == Vector2i(-1, -1):
+		print("No last placed card position - skipping combo check")
+		return
+
+	# Collect placed cards ONLY within COMBO_CHECK_RADIUS of last placed card
 	var placed_cards: Array[Dictionary] = []
+	var filtered_out_count: int = 0
 
 	# Get all card data from hex_map
 	for tile_coords in hex_map.card_data.keys():
+		# Calculate hex distance from last placed card
+		var distance = _hex_distance(last_placed_card_pos, tile_coords)
+
+		# Skip cards too far away (not relevant to current combo)
+		if distance > COMBO_CHECK_RADIUS:
+			filtered_out_count += 1
+			continue
+
 		var card_info = hex_map.card_data[tile_coords]
 		var card_sprite = card_info.get("sprite")
 
@@ -838,8 +895,18 @@ func _check_for_combos() -> void:
 
 		placed_cards.append(card_dict)
 
+	# Debug: Print card positions and values
+	print("=== Checking combos for %d cards (filtered out %d cards beyond radius %d) ===" % [placed_cards.size(), filtered_out_count, COMBO_CHECK_RADIUS])
+	print("  Last placed card at: (%d, %d)" % [last_placed_card_pos.x, last_placed_card_pos.y])
+	for card in placed_cards:
+		var value_name = _get_value_name(card.get("value", 0))
+		var suit_name = _get_suit_name(card.get("suit", 0))
+		var dist = _hex_distance(last_placed_card_pos, Vector2i(card.get("x"), card.get("y")))
+		print("  Card at (%d, %d): %s of %s (distance: %d)" % [card.get("x"), card.get("y"), value_name, suit_name, dist])
+
 	# Need at least 5 cards for a combo
 	if placed_cards.size() < 5:
+		print("Not enough cards for combo (need 5, have %d in radius)" % placed_cards.size())
 		return
 
 	# Request combo detection (async - result via callback)
@@ -847,34 +914,233 @@ func _check_for_combos() -> void:
 
 ## Callback when combo detection completes
 func _on_combo_result(result: Dictionary) -> void:
+	# Debug: Print result
+	print("=== Combo Detection Result ===")
+	print("  Result keys: %s" % [result.keys()])
+	if result.has("hand_name"):
+		print("  Hand: %s (rank %d)" % [result["hand_name"], result.get("hand_rank", -1)])
+	if result.has("card_indices"):
+		print("  Card indices in combo: %s" % [result["card_indices"]])
+
 	# Check if a combo was found
 	if not result.has("hand_name") or not result.has("card_indices"):
+		print("  No valid combo found (missing hand_name or card_indices)")
 		return
 
 	# Get hand rank (0 = High Card, which we don't want to show)
 	var hand_rank = result.get("hand_rank", 0)
 	if hand_rank == 0:
 		# High Card - not a real combo, don't show popup
+		print("  High Card detected - not showing popup")
 		return
 
 	print("Combo found: %s (rank %d)" % [result["hand_name"], hand_rank])
 
-	# Highlight cards in the combo
-	var card_indices = result.get("card_indices", [])
+	# Highlight cards in the combo with outline shader
+	_highlight_combo_cards(result)
+
+	# Show combo popup (waits for player to accept/decline)
+	if ComboPopup:
+		ComboPopup.show_combo(result)
+		# Don't auto-apply resources - wait for player to accept
+		# Signals are connected in _initialize()
+
+	# Play a sound effect (if available)
+	# TODO: Add combo sound effect
+
+## Helper: Calculate hex distance between two tile coordinates
+## Uses cube coordinate formula: (|dx| + |dy| + |dz|) / 2
+func _hex_distance(a: Vector2i, b: Vector2i) -> int:
+	var dx = abs(a.x - b.x)
+	var dy = abs(a.y - b.y)
+	var dz = abs(dx + dy)
+	return (dx + dy + dz) / 2
+
+## Helper: Get card value name for debugging
+func _get_value_name(value: int) -> String:
+	match value:
+		1: return "Ace"
+		11: return "Jack"
+		12: return "Queen"
+		13: return "King"
+		_: return str(value)
+
+## Helper: Get suit name for debugging
+func _get_suit_name(suit: int) -> String:
+	match suit:
+		0: return "Clubs"
+		1: return "Diamonds"
+		2: return "Hearts"
+		3: return "Spades"
+		_: return "Unknown"
+
+## Highlight combo cards with outline shader
+func _highlight_combo_cards(combo_data: Dictionary) -> void:
+	var card_indices = combo_data.get("card_indices", [])
+	var combo_shader = load("res://view/hand/combo/combo.gdshader")
+
 	for idx in card_indices:
-		# Need to look up the card sprite from hex_map again
 		var tile_coords_list = hex_map.card_data.keys()
 		if idx < tile_coords_list.size():
 			var tile_coords = tile_coords_list[idx]
 			var card_info = hex_map.card_data[tile_coords]
 			var card_sprite = card_info.get("sprite")
+
 			if card_sprite is PooledCard:
-				card_sprite.highlight_combo()
+				# Apply combo highlight shader
+				var shader_material = ShaderMaterial.new()
+				shader_material.shader = combo_shader
+				shader_material.set_shader_parameter("outline_color", Color(0.2, 1.0, 0.3, 1.0))  # Bright green
+				shader_material.set_shader_parameter("outline_width", 3.0)
+				shader_material.set_shader_parameter("pulse_speed", 3.0)
+				shader_material.set_shader_parameter("pulse_intensity", 0.4)
 
-	# Show combo popup
-	if ComboPopup:
-		ComboPopup.show_combo(result)
-		ComboPopup.apply_combo_resources(result)
+				card_sprite.material = shader_material
+				print("  Highlighted card at %s (is_dynamic=%s)" % [tile_coords, card_sprite.is_dynamic])
 
-	# Play a sound effect (if available)
-	# TODO: Add combo sound effect
+## Called when player accepts the combo
+func _on_combo_accepted_by_player(combo_data: Dictionary) -> void:
+	print("PlayHand: Player accepted combo!")
+	_clear_combo_cards(combo_data)
+
+## Called when player declines the combo
+func _on_combo_declined_by_player(combo_data: Dictionary) -> void:
+	print("PlayHand: Player declined combo")
+	_remove_combo_highlights(combo_data)
+
+## Remove highlight shader from combo cards
+func _remove_combo_highlights(combo_data: Dictionary) -> void:
+	var card_indices = combo_data.get("card_indices", [])
+	var tile_coords_list = hex_map.card_data.keys()
+
+	for idx in card_indices:
+		if idx < tile_coords_list.size():
+			var tile_coords = tile_coords_list[idx]
+			var card_info = hex_map.card_data[tile_coords]
+			var card_sprite = card_info.get("sprite")
+
+			if card_sprite is PooledCard:
+				# Remove shader
+				card_sprite.material = null
+				print("  Removed highlight from card at %s" % [tile_coords])
+
+## Clear combo cards from board (called when player accepts combo)
+func _clear_combo_cards(combo_data: Dictionary) -> void:
+	var card_indices = combo_data.get("card_indices", [])
+	var tile_coords_list = hex_map.card_data.keys()
+
+	print("PlayHand: Clearing %d combo cards from board" % card_indices.size())
+
+	for idx in card_indices:
+		if idx < tile_coords_list.size():
+			var tile_coords = tile_coords_list[idx]
+			var card_info = hex_map.card_data.get(tile_coords)
+
+			if card_info:
+				var card_sprite = card_info.get("sprite")
+
+				# Remove from hex_map
+				hex_map.card_data.erase(tile_coords)
+
+				# Remove from Rust CardRegistry
+				var card_registry = get_node("/root/CardRegistryBridge")
+				if card_registry:
+					card_registry.remove_card_at(tile_coords.x, tile_coords.y)
+
+				# Return card to pool (not queue_free - reuse for performance!)
+				if card_sprite and is_instance_valid(card_sprite):
+					if card_sprite is PooledCard and Cluster:
+						Cluster.release("playing_card", card_sprite)
+					else:
+						# Fallback: free if not a pooled card
+						card_sprite.queue_free()
+
+				print("  Cleared card at %s" % [tile_coords])
+
+# ===================================================================
+# MULLIGAN SYSTEM
+# ===================================================================
+
+## Handle mulligan button press
+func _on_mulligan_pressed() -> void:
+	# Check if mulligan is allowed
+	if not _can_mulligan():
+		return
+
+	# Check if player has enough gold and spend it (via Rust ledger)
+	var cost = {ResourceLedger.R.GOLD: MULLIGAN_COST}
+	if not ResourceLedger.can_spend(cost):
+		Toast.show_toast("Not enough gold! Need %d gold to mulligan." % MULLIGAN_COST, 3.0)
+		return
+
+	# Pause the game timer during mulligan
+	if GameTimer:
+		GameTimer.pause()
+
+	# Deduct gold via Rust ledger (source of truth)
+	if not ResourceLedger.spend(cost):
+		push_error("PlayHand: Failed to spend gold for mulligan (should have been caught by can_spend)!")
+		if GameTimer:
+			GameTimer.resume()
+		return
+
+	# Clear current hand
+	for card in hand:
+		if card and is_instance_valid(card):
+			Cluster.release("playing_card", card)
+	hand.clear()
+	clear_hand_display()
+
+	# Redraw hand
+	draw_initial_hand()
+
+	# Update button state
+	_update_mulligan_button()
+
+	# Resume timer after a brief moment (allows player to see new hand)
+	await get_tree().create_timer(0.5).timeout
+	if GameTimer:
+		GameTimer.resume()
+
+	Toast.show_toast("Mulliganed! Drew new hand. (-%d Gold)" % MULLIGAN_COST, 3.0)
+	print("PlayHand: Player mulliganed hand, cost %d gold" % MULLIGAN_COST)
+
+## Check if mulligan is allowed
+func _can_mulligan() -> bool:
+	# Only on turn 0
+	if GameTimer and GameTimer.get_current_turn() > 0:
+		return false
+
+	# Only if no cards have been placed
+	if cards_placed_this_game > 0:
+		return false
+
+	return true
+
+## Update mulligan button enabled/disabled state
+func _update_mulligan_button() -> void:
+	if not mulligan_button:
+		return
+
+	var can_mull = _can_mulligan()
+	var cost = {ResourceLedger.R.GOLD: MULLIGAN_COST}
+	var has_gold = ResourceLedger.can_spend(cost)
+
+	mulligan_button.disabled = not (can_mull and has_gold)
+
+	# Update tooltip
+	if not can_mull:
+		if GameTimer and GameTimer.get_current_turn() > 0:
+			mulligan_button.tooltip_text = "Mulligan only available on turn 0"
+		elif cards_placed_this_game > 0:
+			mulligan_button.tooltip_text = "Cannot mulligan after placing cards"
+		else:
+			mulligan_button.tooltip_text = "Cannot mulligan"
+	elif not has_gold:
+		mulligan_button.tooltip_text = "Not enough gold (need %d)" % MULLIGAN_COST
+	else:
+		mulligan_button.tooltip_text = "Redraw your entire hand for %d gold" % MULLIGAN_COST
+
+## Handle turn changes (disable mulligan after turn 0)
+func _on_turn_changed(turn: int) -> void:
+	_update_mulligan_button()

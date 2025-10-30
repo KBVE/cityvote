@@ -13,6 +13,9 @@ const ISLAND_BASE_RADIUS: float = 20.0
 const LAND_NOISE_SCALE: float = 3.0
 const PENINSULA_COUNT: int = 3
 
+# Tile source_id constants (matches TileSet sources in hex.gd)
+const SOURCE_ID_WATER: int = 4
+
 # Helper functions
 static func is_tile_in_bounds(tile_coords: Vector2i) -> bool:
 	return tile_coords.x >= 0 and tile_coords.x < MAP_WIDTH and \

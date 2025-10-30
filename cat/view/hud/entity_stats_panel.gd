@@ -104,6 +104,24 @@ func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
 	# Get all stats from StatsManager
 	var all_stats = StatsManager.get_all_stats(ulid)
 
+	# Display ULID (full hex string)
+	if ulid.size() > 0:
+		var ulid_hex = UlidManager.to_hex(ulid)
+		_update_stat_text("ULID", ulid_hex, Color(0.7, 0.7, 0.8))
+
+	# Display Player ID (if entity has player_ulid property)
+	if current_entity_node != null:
+		var player_id_hex = ""
+		if "player_ulid" in current_entity_node:
+			var player_ulid_bytes = current_entity_node.player_ulid
+			if player_ulid_bytes.size() > 0:
+				player_id_hex = UlidManager.to_hex(player_ulid_bytes)
+			else:
+				player_id_hex = "AI-Controlled"
+		else:
+			player_id_hex = "N/A"
+		_update_stat_text("Player ID", player_id_hex, Color(0.6, 0.8, 0.9))
+
 	# Update stat displays (creates labels on first call, reuses thereafter)
 	_update_stat(I18n.translate("stat.health") + " (HP)", all_stats.get(StatsManager.STAT.HP, 0), all_stats.get(StatsManager.STAT.MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
 	_update_stat(I18n.translate("stat.attack") + " (ATK)", all_stats.get(StatsManager.STAT.ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
@@ -176,6 +194,52 @@ func _stop_typewriter() -> void:
 		typewriter_tween.kill()
 		typewriter_tween = null
 	current_full_text = ""
+
+## Update a single stat with text value (creates labels on first call, reuses thereafter)
+## Used for ULID, Player ID, and other non-numeric stats
+func _update_stat_text(stat_name: String, text_value: String, value_color: Color = Color(1, 1, 1, 1)) -> void:
+	if not stats_container:
+		return
+
+	# Check if we already have labels for this stat
+	if not stat_labels.has(stat_name):
+		# Get cached font
+		var font = Cache.get_font_for_current_language() if Cache.has_font("alagard") else null
+
+		# Create new labels and container
+		var stat_row = HBoxContainer.new()
+		stat_row.add_theme_constant_override("separation", 10)
+
+		# Stat name label (dimmer gray)
+		var name_label = Label.new()
+		name_label.text = stat_name + ":"
+		name_label.custom_minimum_size = Vector2(140, 0)
+		name_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 1))
+		if font:
+			name_label.add_theme_font_override("font", font)
+			name_label.add_theme_font_size_override("font_size", 14)
+		stat_row.add_child(name_label)
+
+		# Stat value label (colored, smaller font for long text)
+		var value_label = Label.new()
+		if font:
+			value_label.add_theme_font_override("font", font)
+			value_label.add_theme_font_size_override("font_size", 12)  # Smaller for ULID hex strings
+		stat_row.add_child(value_label)
+
+		# Add to container and cache references
+		stats_container.add_child(stat_row)
+		stat_labels[stat_name] = {
+			"row": stat_row,
+			"name_label": name_label,
+			"value_label": value_label
+		}
+
+	# Update value label text and color
+	var labels = stat_labels[stat_name]
+	var value_label = labels["value_label"]
+	value_label.add_theme_color_override("font_color", value_color)
+	value_label.text = text_value
 
 ## Update a single stat (creates labels on first call, reuses thereafter)
 func _update_stat(stat_name: String, value: float, max_value: float = -1, value_color: Color = Color(1, 1, 1, 1)) -> void:

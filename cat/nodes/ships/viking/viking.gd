@@ -28,8 +28,8 @@ func _ready():
 
 	sprite.material = shader_material
 
-	# Scale down the sprite to fit better on tile (64x64 sprite -> ~48x48 visual size)
-	sprite.scale = Vector2(0.75, 0.75)
+	# Scale down the sprite to fit better on hex tile (64x64 sprite -> ~38x38 visual size)
+	sprite.scale = Vector2(0.6, 0.6)
 
 	# Still load sprites array for compatibility (though not used for rendering)
 	ship_sprites = [

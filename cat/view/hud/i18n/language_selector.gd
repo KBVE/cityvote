@@ -81,42 +81,13 @@ func _load_flag_texture(flag_name: String, atlas_name: String) -> AtlasTexture:
 		push_error("LanguageSelector: Failed to load atlas: %s" % atlas_path)
 		return null
 
-	# Load the JSON to get frame coordinates
-	var json_path = "res://view/hud/i18n/%sjson.json" % atlas_name
-	var json_file = FileAccess.open(json_path, FileAccess.READ)
-	if not json_file:
-		push_error("LanguageSelector: Failed to load JSON: %s" % json_path)
-		return null
-
-	var json_text = json_file.get_as_text()
-	json_file.close()
-
-	var json = JSON.new()
-	var parse_result = json.parse(json_text)
-	if parse_result != OK:
-		push_error("LanguageSelector: Failed to parse JSON: %s" % json_path)
-		return null
-
-	var data = json.data
-	var frames = data.get("frames", {})
-
-	# Look for the flag (try with .png extension)
-	var frame_key = "%s.png" % flag_name
-	if not frames.has(frame_key):
-		push_error("LanguageSelector: Flag not found in atlas: %s" % flag_name)
-		return null
-
-	var frame_data = frames[frame_key]["frame"]
+	# Get hardcoded flag frame data from I18n (no JSON loading needed)
+	var frame_region = I18n.get_flag_frame(flag_name)
 
 	# Create AtlasTexture
 	var atlas_texture = AtlasTexture.new()
 	atlas_texture.atlas = atlas
-	atlas_texture.region = Rect2(
-		frame_data["x"],
-		frame_data["y"],
-		frame_data["w"],
-		frame_data["h"]
-	)
+	atlas_texture.region = frame_region
 
 	return atlas_texture
 

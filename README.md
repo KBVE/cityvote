@@ -19,3 +19,11 @@ https://andelrodis.itch.io/pixel-banner-pack-andel
 
 Fantasy Warrior
 https://luizmelo.itch.io/fantasy-warrior
+
+---
+
+TODO:
+
+Medieval King
+https://luizmelo.itch.io/medieval-king-pack-2
+

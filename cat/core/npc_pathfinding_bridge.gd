@@ -52,7 +52,7 @@ func init_map(hex_map: Node) -> void:
 
 			# Map source_id to TileType (0=Land, 1=Water, 2=Obstacle)
 			# For NPCs, land is walkable (opposite of ships)
-			if source_id == 4:  # Water
+			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
 				pathfinding_system.set_tile(x, y, 1)  # Water (not walkable for NPCs)
 			else:  # Land
 				pathfinding_system.set_tile(x, y, 0)  # Land (walkable for NPCs)

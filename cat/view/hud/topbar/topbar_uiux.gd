@@ -177,11 +177,13 @@ func _on_turn_changed(turn: int) -> void:
 
 func _update_timer_display(time_left: int) -> void:
 	if timer_label:
-		timer_label.text = "Timer: %ds" % time_left
+		var timer_format = I18n.translate("ui.hud.timer")
+		timer_label.text = timer_format % time_left
 
 func _update_turn_display(turn: int) -> void:
 	if turn_label:
-		turn_label.text = "Turn: %d" % turn
+		var turn_format = I18n.translate("ui.hud.turn")
+		turn_label.text = turn_format % turn
 
 func _on_resource_changed(kind: int, current: float, cap: float, rate: float) -> void:
 	_update_resource_display(kind, current, cap, rate)

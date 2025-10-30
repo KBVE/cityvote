@@ -3,6 +3,14 @@ extends Node
 # Cache singleton - stores references to commonly used resources
 # Prevents reloading and provides centralized access
 
+# ===== RESOURCE COLORS =====
+# Color constants for backward compatibility - these reference Resources.COLORS
+# Prefer using Resources.get_color(resource_type) directly
+const COLOR_GOLD: Color = Color(0.85, 0.7, 0.35)     # Gold/Yellow
+const COLOR_FOOD: Color = Color(0.9, 0.3, 0.3)       # Red
+const COLOR_LABOR: Color = Color(0.55, 0.45, 0.35)   # Brown/Tan (matches UI)
+const COLOR_FAITH: Color = Color(0.7, 0.5, 0.9)      # Purple
+
 # ===== STRINGS =====
 # String-to-string mappings for UI text, translations, etc.
 var strings: Dictionary = {}

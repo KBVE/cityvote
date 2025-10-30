@@ -59,6 +59,10 @@ var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
 # ULID for persistent entity tracking
 var ulid: PackedByteArray = PackedByteArray()
 
+# Player ownership ULID (which player controls this NPC)
+# Empty = AI-controlled, otherwise contains player's ULID
+var player_ulid: PackedByteArray = PackedByteArray()
+
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
@@ -182,15 +186,16 @@ func _update_angular_motion(delta: float):
 # === Movement Functions ===
 
 func move_to(target_pos: Vector2):
-	if is_moving:
-		return
-
+	# Set up new movement segment
 	move_start_pos = position
 	move_target_pos = target_pos
 	move_progress = 0.0
-	is_moving = true
-	add_state(State.MOVING)
-	remove_state(State.IDLE)
+
+	# Only set is_moving to true if not already moving (keeps animation continuous)
+	if not is_moving:
+		is_moving = true
+		add_state(State.MOVING)
+		remove_state(State.IDLE)
 
 	# Set initial target angle based on movement vector
 	var direction_vec = target_pos - position
@@ -283,10 +288,8 @@ func _process(delta):
 		move_progress += delta * move_speed
 
 		if move_progress >= 1.0:
-			# Movement complete
+			# Movement complete - reached waypoint
 			position = move_target_pos
-			is_moving = false
-			move_progress = 1.0
 
 			# Remove waypoint marker
 			if path_visualizer and path_visualizer.has_method("remove_first_waypoint"):
@@ -300,9 +303,16 @@ func _process(delta):
 			# If following a path, move to next waypoint
 			if current_path.size() > 0 and path_index < current_path.size() - 1:
 				path_index += 1
+
+				# Carry momentum to next segment for smooth continuous movement
+				var overshoot = move_progress - 1.0
 				_advance_to_next_waypoint()
+				move_progress = overshoot  # Start next segment with carried momentum
 			else:
-				# Path complete
+				# Path complete - NOW we can set is_moving = false
+				is_moving = false
+				move_progress = 1.0
+
 				var was_following_path = current_path.size() > 0
 				current_path.clear()
 				path_index = 0
@@ -320,8 +330,24 @@ func _process(delta):
 				if was_following_path and on_path_complete.is_valid():
 					on_path_complete.call()
 		else:
-			# Lerp position with ease-in-out
-			var t = ease(move_progress, -2.0)
+			# Smooth interpolation
+			var t = move_progress
+
+			# Use ease-in-out ONLY at path start/end, linear in middle for smooth continuous motion
+			if current_path.size() > 0:
+				# Following a path - use linear or slight easing
+				if path_index == 1 and move_progress < 0.2:
+					# Ease-in at very start of path
+					t = ease(move_progress / 0.2, -0.5) * 0.2
+				elif path_index == current_path.size() - 1 and move_progress > 0.8:
+					# Ease-out at very end of path
+					var end_progress = (move_progress - 0.8) / 0.2
+					t = 0.8 + ease(end_progress, -0.5) * 0.2
+				# else: use linear t (no easing in middle)
+			else:
+				# Single move - use full ease-in-out
+				t = ease(move_progress, -2.0)
+
 			position = move_start_pos.lerp(move_target_pos, t)
 
 			# Use overall movement direction, not frame-by-frame velocity
@@ -366,7 +392,7 @@ func _setup_health_bar() -> void:
 		health_bar.initialize(100.0, 100.0)
 
 	# Configure appearance (optional - adjust as needed)
-	health_bar.set_bar_offset(Vector2(0, -35))  # Position above NPC
+	health_bar.set_bar_offset(Vector2(0, -30))  # Position above NPC
 	health_bar.set_auto_hide(false)  # Show health bar even at full health (for visibility)
 
 # Release health bar back to pool (call before destroying NPC or returning to pool)

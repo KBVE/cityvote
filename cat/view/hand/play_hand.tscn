@@ -36,12 +36,24 @@ theme_override_constants/margin_bottom = 10
 layout_mode = 2
 theme_override_constants/separation = 5
 
-[node name="CardCountLabel" type="Label" parent="HandPanel/MarginContainer/VBoxContainer"]
+[node name="TopBar" type="HBoxContainer" parent="HandPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="CardCountLabel" type="Label" parent="HandPanel/MarginContainer/VBoxContainer/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
 theme_override_font_sizes/font_size = 12
 text = "Cards: 7"
 horizontal_alignment = 0
+
+[node name="MulliganButton" type="Button" parent="HandPanel/MarginContainer/VBoxContainer/TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 11
+text = "Mull Again (1 Gold)"
+disabled = true
 
 [node name="CardContainer" type="Control" parent="HandPanel/MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(450, 140)

@@ -74,7 +74,7 @@ func init_map(hex_map: Node) -> void:
 			tile_dict["r"] = y
 
 			# Map source_id to TileType (0=Water, 1=Land, 2=Obstacle)
-			if source_id == 4:  # Water
+			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
 				tile_dict["type"] = 0
 			else:  # Land
 				tile_dict["type"] = 1

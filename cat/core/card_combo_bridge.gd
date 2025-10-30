@@ -45,14 +45,17 @@ class_name CardComboBridgeClass
 ## - Spades (♠) → Labor
 ## - Clubs (♣) → Faith
 ##
-## COMBO DETECTION:
-## - Cards must be in STRAIGHT LINES on hex grid (6 directions)
-## - Jokers (custom cards) can be skipped in the middle
-## - Example: 4♠-Joker-5♠-6♠-7♠-8♠ = valid 5-card straight
+## COMBO DETECTION (Distance-Bounded Spatial Hand Evaluation):
+## - Cards within 5 hex tiles of each other form a group
+## - Each group is checked for poker hands (pairs, straights, flushes, etc.)
+## - Cards too far apart (>5 tiles) won't count toward the same combo
+## - Multiple separate groups can exist on the board simultaneously
+## - Jokers (custom cards) are excluded from poker hand detection
 ## - Bonus = base_amount (10) × card_count × hand_multiplier
 
 # Signals
 signal combo_detected(request_id: int, result: Dictionary)
+signal joker_consumed(joker_type: String, joker_card_id: int, count: int, spawn_x: int, spawn_y: int)
 
 # Rust combo detector (typed as Variant since it's a Rust class loaded at runtime)
 var combo_detector = null
@@ -74,11 +77,16 @@ func _ready() -> void:
 		push_error("CardComboBridge: CardComboDetector is not a Node! Cannot add as child.")
 		return
 
-	# Connect to signal from Rust
+	# Connect to signals from Rust
 	if combo_detector.has_signal("combo_found"):
 		combo_detector.connect("combo_found", _on_combo_found)
 	else:
 		push_error("CardComboBridge: CardComboDetector missing 'combo_found' signal!")
+
+	if combo_detector.has_signal("joker_consumed"):
+		combo_detector.connect("joker_consumed", _on_joker_consumed)
+	else:
+		push_error("CardComboBridge: CardComboDetector missing 'joker_consumed' signal!")
 
 	# Start worker thread
 	if combo_detector.has_method("start_worker"):
@@ -94,6 +102,9 @@ func _exit_tree() -> void:
 
 ## Callback when Rust thread finishes combo detection
 func _on_combo_found(request_id: int, result: Dictionary) -> void:
+	# Add request_id to result for tracking (needed for accept/decline)
+	result["request_id"] = request_id
+
 	# Call callback if registered
 	if pending_requests.has(request_id):
 		var callback = pending_requests[request_id]
@@ -224,3 +235,28 @@ func get_bonus_multiplier(rank: int) -> float:
 		8: return 20.0  # Straight Flush
 		9: return 50.0  # Royal Flush
 		_: return 1.0
+
+## Accept combo and apply rewards (SECURE: Rust-authoritative)
+## Call this when player accepts the combo popup
+## Returns true if successful, false if request_id not found
+func accept_combo(request_id: int) -> bool:
+	if not combo_detector:
+		push_error("CardComboBridge: Combo detector not initialized!")
+		return false
+	return combo_detector.accept_combo(request_id)
+
+## Decline combo (removes from pending without applying rewards)
+## Call this when player declines the combo popup
+## Returns true if successful, false if request_id not found
+func decline_combo(request_id: int) -> bool:
+	if not combo_detector:
+		push_error("CardComboBridge: Combo detector not initialized!")
+		return false
+	return combo_detector.decline_combo(request_id)
+
+## Callback when joker is consumed in combo
+func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spawn_x: int, spawn_y: int) -> void:
+	print("CardComboBridge: Joker consumed - Type: %s, ID: %d, Count: %d at position (%d, %d)" % [joker_type, joker_card_id, count, spawn_x, spawn_y])
+
+	# Re-emit signal for other systems to listen to
+	joker_consumed.emit(joker_type, joker_card_id, count, spawn_x, spawn_y)

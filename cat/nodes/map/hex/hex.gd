@@ -172,7 +172,12 @@ func _update_highlight():
 		hex_highlight.visible = false
 
 # Register a card placed on a tile (accepts PooledCard which is now MeshInstance2D)
-func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, value: int) -> void:
+func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, value: int) -> bool:
+	# Check if tile is already occupied (GDScript check first)
+	if card_data.has(tile_coords):
+		push_warning("Hex: Tile (%d, %d) is already occupied! Cannot place card." % [tile_coords.x, tile_coords.y])
+		return false
+
 	# Get card_id from the sprite (works for both standard and custom cards)
 	var card_id = -1
 	if card_sprite is PooledCard:
@@ -184,6 +189,16 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 		if card_id == null:
 			card_id = -1
 
+	# Determine if this is a custom card
+	var is_custom = false
+	if card_sprite is PooledCard:
+		is_custom = card_sprite.is_custom
+
+	# Check terrain requirements for joker cards (custom cards)
+	if is_custom and card_id >= 52:
+		if not _validate_joker_terrain(tile_coords, card_id):
+			return false  # Terrain validation failed
+
 	# Generate ULID for the card
 	var ulid = UlidManager.register_entity(card_sprite, UlidManager.TYPE_CARD, {
 		"suit": suit,
@@ -192,17 +207,13 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 		"position": {"x": tile_coords.x, "y": tile_coords.y}
 	})
 
-	# Determine if this is a custom card
-	var is_custom = false
-	if card_sprite is PooledCard:
-		is_custom = card_sprite.is_custom
-
-	# Register with Rust CardRegistry
+	# Register with Rust CardRegistry (double-check on Rust side)
 	var card_registry = get_node("/root/CardRegistryBridge")
 	if card_registry:
 		var success = card_registry.place_card(tile_coords.x, tile_coords.y, ulid, suit, value, is_custom, card_id)
 		if not success:
-			push_error("Hex: Failed to register card with Rust CardRegistry at (%d, %d)" % [tile_coords.x, tile_coords.y])
+			push_error("Hex: Failed to register card with Rust CardRegistry at (%d, %d) - tile occupied" % [tile_coords.x, tile_coords.y])
+			return false
 
 	card_data[tile_coords] = {
 		"sprite": card_sprite,
@@ -211,6 +222,8 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 		"card_id": card_id,
 		"ulid": ulid
 	}
+
+	return true
 
 # Get card data at tile coordinates
 func get_card_at_tile(tile_coords: Vector2i) -> Dictionary:
@@ -221,3 +234,29 @@ func get_card_at_tile(tile_coords: Vector2i) -> Dictionary:
 # Check if tile has a card
 func has_card_at_tile(tile_coords: Vector2i) -> bool:
 	return card_data.has(tile_coords)
+
+# Validate joker card terrain requirements
+# Returns true if valid, false if invalid (shows error toast)
+func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
+	# Get tile terrain type
+	var source_id = tile_map.get_cell_source_id(0, tile_coords)
+	var is_water = (source_id == MapConfig.SOURCE_ID_WATER)
+	var is_land = not is_water
+
+	# Check terrain requirements per joker type
+	match card_id:
+		52:  # Viking Special - requires water
+			if not is_water:
+				push_warning("Hex: Viking joker requires water tile! Tile (%d, %d) is land." % [tile_coords.x, tile_coords.y])
+				Toast.show_toast(I18n.translate("ui.hand.joker_requires_water"), 3.0)
+				return false
+		53:  # Dino Special (Jezza) - requires land
+			if not is_land:
+				push_warning("Hex: Jezza joker requires land tile! Tile (%d, %d) is water." % [tile_coords.x, tile_coords.y])
+				Toast.show_toast(I18n.translate("ui.hand.joker_requires_land"), 3.0)
+				return false
+		_:
+			# Unknown joker - allow placement anywhere
+			push_warning("Hex: Unknown joker card_id %d, allowing placement" % card_id)
+
+	return true

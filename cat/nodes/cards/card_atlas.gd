@@ -56,7 +56,7 @@ static func get_card_id_from_suit(suit: Suit, value: int) -> int:
 
 ## Create a card material with the specified card_id
 static func create_card_material(card_id: int) -> ShaderMaterial:
-	var shader = load("res://shaders/card_atlas.gdshader")
+	var shader = load("res://nodes/cards/card_atlas.gdshader")
 	var material = ShaderMaterial.new()
 	material.shader = shader
 	material.set_shader_parameter("card_id", card_id)

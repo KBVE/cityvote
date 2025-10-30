@@ -18,6 +18,9 @@ var time_left: int = TIMER_DURATION
 # Turn counter (increments every 60 seconds)
 var current_turn: int = 0
 
+# Pause state
+var is_paused: bool = true  # Start paused until player is ready
+
 # Internal timer
 var timer: Timer
 
@@ -30,9 +33,11 @@ func _ready() -> void:
 
 	timer.wait_time = 1.0  # Tick every second
 	timer.one_shot = false
-	timer.autostart = true
+	timer.autostart = false  # Don't auto-start - wait for player to be ready
 	add_child(timer)
 	timer.timeout.connect(_on_timer_timeout)
+
+	print("GameTimer: Timer created but paused. Waiting for game to start...")
 
 func _on_timer_timeout() -> void:
 	time_left -= 1
@@ -74,3 +79,28 @@ func get_current_turn() -> int:
 ## Manually reset timer (for testing/debugging)
 func reset() -> void:
 	_reset_timer()
+
+## Pause the timer
+func pause() -> void:
+	if timer and timer.is_stopped() == false:
+		timer.stop()
+		is_paused = true
+		print("GameTimer: Timer paused at %ds" % time_left)
+
+## Resume the timer
+func resume() -> void:
+	if timer and is_paused:
+		timer.start()
+		is_paused = false
+		print("GameTimer: Timer resumed at %ds" % time_left)
+
+## Start the timer (used when game begins)
+func start_timer() -> void:
+	if timer:
+		timer.start()
+		is_paused = false
+		print("GameTimer: Timer started!")
+
+## Check if timer is paused
+func is_timer_paused() -> bool:
+	return is_paused

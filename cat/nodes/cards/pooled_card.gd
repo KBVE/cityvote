@@ -18,11 +18,6 @@ var is_dynamic: bool = false  # false = mesh swapping (default), true = shader p
 # Pool management
 var pool_id: String = "playing_card"
 
-# Combo highlighting
-var _original_material: Material = null
-var _combo_highlight_material: ShaderMaterial = null
-var _is_highlighted: bool = false
-
 func _ready():
 	if is_dynamic:
 		# Dynamic cards (tile info ghost): Use shader parameter approach
@@ -83,10 +78,6 @@ func reset_for_pool() -> void:
 	modulate = Color.WHITE
 	visible = false  # Hidden when in pool
 
-	# Clear combo highlighting
-	if _is_highlighted:
-		unhighlight_combo()
-
 	# Reset material card_id (optional since it's hidden, but keeps it clean)
 	if material and material is ShaderMaterial:
 		material.set_shader_parameter("card_id", -1)
@@ -97,40 +88,3 @@ func get_card_name() -> String:
 		return CardAtlas.get_card_name_from_id(card_id)
 	else:
 		return CardAtlas.get_card_name(suit, value)
-
-## Highlight card as part of a combo (green outline)
-func highlight_combo() -> void:
-	if _is_highlighted:
-		return
-
-	# Load combo highlight shader if not already loaded
-	if not _combo_highlight_material:
-		var shader = load("res://shaders/combo_highlight.gdshader") as Shader
-		if shader:
-			_combo_highlight_material = ShaderMaterial.new()
-			_combo_highlight_material.shader = shader
-			# Set shader parameters
-			_combo_highlight_material.set_shader_parameter("outline_color", Color(0.0, 1.0, 0.0, 1.0))  # Green
-			_combo_highlight_material.set_shader_parameter("outline_width", 3.0)
-			_combo_highlight_material.set_shader_parameter("pulse_speed", 2.0)
-			_combo_highlight_material.set_shader_parameter("pulse_intensity", 0.3)
-
-	# Save original material and apply highlight
-	if _combo_highlight_material:
-		_original_material = material
-		material = _combo_highlight_material
-		_is_highlighted = true
-
-## Remove combo highlight
-func unhighlight_combo() -> void:
-	if not _is_highlighted:
-		return
-
-	# Restore original material
-	material = _original_material
-	_original_material = null
-	_is_highlighted = false
-
-## Check if card is currently highlighted
-func is_combo_highlighted() -> bool:
-	return _is_highlighted

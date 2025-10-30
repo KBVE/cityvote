@@ -146,18 +146,22 @@ impl ComboResult {
     }
 
     fn calculate_resource_bonuses(&mut self, cards: &[&CardData]) {
-        let mut suit_counts: HashMap<u8, usize> = HashMap::new();
+        // Sum card values by suit (value * 10 * multiplier per card)
+        let mut suit_totals: HashMap<u8, f32> = HashMap::new();
         for card in cards.iter().filter(|c| !c.is_custom) {
-            *suit_counts.entry(card.suit).or_insert(0) += 1;
+            // Calculate resource for this card: value * 10 * hand_multiplier
+            let card_value = card.value as f32;
+            let card_resource = card_value * 10.0 * self.bonus_multiplier;
+            *suit_totals.entry(card.suit).or_insert(0.0) += card_resource;
         }
-        let base_amount = 10.0;
-        for (suit, count) in suit_counts.iter() {
+
+        // Create resource bonuses from suit totals
+        for (suit, total) in suit_totals.iter() {
             let resource_type = ResourceType::from_suit(*suit);
-            let amount = base_amount * (*count as f32) * self.bonus_multiplier;
             self.resource_bonuses.push(ResourceBonus {
                 resource_type,
                 resource_name: resource_type.to_string(),
-                amount,
+                amount: *total,
             });
         }
     }
@@ -173,54 +177,95 @@ const HEX_DIRECTIONS: [(i32, i32); 6] = [
     (0, 1),   // Southeast
 ];
 
-/// Detect poker hands in hex grid lines
+/// Detect poker hands in hex grid with distance-bounded spatial evaluation
 pub struct ComboDetector;
 
 impl ComboDetector {
+    /// Maximum hex distance for cards to be considered in the same group
+    /// This is the "pair window" - cards beyond this distance won't form combos
+    const MAX_HEX_DISTANCE: i32 = 5;
+
     /// Detect the best poker hand from positioned cards on hex grid
-    /// Cards must be in a straight line, jokers (custom cards) can be skipped
+    /// Uses distance-bounded spatial hand evaluation
+    /// Returns ComboResult - if hand is HighCard, it means no valid combo was found
     pub fn detect_combo(positioned_cards: &[PositionedCard]) -> ComboResult {
         if positioned_cards.is_empty() {
             return ComboResult::new(PokerHand::HighCard);
         }
 
-        // Find all possible straight lines through the cards
-        let lines = Self::find_all_lines(positioned_cards);
+        // Find all groups where cards are within MAX_HEX_DISTANCE of each other
+        let groups = Self::find_distance_bounded_groups(positioned_cards);
 
-        // Check each line for the best hand
+        // Check each group for the best hand
         let mut best_result = ComboResult::new(PokerHand::HighCard);
 
-        for line in lines {
-            if let Some(result) = Self::check_line_for_combos(&line, positioned_cards) {
+        for group in groups {
+            if let Some(result) = Self::check_group_for_combos(&group, positioned_cards) {
                 if result.hand > best_result.hand {
                     best_result = result;
                 }
             }
         }
 
+        // Don't populate HighCard with cards - HighCard means "no combo found"
+        // Caller should check if result.hand == HighCard and skip emitting signal
         best_result
     }
 
-    /// Find all straight lines of 5+ cards (including jokers)
-    fn find_all_lines(cards: &[PositionedCard]) -> Vec<Vec<usize>> {
-        let mut lines = Vec::new();
+    /// Calculate hex distance between two positions (axial coordinates)
+    /// Uses the standard hex distance formula for axial coordinates
+    fn hex_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
+        let dx = (a.0 - b.0).abs();
+        let dy = (a.1 - b.1).abs();
+        let dz = (dx + dy).abs();
+        (dx + dy + dz) / 2
+    }
 
-        // Try starting from each card
-        for (start_idx, start_card) in cards.iter().enumerate() {
-            // Try each of the 6 hex directions
-            for direction in &HEX_DIRECTIONS {
-                if let Some(line) = Self::trace_line(start_idx, *direction, cards) {
-                    if line.len() >= 5 {
-                        // Check if this line already exists (might have found it from other direction)
-                        if !Self::line_exists(&line, &lines) {
-                            lines.push(line);
-                        }
+    /// Find groups of cards within MAX_HEX_DISTANCE of each other
+    /// Uses flood-fill but expands to any card within distance, not just adjacent
+    fn find_distance_bounded_groups(cards: &[PositionedCard]) -> Vec<Vec<usize>> {
+        let mut groups = Vec::new();
+        let mut visited = vec![false; cards.len()];
+
+        for start_idx in 0..cards.len() {
+            if visited[start_idx] {
+                continue;
+            }
+
+            // Start a new group with flood-fill
+            let mut group = Vec::new();
+            let mut to_visit = vec![start_idx];
+
+            while let Some(idx) = to_visit.pop() {
+                if visited[idx] {
+                    continue;
+                }
+
+                visited[idx] = true;
+                group.push(idx);
+
+                // Find all cards within MAX_HEX_DISTANCE
+                let card_pos = (cards[idx].x, cards[idx].y);
+                for (other_idx, other_card) in cards.iter().enumerate() {
+                    if visited[other_idx] {
+                        continue;
+                    }
+
+                    let other_pos = (other_card.x, other_card.y);
+                    let distance = Self::hex_distance(card_pos, other_pos);
+
+                    if distance <= Self::MAX_HEX_DISTANCE {
+                        to_visit.push(other_idx);
                     }
                 }
             }
+
+            if group.len() >= 2 {
+                groups.push(group);
+            }
         }
 
-        lines
+        groups
     }
 
     /// Trace a line in a specific direction from a starting card
@@ -290,64 +335,64 @@ impl ComboDetector {
         a_sorted == b_sorted
     }
 
-    /// Check a line for poker combos (skipping jokers)
-    fn check_line_for_combos(line: &[usize], all_cards: &[PositionedCard]) -> Option<ComboResult> {
-        // Extract standard cards from line (skip jokers/custom cards)
-        let line_cards: Vec<&CardData> = line.iter()
+    /// Check a group of adjacent cards for poker combos (skipping jokers)
+    fn check_group_for_combos(group: &[usize], all_cards: &[PositionedCard]) -> Option<ComboResult> {
+        // Extract standard cards from group (skip jokers/custom cards)
+        let group_cards: Vec<&CardData> = group.iter()
             .map(|&idx| &all_cards[idx].card)
             .filter(|c| !c.is_custom)
             .collect();
 
         // Need at least 2 cards for any combo (pairs)
-        if line_cards.len() < 2 {
+        if group_cards.len() < 2 {
             return None;
         }
 
         // Check for hands (from strongest to weakest)
         // Note: Some hands require 5 cards, others can work with fewer
-        if let Some(_) = Self::check_royal_flush(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::RoyalFlush, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_royal_flush(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::RoyalFlush, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_straight_flush(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::StraightFlush, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_straight_flush(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::StraightFlush, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_four_of_a_kind(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::FourOfAKind, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_four_of_a_kind(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::FourOfAKind, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_full_house(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::FullHouse, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_full_house(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::FullHouse, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_flush(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::Flush, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_flush(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::Flush, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_straight(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::Straight, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_straight(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::Straight, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_three_of_a_kind(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::ThreeOfAKind, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_three_of_a_kind(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::ThreeOfAKind, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_two_pair(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::TwoPair, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_two_pair(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::TwoPair, group.to_vec(), positions, &group_cards));
         }
 
-        if let Some(_) = Self::check_one_pair(&line_cards) {
-            let positions: Vec<(i32, i32)> = line.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
-            return Some(ComboResult::with_resources(PokerHand::OnePair, line.to_vec(), positions, &line_cards));
+        if let Some(_) = Self::check_one_pair(&group_cards) {
+            let positions: Vec<(i32, i32)> = group.iter().map(|&idx| (all_cards[idx].x, all_cards[idx].y)).collect();
+            return Some(ComboResult::with_resources(PokerHand::OnePair, group.to_vec(), positions, &group_cards));
         }
 
         None
@@ -512,6 +557,7 @@ struct ComboDetectionRequest {
 }
 
 /// Result from combo detection
+#[derive(Clone)]
 struct ComboDetectionResult {
     request_id: u64,
     hand_name: String,
@@ -520,6 +566,7 @@ struct ComboDetectionResult {
     card_indices: Vec<usize>,
     positions: Vec<(i32, i32)>,
     resource_bonuses: Vec<ResourceBonus>,
+    cards: Vec<PositionedCard>, // Store cards for joker detection
 }
 
 /// Godot-exposed combo detector with worker threads
@@ -535,6 +582,10 @@ pub struct CardComboDetector {
 
     // Request ID counter
     next_request_id: Arc<Mutex<u64>>,
+
+    // Pending combo results (request_id -> ComboDetectionResult)
+    // Stored so we can apply rewards when player accepts
+    pending_combos: Arc<Mutex<HashMap<u64, ComboDetectionResult>>>,
 }
 
 #[godot_api]
@@ -546,6 +597,7 @@ impl INode for CardComboDetector {
             result_rx: Arc::new(Mutex::new(None)),
             worker_handle: None,
             next_request_id: Arc::new(Mutex::new(0)),
+            pending_combos: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -561,6 +613,11 @@ impl CardComboDetector {
     /// Arguments: request_id (u64), result (Dictionary)
     #[signal]
     fn combo_found(request_id: u64, result: Dictionary);
+
+    /// Signal emitted when joker is consumed in a combo
+    /// Arguments: joker_type (String), joker_card_id (i32), count (i32), spawn_x (i32), spawn_y (i32)
+    #[signal]
+    fn joker_consumed(joker_type: GString, joker_card_id: i32, count: i32, spawn_x: i32, spawn_y: i32);
 
     /// Start worker thread
     #[func]
@@ -581,7 +638,14 @@ impl CardComboDetector {
                         // Process combo detection
                         let combo_result = ComboDetector::detect_combo(&request.cards);
 
-                        // Send result back
+                        // Only send result if we found an actual combo (not HighCard)
+                        if combo_result.hand == PokerHand::HighCard {
+                            godot_print!("CardComboDetector: No combo found for request {}", request.request_id);
+                            // Don't send result - no combo popup will appear
+                            continue;
+                        }
+
+                        // Send result back for valid combos
                         let result = ComboDetectionResult {
                             request_id: request.request_id,
                             hand_name: combo_result.hand_name,
@@ -590,6 +654,7 @@ impl CardComboDetector {
                             card_indices: combo_result.cards_used,
                             positions: combo_result.positions,
                             resource_bonuses: combo_result.resource_bonuses,
+                            cards: request.cards, // Store cards for joker detection
                         };
 
                         if result_tx.send(result).is_err() {
@@ -677,6 +742,11 @@ impl CardComboDetector {
 
         // Process results and emit signals (lock is released)
         for result in results {
+            let request_id = result.request_id;
+
+            // Store result for later (when player accepts combo)
+            self.pending_combos.lock().unwrap().insert(request_id, result.clone());
+
             // Convert to Godot Dictionary
             let mut dict = Dictionary::new();
             dict.set("hand_name", result.hand_name.as_str());
@@ -684,23 +754,23 @@ impl CardComboDetector {
             dict.set("hand_rank", result.hand_rank as i32);
 
             let mut indices_array = Array::<i32>::new();
-            for idx in result.card_indices {
-                indices_array.push(idx as i32);
+            for idx in &result.card_indices {
+                indices_array.push(*idx as i32);
             }
             dict.set("card_indices", indices_array);
 
             let mut positions_array = Array::<Dictionary>::new();
-            for (x, y) in result.positions {
+            for (x, y) in &result.positions {
                 let mut pos_dict = Dictionary::new();
-                pos_dict.set("x", x);
-                pos_dict.set("y", y);
+                pos_dict.set("x", *x);
+                pos_dict.set("y", *y);
                 positions_array.push(&pos_dict);
             }
             dict.set("positions", positions_array);
 
-            // Add resource bonuses
+            // Add resource bonuses (for display only - actual rewards applied when accepted)
             let mut resources_array = Array::<Dictionary>::new();
-            for bonus in result.resource_bonuses {
+            for bonus in &result.resource_bonuses {
                 let mut res_dict = Dictionary::new();
                 res_dict.set("resource_type", bonus.resource_type as i32);
                 res_dict.set("resource_name", bonus.resource_name.as_str());
@@ -710,7 +780,7 @@ impl CardComboDetector {
             dict.set("resource_bonuses", resources_array);
 
             // Emit signal with result
-            self.base_mut().emit_signal("combo_found", &[result.request_id.to_variant(), dict.to_variant()]);
+            self.base_mut().emit_signal("combo_found", &[request_id.to_variant(), dict.to_variant()]);
         }
     }
 
@@ -782,6 +852,93 @@ impl CardComboDetector {
         cards
     }
 
+    /// Accept a combo and apply rewards (SECURE: Rust-authoritative)
+    /// Called when player accepts the combo popup
+    /// Returns true if combo was found and rewards applied, false otherwise
+    #[func]
+    fn accept_combo(&mut self, request_id: u64) -> bool {
+        // Get the pending combo result
+        let result = {
+            let mut pending = self.pending_combos.lock().unwrap();
+            pending.remove(&request_id)
+        };
+
+        if let Some(result) = result {
+            godot_print!("CardComboDetector: Accepting combo {} - {}", request_id, result.hand_name);
+
+            // INTEGRITY CHECK: Verify cards still exist at expected positions
+            if !self.verify_combo_integrity(&result) {
+                godot_error!("CardComboDetector: Combo integrity check FAILED for request {}!", request_id);
+                godot_error!("  Cards have been moved/removed since combo was detected!");
+                godot_error!("  This could indicate tampering or race condition.");
+                return false;
+            }
+            godot_print!("CardComboDetector: Combo integrity verified");
+
+            // Get ResourceLedgerBridge to apply rewards (this emits signals to update UI)
+            let mut tree = self.base().get_tree();
+            if tree.is_none() {
+                godot_error!("CardComboDetector: No scene tree available!");
+                return false;
+            }
+
+            let tree = tree.as_mut().unwrap();
+            let root = tree.get_root();
+            if root.is_none() {
+                godot_error!("CardComboDetector: No root node available!");
+                return false;
+            }
+
+            let mut resource_ledger = root.unwrap().get_node_or_null("/root/ResourceLedger");
+            if resource_ledger.is_none() {
+                godot_error!("CardComboDetector: ResourceLedger autoload not found!");
+                return false;
+            }
+
+            // Apply resource bonuses via ResourceLedgerBridge (emits signals)
+            let resource_ledger_node = resource_ledger.as_mut().unwrap();
+            for bonus in &result.resource_bonuses {
+                let resource_type_id = bonus.resource_type as i32;
+
+                // Call ResourceLedger.add() which will emit signals
+                let success = resource_ledger_node.call("add", &[resource_type_id.to_variant(), bonus.amount.to_variant()]);
+
+                if success.is_nil() {
+                    godot_warn!("  Failed to apply {} {}", bonus.amount, bonus.resource_name);
+                } else {
+                    godot_print!("  Applied {} {} (x{})", bonus.amount, bonus.resource_name, result.bonus_multiplier);
+                }
+            }
+
+            // Detect and handle jokers (custom cards in spatial group)
+            self.handle_jokers(&result);
+
+            true
+        } else {
+            godot_warn!("CardComboDetector: No pending combo found for request_id {}", request_id);
+            false
+        }
+    }
+
+    /// Decline a combo (removes from pending without applying rewards)
+    /// Called when player declines the combo popup
+    /// Returns true if combo was found and removed, false otherwise
+    #[func]
+    fn decline_combo(&mut self, request_id: u64) -> bool {
+        let result = {
+            let mut pending = self.pending_combos.lock().unwrap();
+            pending.remove(&request_id)
+        };
+
+        if result.is_some() {
+            godot_print!("CardComboDetector: Declined combo {}", request_id);
+            true
+        } else {
+            godot_warn!("CardComboDetector: No pending combo found for request_id {}", request_id);
+            false
+        }
+    }
+
     /// Helper: Convert Godot Dictionary to PositionedCard (DEPRECATED - use PackedByteArray)
     fn dict_to_positioned_card(dict: &Dictionary, index: usize) -> Option<PositionedCard> {
         let ulid = dict.get("ulid")?.to::<PackedByteArray>();
@@ -807,5 +964,135 @@ impl CardComboDetector {
             y,
             index,
         })
+    }
+
+    /// Handle joker cards in the combo (detect and emit signals)
+    fn handle_jokers(&mut self, result: &ComboDetectionResult) {
+        // Find all custom cards (jokers) in the spatial group
+        // Also track the position of the first joker of each type for spawn location
+        let mut joker_data: std::collections::HashMap<i32, (i32, (i32, i32))> = std::collections::HashMap::new();
+
+        for positioned_card in &result.cards {
+            if positioned_card.card.is_custom {
+                let card_id = positioned_card.card.card_id;
+                let entry = joker_data.entry(card_id).or_insert((0, (positioned_card.x, positioned_card.y)));
+                entry.0 += 1; // Increment count
+                // Position stays as first occurrence
+            }
+        }
+
+        // Emit signal for each joker type with spawn position
+        for (card_id, (count, (spawn_x, spawn_y))) in joker_data.iter() {
+            let joker_name = match card_id {
+                52 => "VIKING".to_string(),
+                53 => "JEZZA".to_string(),
+                _ => format!("CUSTOM_{}", card_id),
+            };
+
+            godot_print!("CardComboDetector: Consumed {} x {} joker(s) at position ({}, {})", count, joker_name, spawn_x, spawn_y);
+
+            // Emit joker_consumed signal with spawn position
+            self.base_mut().emit_signal(
+                "joker_consumed",
+                &[
+                    joker_name.to_variant(),
+                    card_id.to_variant(),
+                    count.to_variant(),
+                    spawn_x.to_variant(),
+                    spawn_y.to_variant(),
+                ],
+            );
+        }
+    }
+
+    /// Verify that all cards in the combo still exist at their expected positions
+    /// This prevents exploits where player moves cards after combo detection but before acceptance
+    fn verify_combo_integrity(&self, result: &ComboDetectionResult) -> bool {
+        // Get CardRegistryBridge to check card positions
+        let mut tree = self.base().get_tree();
+        if tree.is_none() {
+            godot_error!("CardComboDetector: No scene tree available for integrity check!");
+            return false;
+        }
+
+        let tree = tree.as_mut().unwrap();
+        let root = tree.get_root();
+        if root.is_none() {
+            godot_error!("CardComboDetector: No root node available for integrity check!");
+            return false;
+        }
+
+        let mut card_registry = root.unwrap().get_node_or_null("/root/CardRegistryBridge");
+        if card_registry.is_none() {
+            godot_error!("CardComboDetector: CardRegistryBridge autoload not found!");
+            return false;
+        }
+
+        let card_registry_node = card_registry.as_mut().unwrap();
+
+        // Verify each card in the combo still exists at its position
+        for positioned_card in &result.cards {
+            let x = positioned_card.x;
+            let y = positioned_card.y;
+
+            // Get the card at this position
+            let card_dict_variant = card_registry_node.call("get_card_at", &[x.to_variant(), y.to_variant()]);
+
+            if card_dict_variant.is_nil() {
+                godot_error!("CardComboDetector: Failed to get card at ({}, {})", x, y);
+                return false;
+            }
+
+            // Convert to Dictionary
+            let card_dict: Dictionary = match card_dict_variant.try_to() {
+                Ok(dict) => dict,
+                Err(_) => {
+                    godot_error!("CardComboDetector: Invalid card data at ({}, {})", x, y);
+                    return false;
+                }
+            };
+
+            // Check if dictionary is empty (no card at position)
+            if card_dict.is_empty() {
+                godot_error!("CardComboDetector: Card missing at position ({}, {})", x, y);
+                return false;
+            }
+
+            // Get ULID from dictionary
+            let ulid_variant = match card_dict.get("ulid") {
+                Some(v) => v,
+                None => {
+                    godot_error!("CardComboDetector: Card at ({}, {}) has no ULID field", x, y);
+                    return false;
+                }
+            };
+
+            // Check if ULID is nil
+            if ulid_variant.is_nil() {
+                godot_error!("CardComboDetector: Card at ({}, {}) has nil ULID", x, y);
+                return false;
+            }
+
+            // Convert to PackedByteArray and compare
+            let card_ulid: PackedByteArray = match ulid_variant.try_to() {
+                Ok(ulid) => ulid,
+                Err(_) => {
+                    godot_error!("CardComboDetector: Invalid ULID format at ({}, {})", x, y);
+                    return false;
+                }
+            };
+
+            let card_ulid_bytes = card_ulid.as_slice();
+
+            if card_ulid_bytes != positioned_card.card.ulid.as_slice() {
+                godot_error!("CardComboDetector: Card ULID mismatch at ({}, {})", x, y);
+                godot_error!("  Expected: {:?}", positioned_card.card.ulid);
+                godot_error!("  Found: {:?}", card_ulid_bytes);
+                return false;
+            }
+        }
+
+        // All cards verified
+        true
     }
 }

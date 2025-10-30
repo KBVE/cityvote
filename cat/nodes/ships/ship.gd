@@ -52,6 +52,10 @@ var occupied_tiles: Dictionary = {}  # Shared reference set by main.gd
 # ULID for persistent entity tracking
 var ulid: PackedByteArray = PackedByteArray()
 
+# Player ownership ULID (which player controls this ship)
+# Empty = AI-controlled, otherwise contains player's ULID
+var player_ulid: PackedByteArray = PackedByteArray()
+
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
@@ -346,7 +350,7 @@ func _setup_health_bar() -> void:
 	health_bar.initialize(current_hp, max_hp)
 
 	# Configure appearance (optional - adjust as needed)
-	health_bar.set_bar_offset(Vector2(0, -35))  # Position above ship
+	health_bar.set_bar_offset(Vector2(0, -30))  # Position above ship
 	health_bar.set_auto_hide(false)  # Show health bar even at full health (for visibility)
 
 	print("Ship: Health bar setup complete. Visible=%s, Position=%s" % [health_bar.visible, health_bar.position])

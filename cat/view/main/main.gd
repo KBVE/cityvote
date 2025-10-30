@@ -38,6 +38,9 @@ var manual_camera_panning_enabled = true  # Controlled by card signals
 # CRT effect toggle
 var crt_effect = false  # Set to true to enable CRT shader
 
+# Player ULID (represents the current player)
+var player_ulid: PackedByteArray = PackedByteArray()
+
 #### TEST ####
 # Viking ship testing
 var test_vikings: Array = []
@@ -56,6 +59,11 @@ var fantasy_warrior_move_timer: float = 0.0
 var fantasy_warrior_move_interval: float = 2.5  # Move every 2.5 seconds
 
 func _ready():
+	# Generate player ULID (represents the current player)
+	if UlidManager:
+		player_ulid = UlidManager.generate()
+		print("Main: Player ULID generated: %s" % UlidManager.to_hex(player_ulid))
+
 	# Show language selector immediately (before any initialization)
 	_show_language_selector_overlay()
 
@@ -115,6 +123,11 @@ func _ready():
 	# Spawn test Fantasy Warriors on land tiles
 	_spawn_test_fantasy_warriors()
 
+	# Connect to joker consumption signal
+	if CardComboBridge:
+		CardComboBridge.joker_consumed.connect(_on_joker_consumed)
+		print("Main: Connected to joker_consumed signal")
+
 	# Test toast notification
 	Toast.show_toast(I18n.translate("game.welcome"), 5.0)
 	await get_tree().create_timer(2.0).timeout
@@ -131,7 +144,20 @@ func _show_language_selector_overlay() -> void:
 	var selector = selector_scene.instantiate()
 	add_child(selector)
 
+	# Connect to language_selected signal to start timer
+	if selector.has_signal("language_selected"):
+		selector.language_selected.connect(_on_language_selected)
+
 	print("Main: Language selector displayed over game world")
+
+## Handle language selection - start the game timer
+func _on_language_selected(language: int) -> void:
+	print("Main: Language selected (%d), starting game timer..." % language)
+
+	# Start the game timer now that player is ready
+	if GameTimer:
+		GameTimer.start_timer()
+		print("Main: Game timer started!")
 
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:
@@ -332,7 +358,7 @@ func _spawn_test_vikings():
 		for y in range(MapConfig.MAP_HEIGHT):
 			var tile_coords = Vector2i(x, y)
 			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
-			if source_id == 4:  # Water tile
+			if source_id == MapConfig.SOURCE_ID_WATER:  # Water tile
 				water_tiles.append(tile_coords)
 
 	print("=== VIKING SPAWN ===")
@@ -358,16 +384,16 @@ func _spawn_test_vikings():
 			# Convert tile coordinates to world position
 			var world_pos = hex_map.tile_map.map_to_local(random_tile)
 
-			# Set viking position and add to hex_map
-			hex_map.add_child(viking)
-			viking.position = world_pos
-			viking.occupied_tiles = occupied_tiles  # Share reference
+			# Spawn using EntityManager (handles health bar setup)
+			var spawn_config = {
+				"direction": randi() % 16,
+				"occupied_tiles": occupied_tiles
+			}
+
+			EntityManager.spawn_entity(viking, hex_map, world_pos, spawn_config)
 
 			# Apply wave shader to viking (they're on water!)
 			_apply_wave_shader_to_viking(viking)
-
-			# Set random initial direction
-			viking.set_direction(randi() % 16)
 
 			# Mark tile as occupied
 			occupied_tiles[random_tile] = viking
@@ -573,7 +599,7 @@ func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int
 
 			# Check if land tile (not water, source_id != 4)
 			var source_id = hex_map.tile_map.get_cell_source_id(0, test_tile)
-			if source_id == 4:  # Water
+			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
 				continue
 
 			# Check if not occupied
@@ -647,15 +673,13 @@ func _spawn_test_jezza():
 			# Convert tile coordinates to world position
 			var world_pos = hex_map.tile_map.map_to_local(random_tile)
 
-			# Set jezza position and add to hex_map
-			hex_map.add_child(jezza)
-			jezza.position = world_pos
-			jezza.occupied_tiles = occupied_tiles  # Share reference
+			# Spawn using EntityManager (handles health bar setup)
+			var spawn_config = {
+				"direction": randi() % 16,
+				"occupied_tiles": occupied_tiles
+			}
 
-			# Scale is set in jezza.tscn (0.4, 0.4) for performance
-
-			# Set random initial direction
-			jezza.set_direction(randi() % 16)
+			EntityManager.spawn_entity(jezza, hex_map, world_pos, spawn_config)
 
 			# Mark tile as occupied
 			occupied_tiles[random_tile] = jezza
@@ -703,13 +727,13 @@ func _spawn_test_fantasy_warriors():
 			# Convert tile coordinates to world position
 			var world_pos = hex_map.tile_map.map_to_local(random_tile)
 
-			# Set warrior position and add to hex_map
-			hex_map.add_child(warrior)
-			warrior.position = world_pos
-			warrior.occupied_tiles = occupied_tiles  # Share reference
+			# Spawn using EntityManager (handles health bar setup)
+			var spawn_config = {
+				"direction": randi() % 16,
+				"occupied_tiles": occupied_tiles
+			}
 
-			# Set random initial direction
-			warrior.set_direction(randi() % 16)
+			EntityManager.spawn_entity(warrior, hex_map, world_pos, spawn_config)
 
 			# Mark tile as occupied
 			occupied_tiles[random_tile] = warrior
@@ -755,3 +779,171 @@ func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Nod
 				closest_entity = warrior
 
 	return closest_entity
+
+## Handle joker consumption from combos
+func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spawn_x: int, spawn_y: int) -> void:
+	print("Main: Joker consumed - %s (x%d) at card position (%d, %d)" % [joker_type, count, spawn_x, spawn_y])
+
+	# Card position where joker was placed
+	var card_pos = Vector2i(spawn_x, spawn_y)
+
+	match joker_type:
+		"JEZZA":
+			# Spawn 3 Jezza raptors for the player near the card
+			_spawn_jezza_for_player(player_ulid, 3, card_pos)
+			Toast.show_toast("Spawned 3 Jezza Raptors!", 3.0)
+		"VIKING":
+			# Spawn 3 viking ships for the player near the card
+			_spawn_vikings_for_player(player_ulid, 3, card_pos)
+			Toast.show_toast("Spawned 3 Viking Ships!", 3.0)
+		_:
+			push_warning("Main: Unknown joker type: %s" % joker_type)
+
+## Spawn Jezza raptors for a specific player near a given card position
+func _spawn_jezza_for_player(owner_player_ulid: PackedByteArray, spawn_count: int, near_pos: Vector2i = Vector2i(-1, -1)) -> void:
+	print("Main: Spawning %d Jezza(s) for player %s near position %v" % [spawn_count, UlidManager.to_hex(owner_player_ulid), near_pos])
+
+	# Find land tiles (non-water), prioritizing tiles near the card position
+	var land_tiles: Array = []
+
+	# Helper function to calculate hex distance
+	var hex_distance = func(a: Vector2i, b: Vector2i) -> int:
+		var dx = abs(a.x - b.x)
+		var dy = abs(a.y - b.y)
+		var dz = abs(dx + dy)
+		return (dx + dy + dz) / 2
+
+	# If we have a valid near_pos, collect tiles sorted by distance
+	if near_pos != Vector2i(-1, -1):
+		# Collect tiles with their distances
+		var tiles_with_distance: Array = []
+		for x in range(MapConfig.MAP_WIDTH):
+			for y in range(MapConfig.MAP_HEIGHT):
+				var tile_coords = Vector2i(x, y)
+				var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+				if source_id != MapConfig.SOURCE_ID_WATER and not occupied_tiles.has(tile_coords):
+					var distance = hex_distance.call(near_pos, tile_coords)
+					tiles_with_distance.append({"pos": tile_coords, "dist": distance})
+
+		# Sort by distance (closest first)
+		tiles_with_distance.sort_custom(func(a, b): return a["dist"] < b["dist"])
+
+		# Extract just the positions
+		for tile_data in tiles_with_distance:
+			land_tiles.append(tile_data["pos"])
+
+		print("Main: Found %d available land tiles sorted by distance from card position" % land_tiles.size())
+	else:
+		# Fallback: random tiles anywhere
+		for x in range(MapConfig.MAP_WIDTH):
+			for y in range(MapConfig.MAP_HEIGHT):
+				var tile_coords = Vector2i(x, y)
+				var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+				if source_id != MapConfig.SOURCE_ID_WATER and not occupied_tiles.has(tile_coords):
+					land_tiles.append(tile_coords)
+		print("Main: Found %d available land tiles (random placement)" % land_tiles.size())
+
+	if land_tiles.size() < spawn_count:
+		push_error("Main: Not enough land tiles to spawn %d Jezza(s)" % spawn_count)
+		return
+
+	# Spawn the Jezza raptors
+	print("Main: Starting spawn loop for %d Jezza(s)" % spawn_count)
+	for i in range(spawn_count):
+		print("Main: Attempting to acquire Jezza %d from Cluster..." % (i + 1))
+		var jezza = Cluster.acquire("jezza")
+
+		if jezza:
+			print("Main: Successfully acquired Jezza %d" % (i + 1))
+
+			# Get closest available land tile (or random if no near_pos)
+			var spawn_tile: Vector2i
+			if near_pos != Vector2i(-1, -1) and land_tiles.size() > 0:
+				# Take the first tile (closest to card)
+				spawn_tile = land_tiles[0]
+				land_tiles.remove_at(0)
+			else:
+				# Random tile
+				spawn_tile = land_tiles[randi() % land_tiles.size()]
+				land_tiles.erase(spawn_tile)
+
+			# Convert tile coordinates to world position
+			var world_pos = hex_map.tile_map.map_to_local(spawn_tile)
+
+			# Spawn using EntityManager (handles health bar setup)
+			var spawn_config = {
+				"player_ulid": owner_player_ulid,
+				"direction": randi() % 16,
+				"occupied_tiles": occupied_tiles
+			}
+
+			EntityManager.spawn_entity(jezza, hex_map, world_pos, spawn_config)
+
+			# Mark tile as occupied
+			occupied_tiles[spawn_tile] = jezza
+
+			# Store jezza and its current tile
+			test_jezzas.append({"npc": jezza, "tile": spawn_tile})
+			print("  -> Spawned Jezza %d/%d at tile %v (distance from card: %d)" % [i + 1, spawn_count, spawn_tile, hex_distance.call(near_pos, spawn_tile) if near_pos != Vector2i(-1, -1) else -1])
+		else:
+			push_error("Main: Failed to acquire Jezza %d from Cluster (pool exhausted?)" % (i + 1))
+
+	print("Main: Finished spawning Jezzas. Total in test_jezzas: %d" % test_jezzas.size())
+
+## Spawn Viking ships for a specific player near a given card position
+func _spawn_vikings_for_player(owner_player_ulid: PackedByteArray, spawn_count: int, near_pos: Vector2i = Vector2i(-1, -1)) -> void:
+	print("Main: Spawning %d Viking(s) for player %s" % [spawn_count, UlidManager.to_hex(owner_player_ulid)])
+
+	# Find water tiles
+	var water_tiles: Array = []
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
+			var tile_coords = Vector2i(x, y)
+			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+			if source_id == MapConfig.SOURCE_ID_WATER and not occupied_tiles.has(tile_coords):  # Water tile and not occupied
+				water_tiles.append(tile_coords)
+
+	print("Main: Found %d available water tiles for spawning" % water_tiles.size())
+
+	if water_tiles.size() < spawn_count:
+		push_error("Main: Not enough water tiles to spawn %d Viking(s)" % spawn_count)
+		return
+
+	# Spawn the Viking ships
+	print("Main: Starting spawn loop for %d Viking(s)" % spawn_count)
+	for i in range(spawn_count):
+		print("Main: Attempting to acquire Viking %d from Cluster..." % (i + 1))
+		var viking = Cluster.acquire("viking")
+
+		if viking:
+			print("Main: Successfully acquired Viking %d" % (i + 1))
+
+			# Get random unoccupied water tile
+			var random_tile: Vector2i = water_tiles[randi() % water_tiles.size()]
+			water_tiles.erase(random_tile)  # Remove from available tiles
+
+			# Convert tile coordinates to world position
+			var world_pos = hex_map.tile_map.map_to_local(random_tile)
+
+			# Spawn using EntityManager (handles health bar setup)
+			var spawn_config = {
+				"player_ulid": owner_player_ulid,
+				"direction": randi() % 16,
+				"occupied_tiles": occupied_tiles
+			}
+
+			EntityManager.spawn_entity(viking, hex_map, world_pos, spawn_config)
+
+			# Apply wave shader to viking (they're on water!)
+			_apply_wave_shader_to_viking(viking)
+
+			# Mark tile as occupied
+			occupied_tiles[random_tile] = viking
+
+			# Store viking and its current tile
+			test_vikings.append({"ship": viking, "tile": random_tile})
+			print("  -> Spawned Viking %d/%d at tile %v for player" % [i + 1, spawn_count, random_tile])
+		else:
+			push_error("Main: Failed to acquire Viking %d from Cluster (pool exhausted?)" % (i + 1))
+
+	print("Main: Finished spawning Vikings. Total in test_vikings: %d" % test_vikings.size())

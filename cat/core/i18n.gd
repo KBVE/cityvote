@@ -39,6 +39,17 @@ var flag_atlas_mapping: Dictionary = {
 	"India": "realcountries2"
 }
 
+# Hardcoded flag frame data (from realcountriesjson.json and realcountries2json.json)
+# This avoids the need to load JSON files at runtime (fixes web build issues)
+# Each flag has: x, y, w (width), h (height) in the atlas texture
+var flag_frame_data: Dictionary = {
+	"british": {"x": 91, "y": 1, "w": 16, "h": 32},
+	"japon": {"x": 73, "y": 69, "w": 16, "h": 32},
+	"china": {"x": 1, "y": 35, "w": 16, "h": 32},
+	"spain": {"x": 1, "y": 103, "w": 16, "h": 32},
+	"India": {"x": 1, "y": 1, "w": 16, "h": 32}  # From realcountries2
+}
+
 # Translation dictionary
 # Structure: translations[key][language] = translated_string
 var translations: Dictionary = {
@@ -86,6 +97,43 @@ var translations: Dictionary = {
 		Language.CHINESE: "放置: %s",
 		Language.HINDI: "रखा: %s",
 		Language.SPANISH: "Colocó: %s"
+	},
+	"ui.hand.tile_occupied": {
+		Language.ENGLISH: "Tile is occupied!",
+		Language.JAPANESE: "タイルは占有されています！",
+		Language.CHINESE: "格子已被占用！",
+		Language.HINDI: "टाइल पहले से भरी हुई है!",
+		Language.SPANISH: "¡La casilla está ocupada!"
+	},
+	"ui.hand.joker_requires_water": {
+		Language.ENGLISH: "Viking joker must be placed on water!",
+		Language.JAPANESE: "バイキングジョーカーは水上に置く必要があります！",
+		Language.CHINESE: "维京牌必须放在水上！",
+		Language.HINDI: "वाइकिंग जोकर को पानी पर रखा जाना चाहिए!",
+		Language.SPANISH: "¡El comodín vikingo debe colocarse en agua!"
+	},
+	"ui.hand.joker_requires_land": {
+		Language.ENGLISH: "Dino joker must be placed on land!",
+		Language.JAPANESE: "ディノジョーカーは陸上に置く必要があります！",
+		Language.CHINESE: "恐龙牌必须放在陆地上！",
+		Language.HINDI: "डायनो जोकर को जमीन पर रखा जाना चाहिए!",
+		Language.SPANISH: "¡El comodín dino debe colocarse en tierra!"
+	},
+
+	# HUD - Timer and Turns
+	"ui.hud.timer": {
+		Language.ENGLISH: "Timer: %ds",
+		Language.JAPANESE: "タイマー: %d秒",
+		Language.CHINESE: "计时器: %d秒",
+		Language.HINDI: "समय: %dसे",
+		Language.SPANISH: "Tiempo: %ds"
+	},
+	"ui.hud.turn": {
+		Language.ENGLISH: "Turn: %d",
+		Language.JAPANESE: "ターン: %d",
+		Language.CHINESE: "回合: %d",
+		Language.HINDI: "मोड़: %d",
+		Language.SPANISH: "Turno: %d"
 	},
 
 	# Cards - Standard Suits
@@ -708,6 +756,20 @@ func get_flag_info(language: Language) -> Dictionary:
 		"flag": flag_name,
 		"atlas": atlas_name
 	}
+
+## Get hardcoded flag frame data (returns Rect2 or null if not found)
+## Avoids needing to load JSON files at runtime
+func get_flag_frame(flag_name: String) -> Rect2:
+	var frame_data = flag_frame_data.get(flag_name)
+	if frame_data:
+		return Rect2(
+			frame_data["x"],
+			frame_data["y"],
+			frame_data["w"],
+			frame_data["h"]
+		)
+	push_error("I18n: Flag frame data not found for: %s" % flag_name)
+	return Rect2(0, 0, 16, 32)  # Default fallback
 
 ## Save language preference to user settings
 func _save_language_preference(language: Language) -> void:

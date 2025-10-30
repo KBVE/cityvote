@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://nodes/cards/pooled_card.gd" id="1"]
 [ext_resource type="Texture2D" path="res://nodes/cards/playing/card_atlas.png" id="2"]
-[ext_resource type="Material" path="res://shaders/card_atlas.tres" id="3"]
+[ext_resource type="Material" path="res://nodes/cards/card_atlas.tres" id="3"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_1"]
 size = Vector2(96, 144)
