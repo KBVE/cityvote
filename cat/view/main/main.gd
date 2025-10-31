@@ -93,11 +93,18 @@ func _ready():
 	# Enable viewport to handle input events
 	subviewport.handle_input_locally = false
 
+	# Defer initialization until after all children are ready
+	call_deferred("_initialize_game")
+
+func _initialize_game() -> void:
 	# Calculate camera bounds based on actual tilemap (must be done first!)
 	_calculate_camera_bounds()
 
 	# Setup CameraManager with camera reference
 	CameraManager.set_camera(camera)
+
+	# Setup hex_map with camera for chunk culling
+	hex_map.set_camera(camera)
 
 	# Setup ChunkManager with camera and tilemap references
 	ChunkManager.set_camera(camera)

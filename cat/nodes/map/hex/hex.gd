@@ -42,6 +42,16 @@ var card_data: Dictionary = {}  # tile_coords -> {sprite, suit, value}
 # Current hovered tile coordinates
 var hovered_tile: Vector2i = Vector2i(-1, -1)
 
+# Camera reference for chunk culling
+var camera: Camera2D = null
+
+# Track which chunks are currently rendered
+var rendered_chunks: Dictionary = {}  # chunk_index -> true
+
+# Chunk rendering settings
+var chunk_render_distance: int = 3  # Render chunks within N chunks of camera
+var last_camera_chunk: Vector2i = Vector2i(-999, -999)  # Track which chunk camera was in
+
 func _ready():
 	# Set TileMap quadrant size to match our chunk size (32x32)
 	# Default is 16x16, but we want to align with chunk architecture
@@ -49,7 +59,43 @@ func _ready():
 
 	# Initialize a simple test map
 	_generate_test_map()
-	_render_tiles()
+
+	# Don't render all tiles at startup!
+	# Instead, we'll render chunks dynamically based on camera position
+	print("Hex: Map generation complete. Deferring chunk rendering until camera is available.")
+
+func _process(delta: float) -> void:
+	# Update visible chunks only when camera crosses chunk boundaries
+	if camera:
+		var camera_tile = tile_map.local_to_map(camera.global_position)
+		var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
+
+		# Only update if camera moved to a different chunk
+		if camera_chunk != last_camera_chunk:
+			_update_visible_chunks()
+			last_camera_chunk = camera_chunk
+
+	# Handle mouse hover highlight
+	var mouse_pos = get_global_mouse_position()
+	var tile_coords = tile_map.local_to_map(tile_map.to_local(mouse_pos))
+
+	if tile_coords != hovered_tile:
+		hovered_tile = tile_coords
+		_update_highlight()
+
+## Set the camera reference for chunk culling
+func set_camera(cam: Camera2D) -> void:
+	camera = cam
+	if camera:
+		var camera_tile = tile_map.local_to_map(camera.global_position)
+		last_camera_chunk = MapConfig.tile_to_chunk(camera_tile)
+		print("Hex: Camera reference set at position ", camera.global_position)
+		print("Hex: Camera in chunk ", last_camera_chunk)
+		print("Hex: Enabling camera-based chunk culling with render distance: ", chunk_render_distance, " chunks")
+		# Immediately render chunks around camera
+		_update_visible_chunks()
+	else:
+		push_warning("Hex: Camera is null, cannot render chunks!")
 
 func _generate_test_map():
 	# Create map using global MapConfig constants
@@ -127,39 +173,101 @@ func _generate_test_map():
 	# Instead of scanning ALL tiles, we sample specific regions
 	_place_special_tiles_optimized()
 
-func _render_tiles():
-	# Render tiles using TileMap API with chunk-aware batching
-	# Process tiles chunk by chunk for better cache performance
-	print("Hex: Starting tile render (", MapConfig.MAP_WIDTH, "x", MapConfig.MAP_HEIGHT, " = ", MapConfig.MAP_TOTAL_TILES, " tiles)")
-	print("Hex: Using ", MapConfig.TOTAL_CHUNKS, " chunks (", MapConfig.CHUNKS_WIDE, "x", MapConfig.CHUNKS_TALL, ")")
+## Update which chunks should be visible based on camera position
+func _update_visible_chunks() -> void:
+	if not camera:
+		return
+
+	# Get camera position in world coordinates
+	var camera_pos = camera.global_position
+
+	# Convert to tile coordinates
+	var camera_tile = tile_map.local_to_map(camera_pos)
+
+	# Get the chunk the camera is in
+	var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
+
+	# Calculate which chunks should be visible
+	var chunks_to_render: Array = []
+
+	for dy in range(-chunk_render_distance, chunk_render_distance + 1):
+		for dx in range(-chunk_render_distance, chunk_render_distance + 1):
+			var chunk_coords = Vector2i(camera_chunk.x + dx, camera_chunk.y + dy)
+
+			# Check if chunk is in bounds
+			if MapConfig.is_chunk_in_bounds(chunk_coords):
+				var chunk_index = MapConfig.chunk_coords_to_index(chunk_coords)
+				chunks_to_render.append(chunk_index)
+
+	# Render new chunks
+	var newly_rendered = 0
+	for chunk_index in chunks_to_render:
+		if not rendered_chunks.has(chunk_index):
+			_render_chunk(chunk_index)
+			rendered_chunks[chunk_index] = true
+			newly_rendered += 1
+
+	# Unrender chunks that are too far away
+	var chunks_to_unrender: Array = []
+	for chunk_index in rendered_chunks.keys():
+		if chunk_index not in chunks_to_render:
+			chunks_to_unrender.append(chunk_index)
+
+	for chunk_index in chunks_to_unrender:
+		_unrender_chunk(chunk_index)
+		rendered_chunks.erase(chunk_index)
+
+	# Debug output on first call or when chunks change
+	if newly_rendered > 0 or chunks_to_unrender.size() > 0:
+		print("Hex: Camera at tile %v (chunk %v). Rendered: %d new, %d total visible, unrendered: %d" % [
+			camera_tile, camera_chunk, newly_rendered, rendered_chunks.size(), chunks_to_unrender.size()
+		])
+
+## Render a specific chunk by index
+func _render_chunk(chunk_index: int) -> void:
+	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
+	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
 
 	var tiles_rendered = 0
 
-	# Render chunk by chunk for better memory locality
-	for chunk_y in range(MapConfig.CHUNKS_TALL):
-		for chunk_x in range(MapConfig.CHUNKS_WIDE):
-			# Get chunk's top-left tile
-			var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
+	# Render all tiles in this chunk
+	for local_y in range(MapConfig.CHUNK_SIZE):
+		var y = chunk_start.y + local_y
+		if y >= map_data.size():
+			break
 
-			# Render all tiles in this chunk
-			for local_y in range(MapConfig.CHUNK_SIZE):
-				var y = chunk_start.y + local_y
-				if y >= map_data.size():
-					break
+		for local_x in range(MapConfig.CHUNK_SIZE):
+			var x = chunk_start.x + local_x
+			if x >= map_data[y].size():
+				break
 
-				for local_x in range(MapConfig.CHUNK_SIZE):
-					var x = chunk_start.x + local_x
-					if x >= map_data[y].size():
-						break
+			var tile_type = map_data[y][x]
+			if tile_type in tile_type_to_source:
+				var source_id = tile_type_to_source[tile_type]
+				# set_cell(layer, coords, source_id, atlas_coords, alternative_tile)
+				tile_map.set_cell(0, Vector2i(x, y), source_id, Vector2i(0, 0))
+				tiles_rendered += 1
 
-					var tile_type = map_data[y][x]
-					if tile_type in tile_type_to_source:
-						var source_id = tile_type_to_source[tile_type]
-						# set_cell(layer, coords, source_id, atlas_coords, alternative_tile)
-						tile_map.set_cell(0, Vector2i(x, y), source_id, Vector2i(0, 0))
-						tiles_rendered += 1
+	print("Hex: Rendered chunk %d (coords %v) with %d tiles" % [chunk_index, chunk_coords, tiles_rendered])
 
-	print("Hex: Rendered ", tiles_rendered, " tiles across ", MapConfig.TOTAL_CHUNKS, " chunks")
+## Unrender a specific chunk by index (clear tiles)
+func _unrender_chunk(chunk_index: int) -> void:
+	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
+	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
+
+	# Clear all tiles in this chunk
+	for local_y in range(MapConfig.CHUNK_SIZE):
+		var y = chunk_start.y + local_y
+		if y >= map_data.size():
+			break
+
+		for local_x in range(MapConfig.CHUNK_SIZE):
+			var x = chunk_start.x + local_x
+			if x >= map_data[y].size():
+				break
+
+			# Clear the tile by setting source_id to -1
+			tile_map.set_cell(0, Vector2i(x, y), -1)
 
 # Query function to get tile at specific coordinates
 func get_tile_at(x: int, y: int) -> String:
@@ -174,18 +282,6 @@ func get_tile_type_at_coords(coords: Vector2i) -> String:
 		if tile_type_to_source[tile_type] == source_id:
 			return tile_type
 	return ""
-
-func _process(delta):
-	# Get mouse position in world coordinates
-	var mouse_pos = get_global_mouse_position()
-
-	# Convert world position to tile map coordinates
-	var tile_coords = tile_map.local_to_map(tile_map.to_local(mouse_pos))
-
-	# Check if the tile coordinates changed
-	if tile_coords != hovered_tile:
-		hovered_tile = tile_coords
-		_update_highlight()
 
 func _update_highlight():
 	# Check if there's a tile at the hovered coordinates
