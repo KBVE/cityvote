@@ -953,13 +953,10 @@ impl CardComboDetector {
                 let resource_type_id = bonus.resource_type as i32;
 
                 // Call ResourceLedger.add() which will emit signals
-                let success = resource_ledger_node.call("add", &[resource_type_id.to_variant(), bonus.amount.to_variant()]);
+                // Note: add() returns void, so we get nil on success
+                resource_ledger_node.call("add", &[resource_type_id.to_variant(), bonus.amount.to_variant()]);
 
-                if success.is_nil() {
-                    godot_warn!("  Failed to apply {} {}", bonus.amount, bonus.resource_name);
-                } else {
-                    godot_print!("  Applied {} {} (x{})", bonus.amount, bonus.resource_name, result.bonus_multiplier);
-                }
+                godot_print!("  Applied {} {} (x{})", bonus.amount, bonus.resource_name, result.bonus_multiplier);
             }
 
             // Detect and handle jokers (custom cards in spatial group)

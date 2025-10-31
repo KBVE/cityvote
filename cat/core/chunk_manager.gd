@@ -46,7 +46,7 @@ var last_camera_chunk: Vector2i = Vector2i(-1, -1)
 
 ## References
 var camera: Camera2D = null
-var tile_map: TileMap = null
+var tile_map = null  # TileMapCompat wrapper for CustomTileRenderer
 var fog_overlay_parent: Node2D = null  # Parent node for fog overlay rects
 
 ## Fog overlay rects (one per chunk)
@@ -67,9 +67,9 @@ func set_camera(cam: Camera2D) -> void:
 	camera = cam
 	print("ChunkManager: Camera reference set")
 
-func set_tile_map(tmap: TileMap) -> void:
+func set_tile_map(tmap) -> void:
 	tile_map = tmap
-	print("ChunkManager: TileMap reference set")
+	print("ChunkManager: TileMapCompat reference set")
 	_create_fog_overlays()
 
 ## Create fog overlay rectangles for each chunk

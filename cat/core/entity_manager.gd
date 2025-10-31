@@ -85,6 +85,11 @@ func register_entity(entity: Node, pool_key: String, tile: Vector2i) -> bool:
 
 	registered_entities.append(entry)
 	print("EntityManager: Registered %s (total entities: %d)" % [pool_key, registered_entities.size()])
+
+	# Register with combat system if entity has ULID and player_ulid
+	if "ulid" in entity and "player_ulid" in entity:
+		_register_combat(entity, tile)
+
 	return true
 
 ## Unregister an entity from the registry
@@ -93,8 +98,12 @@ func register_entity(entity: Node, pool_key: String, tile: Vector2i) -> bool:
 func unregister_entity(entity: Node) -> bool:
 	for i in range(registered_entities.size()):
 		if registered_entities[i]["entity"] == entity:
+			# Unregister from combat system
+			if "ulid" in entity:
+				_unregister_combat(entity)
+
 			registered_entities.remove_at(i)
-			print("EntityManager: Unregistered entity (remaining: %d)" % registered_entities.size())
+			print("EntityManager: Unregister entity (remaining: %d)" % registered_entities.size())
 			return true
 	return false
 
@@ -207,7 +216,7 @@ func _cleanup_entity_health_bar(entity: Node) -> void:
 ##   - count: int - Number of entities to spawn
 ##   - tile_type: TileType - What type of tiles to spawn on (LAND, WATER, ANY)
 ##   - hex_map: Node - Reference to hex map
-##   - tile_map: TileMap - Reference to the tile map
+##   - tile_map: TileMapCompat - Reference to the tile map wrapper
 ##   - occupied_tiles: Dictionary - Reference to occupied tiles dict
 ##   - storage_array: Array - Array to store spawned entity data in
 ##   - player_ulid: PackedByteArray - Player ownership
@@ -462,6 +471,12 @@ func update_entities(delta: float, movement_callback: Callable) -> void:
 		if not entity or not is_instance_valid(entity):
 			continue
 
+		# Skip entities in combat (they shouldn't move)
+		if "current_state" in entity:
+			var IN_COMBAT_FLAG = 0b1000000  # 0x40
+			if entity.current_state & IN_COMBAT_FLAG:
+				continue
+
 		# Skip entities in non-visible chunks (chunk culling optimization)
 		if ChunkManager and ChunkManager.chunk_culling_enabled:
 			var entity_chunk = MapConfig.tile_to_chunk(entry["tile"])
@@ -517,9 +532,52 @@ func update_entity_tile(entity: Node, new_tile: Vector2i) -> bool:
 		if entry["entity"] == entity:
 			entry["tile"] = new_tile
 
+			# Update position in combat system
+			if "ulid" in entity:
+				_update_combat_position(entity, new_tile)
+
 			# Reveal chunk where entity moved to (for fog of war exploration)
 			if ChunkManager:
 				ChunkManager.reveal_chunk_at_tile(new_tile)
 
 			return true
 	return false
+
+## Internal: Register entity with combat system
+func _register_combat(entity: Node, tile: Vector2i) -> void:
+	if not CombatManager or not CombatManager.combat_bridge:
+		push_warning("EntityManager: CombatManager not ready, skipping combat registration")
+		return
+
+	if not "ulid" in entity or entity.ulid.is_empty():
+		push_error("EntityManager: Cannot register entity for combat - missing or invalid ULID")
+		return
+
+	var ulid: PackedByteArray = entity.ulid
+	var player_ulid: PackedByteArray = entity.player_ulid if "player_ulid" in entity else PackedByteArray()
+	var attack_interval: float = 1.5  # Default attack interval
+
+	# Register with Rust combat system
+	CombatManager.combat_bridge.register_combatant(ulid, player_ulid, tile, attack_interval)
+
+## Internal: Unregister entity from combat system
+func _unregister_combat(entity: Node) -> void:
+	if not CombatManager or not CombatManager.combat_bridge:
+		return  # Silent fail - combat system may not be initialized yet
+
+	if not "ulid" in entity or entity.ulid.is_empty():
+		return  # Silent fail - entity doesn't have ULID
+
+	var ulid: PackedByteArray = entity.ulid
+	CombatManager.combat_bridge.unregister_combatant(ulid)
+
+## Internal: Update entity position in combat system
+func _update_combat_position(entity: Node, tile: Vector2i) -> void:
+	if not CombatManager or not CombatManager.combat_bridge:
+		return  # Silent fail - combat system may not be initialized
+
+	if not "ulid" in entity or entity.ulid.is_empty():
+		return  # Silent fail - entity doesn't have ULID
+
+	var ulid: PackedByteArray = entity.ulid
+	CombatManager.combat_bridge.update_position(ulid, tile)

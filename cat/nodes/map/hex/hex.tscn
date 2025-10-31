@@ -1,20 +1,16 @@
-[gd_scene load_steps=6 format=3 uid="uid://c8n2x3m9k4p1j"]
+[gd_scene load_steps=5 format=3 uid="uid://c8n2x3m9k4p1j"]
 
 [ext_resource type="Script" path="res://nodes/map/hex/hex.gd" id="1_hex"]
-[ext_resource type="TileSet" uid="uid://bx8m3n9p2q5r7" path="res://nodes/map/hex/hex_tileset.tres" id="2_tileset"]
+[ext_resource type="Script" path="res://nodes/map/hex/custom_tile_renderer.gd" id="2_renderer"]
 [ext_resource type="Texture2D" uid="uid://crbtmtl4kw8ik" path="res://nodes/map/hex/grassland0/grassland0.png" id="3_highlight_texture"]
 [ext_resource type="Material" uid="uid://dg7h8i9j0k1l2" path="res://shader/hexoutline_material.tres" id="4_shader_material"]
-[ext_resource type="Material" uid="uid://b8k9l0m1n2o3p" path="res://shader/water_material.tres" id="5_water_material"]
 
 [node name="Hex" type="Node2D"]
 script = ExtResource("1_hex")
 
-[node name="TileMap" type="TileMap" parent="."]
-tile_set = ExtResource("2_tileset")
-format = 2
-rendering_quadrant_size = 32
-layer_0/name = "Ground"
-layer_0/tile_data = PackedInt32Array()
+[node name="CustomTileRenderer" type="Node2D" parent="."]
+z_index = 1
+script = ExtResource("2_renderer")
 
 [node name="HexHighlight" type="Sprite2D" parent="."]
 visible = false

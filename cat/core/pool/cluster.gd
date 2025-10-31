@@ -46,6 +46,10 @@ func _setup_pools():
 	var health_bar_scene = preload("res://view/hud/healthbar/health_bar.tscn")
 	register_pool("health_bar", health_bar_scene, 100)  # Start with 100, will grow as needed
 
+	# Projectile pool (for combat visual effects)
+	var projectile_scene = preload("res://nodes/projectile/projectile.tscn")
+	register_pool("projectile", projectile_scene, 30)  # 30 concurrent projectiles
+
 	# Add more pools here as needed
 	# register_pool("city", city_scene, 10)
 	# register_pool("unit", unit_scene, 50)

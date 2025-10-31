@@ -60,9 +60,9 @@ func pan_to_position(target_pos: Vector2, duration: float = -1.0, smooth: bool =
 
 ## Pan camera to a tile coordinate
 ## @param tile_coords: Tile coordinates (Vector2i)
-## @param tile_map: TileMap reference to convert coords to world position
+## @param tile_map: TileMapCompat wrapper to convert coords to world position
 ## @param duration: Animation duration in seconds
-func pan_to_tile(tile_coords: Vector2i, tile_map: TileMap, duration: float = -1.0) -> void:
+func pan_to_tile(tile_coords: Vector2i, tile_map, duration: float = -1.0) -> void:
 	if not tile_map:
 		push_error("CameraManager: No tile_map provided!")
 		return

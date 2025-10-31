@@ -16,6 +16,7 @@ enum State {
 	BLOCKED = 0b1000,        # NPC is blocked (cannot move)
 	INTERACTING = 0b10000,   # NPC is interacting with object/player
 	DEAD = 0b100000,         # NPC is dead (no longer active)
+	IN_COMBAT = 0b1000000,   # NPC is in combat (0x40)
 }
 
 # Current state
@@ -66,7 +67,15 @@ var player_ulid: PackedByteArray = PackedByteArray()
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
+## Z-index offset to ensure NPCs render above tiles
+## Tiles use z_index = tile_y (0-500+), so we need to be well above that
+const Z_INDEX_BASE: int = 1000  # Base offset above all tiles
+const Z_INDEX_NPC_OFFSET: int = 1  # NPCs at +1
+
 func _ready():
+	# Set initial z-index based on spawn position
+	_update_z_index()
+
 	# Register with ULID system
 	if ulid.is_empty():
 		ulid = UlidManager.register_entity(self, UlidManager.TYPE_NPC, {
@@ -202,7 +211,7 @@ func move_to(target_pos: Vector2):
 	if direction_vec.length() > 0:
 		target_angle = fmod(rad_to_deg(direction_vec.angle()) + 360.0, 360.0)
 
-func follow_path(path: Array[Vector2i], tile_map: TileMap, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
+func follow_path(path: Array[Vector2i], tile_map, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
 	if path.size() < 2:
 		return
 
@@ -217,7 +226,7 @@ func follow_path(path: Array[Vector2i], tile_map: TileMap, complete_callback: Ca
 	_advance_to_next_waypoint()
 
 ## Request pathfinding to a target tile (uses NPC pathfinding bridge)
-func request_pathfinding(target_tile: Vector2i, tile_map: TileMap, callback: Callable = Callable()):
+func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = Callable()):
 	# Get pathfinding bridge from /root/NpcPathfindingBridge
 	var bridge = get_node_or_null("/root/NpcPathfindingBridge")
 	if not bridge:
@@ -253,7 +262,7 @@ func request_pathfinding(target_tile: Vector2i, tile_map: TileMap, callback: Cal
 				callback.call([], false)
 	)
 
-func _create_path_visualizer(path: Array[Vector2i], tile_map: TileMap) -> void:
+func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 	# Remove old visualizer if exists
 	if path_visualizer:
 		path_visualizer.queue_free()
@@ -276,13 +285,26 @@ func _advance_to_next_waypoint():
 		return
 
 	var next_tile = current_path[path_index]
-	var tile_map = get_parent()
-	if tile_map and tile_map.has_node("TileMap"):
-		var tm = tile_map.get_node("TileMap")
-		var next_pos = tm.map_to_local(next_tile)
+	var hex_map = get_parent()
+	if hex_map and hex_map.tile_map:
+		var next_pos = hex_map.tile_map.map_to_local(next_tile)
 		move_to(next_pos)
 
+## Update z-index based on current tile position for proper isometric layering
+func _update_z_index() -> void:
+	var hex_map = get_parent()
+	if hex_map and hex_map.tile_map:
+		var tile_coords = hex_map.tile_map.local_to_map(position)
+		z_index = Z_INDEX_BASE + tile_coords.y + Z_INDEX_NPC_OFFSET
+
 func _process(delta):
+	# Update z-index for proper layering as NPC moves
+	_update_z_index()
+
+	# Pause movement if in combat
+	if current_state & State.IN_COMBAT:
+		return
+
 	# Smooth movement interpolation
 	if is_moving:
 		move_progress += delta * move_speed

@@ -1,0 +1,23 @@
+{
+  "tile_size": 32,
+  "atlas_width": 64,
+  "atlas_height": 32,
+  "projectiles": [
+    {
+      "index": 0,
+      "name": "spear",
+      "x": 0,
+      "y": 0,
+      "width": 32,
+      "height": 32
+    },
+    {
+      "index": 1,
+      "name": "glaive",
+      "x": 32,
+      "y": 0,
+      "width": 32,
+      "height": 32
+    }
+  ]
+}

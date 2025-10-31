@@ -12,6 +12,18 @@ class_name Ship
 
 @onready var sprite: Sprite2D = $Sprite2D
 
+# Ship State enum (matches Rust bitwise flags pattern)
+enum State {
+	IDLE = 0b0001,           # Ship is idle, can accept commands
+	MOVING = 0b0010,         # Ship is moving along a path
+	PATHFINDING = 0b0100,    # Pathfinding request in progress
+	BLOCKED = 0b1000,        # Ship is blocked (cannot move)
+	IN_COMBAT = 0b1000000,   # Ship is in combat (0x40)
+}
+
+# Current state
+var current_state: int = State.IDLE
+
 # Direction (0-15, where 0 is north, going counter-clockwise)
 var direction: int = 0
 var _last_sector: int = 0  # For hysteresis
@@ -59,7 +71,15 @@ var player_ulid: PackedByteArray = PackedByteArray()
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
+## Z-index offset to ensure ships render above tiles
+## Tiles use z_index = tile_y (0-500+), so we need to be well above that
+const Z_INDEX_BASE: int = 1000  # Base offset above all tiles
+const Z_INDEX_SHIP_OFFSET: int = 2  # Ships at +2 (above NPCs)
+
 func _ready():
+	# Set initial z-index based on spawn position
+	_update_z_index()
+
 	# Register with ULID system
 	if ulid.is_empty():
 		ulid = UlidManager.register_entity(self, UlidManager.TYPE_SHIP, {
@@ -202,7 +222,7 @@ func move_to(target_pos: Vector2):
 			is_moving = true
 
 # Start following a path (array of tile coordinates)
-func follow_path(path: Array[Vector2i], tile_map: TileMap, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
+func follow_path(path: Array[Vector2i], tile_map, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
 	if path.size() < 2:
 		return
 
@@ -217,7 +237,7 @@ func follow_path(path: Array[Vector2i], tile_map: TileMap, complete_callback: Ca
 	_advance_to_next_waypoint()
 
 # Create visual representation of path
-func _create_path_visualizer(path: Array[Vector2i], tile_map: TileMap) -> void:
+func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 	# Remove old visualizer if exists
 	if path_visualizer:
 		path_visualizer.queue_free()
@@ -241,13 +261,26 @@ func _advance_to_next_waypoint():
 		return
 
 	var next_tile = current_path[path_index]
-	var tile_map = get_parent()  # Assuming ship is child of hex_map
-	if tile_map and tile_map.has_node("TileMap"):
-		var tm = tile_map.get_node("TileMap")
-		var next_pos = tm.map_to_local(next_tile)
+	var hex_map = get_parent()  # Assuming ship is child of hex_map
+	if hex_map and hex_map.tile_map:
+		var next_pos = hex_map.tile_map.map_to_local(next_tile)
 		move_to(next_pos)
 
+## Update z-index based on current tile position for proper isometric layering
+func _update_z_index() -> void:
+	var hex_map = get_parent()
+	if hex_map and hex_map.tile_map:
+		var tile_coords = hex_map.tile_map.local_to_map(position)
+		z_index = Z_INDEX_BASE + tile_coords.y + Z_INDEX_SHIP_OFFSET
+
 func _process(delta):
+	# Update z-index for proper layering as ship moves
+	_update_z_index()
+
+	# Pause movement if in combat
+	if current_state & State.IN_COMBAT:
+		return
+
 	# Handle rotation phase (before moving)
 	if is_rotating_to_target:
 		var angle_diff = abs(shortest_angle_deg(current_angle, target_angle))

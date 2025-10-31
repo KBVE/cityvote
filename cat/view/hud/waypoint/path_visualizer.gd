@@ -7,7 +7,7 @@ class_name PathVisualizer
 var waypoint_markers: Array[WaypointMarker] = []
 var path_line: Line2D = null
 var ship: Node2D = null
-var tile_map: TileMap = null
+var tile_map = null  # TileMapCompat wrapper for CustomTileRenderer
 
 # Preload waypoint marker scene
 const WaypointMarkerScene = preload("res://view/hud/waypoint/waypoint_marker.tscn")
@@ -23,7 +23,7 @@ func _ready() -> void:
 	add_child(path_line)
 
 ## Display a path with waypoint markers
-func show_path(path: Array[Vector2i], tile_map_ref: TileMap, ship_ref: Node2D) -> void:
+func show_path(path: Array[Vector2i], tile_map_ref, ship_ref: Node2D) -> void:
 	clear_path()
 
 	tile_map = tile_map_ref

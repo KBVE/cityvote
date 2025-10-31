@@ -28,6 +28,7 @@ impl ShipState {
     pub const MOVING: u8 = 0b0000_0010;      // Ship is moving along a path
     pub const PATHFINDING: u8 = 0b0000_0100; // Pathfinding request in progress
     pub const BLOCKED: u8 = 0b0000_1000;     // Ship is blocked (cannot move)
+    pub const IN_COMBAT: u8 = 0b0100_0000;   // Ship is in combat
 
     pub fn new() -> Self {
         Self { flags: Self::IDLE }
@@ -59,6 +60,18 @@ impl ShipState {
 
     pub fn clear_pathfinding(&mut self) {
         self.flags &= !Self::PATHFINDING;
+    }
+
+    pub fn is_in_combat(&self) -> bool {
+        self.flags & Self::IN_COMBAT != 0
+    }
+
+    pub fn set_in_combat(&mut self) {
+        self.flags |= Self::IN_COMBAT;
+    }
+
+    pub fn clear_in_combat(&mut self) {
+        self.flags &= !Self::IN_COMBAT;
     }
 
     pub fn can_accept_path_request(&self) -> bool {

@@ -28,6 +28,7 @@ impl NpcState {
     pub const BLOCKED: u8 = 0b0000_1000;     // NPC is blocked
     pub const INTERACTING: u8 = 0b0001_0000; // NPC is interacting
     pub const DEAD: u8 = 0b0010_0000;        // NPC is dead
+    pub const IN_COMBAT: u8 = 0b0100_0000;   // NPC is in combat
 
     pub fn new() -> Self {
         Self { flags: Self::IDLE }
@@ -51,6 +52,18 @@ impl NpcState {
 
     pub fn clear_pathfinding(&mut self) {
         self.flags &= !Self::PATHFINDING;
+    }
+
+    pub fn is_in_combat(&self) -> bool {
+        self.flags & Self::IN_COMBAT != 0
+    }
+
+    pub fn set_in_combat(&mut self) {
+        self.flags |= Self::IN_COMBAT;
+    }
+
+    pub fn clear_in_combat(&mut self) {
+        self.flags &= !Self::IN_COMBAT;
     }
 }
 

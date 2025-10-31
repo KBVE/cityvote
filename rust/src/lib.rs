@@ -19,6 +19,7 @@ mod storage;
 mod card;
 mod economy;
 mod stats;
+mod combat;
 
 struct Godo;
 

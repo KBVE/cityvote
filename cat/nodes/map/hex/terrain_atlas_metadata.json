@@ -1,0 +1,139 @@
+{
+  "atlas_width": 320,
+  "atlas_height": 48,
+  "tile_width": 32,
+  "tile_height": 48,
+  "total_tiles": 10,
+  "tiles": [
+    {
+      "index": 0,
+      "name": "grassland0",
+      "source_path": "grassland0/grassland0.png",
+      "atlas_x": 0,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.0,
+        "y": 0.0,
+        "width": 0.1,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 1,
+      "name": "grassland1",
+      "source_path": "grassland1/grassland1.png",
+      "atlas_x": 32,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.1,
+        "y": 0.0,
+        "width": 0.1,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 2,
+      "name": "grassland2",
+      "source_path": "grassland2/grassland2.png",
+      "atlas_x": 64,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.2,
+        "y": 0.0,
+        "width": 0.09999999999999998,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 3,
+      "name": "grassland3",
+      "source_path": "grassland3/grassland3.png",
+      "atlas_x": 96,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.3,
+        "y": 0.0,
+        "width": 0.10000000000000003,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 4,
+      "name": "water",
+      "source_path": "water/water.png",
+      "atlas_x": 128,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.4,
+        "y": 0.0,
+        "width": 0.09999999999999998,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 5,
+      "name": "grassland4",
+      "source_path": "grassland4/grassland4.png",
+      "atlas_x": 160,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.5,
+        "y": 0.0,
+        "width": 0.09999999999999998,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 6,
+      "name": "grassland5",
+      "source_path": "grassland5/grassland5.png",
+      "atlas_x": 192,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.6,
+        "y": 0.0,
+        "width": 0.09999999999999998,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 7,
+      "name": "grassland_city1",
+      "source_path": "grassland_city1/grassland_city1.png",
+      "atlas_x": 224,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.7,
+        "y": 0.0,
+        "width": 0.10000000000000009,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 8,
+      "name": "grassland_city2",
+      "source_path": "grassland_city2/grassland_city2.png",
+      "atlas_x": 256,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.8,
+        "y": 0.0,
+        "width": 0.09999999999999998,
+        "height": 1.0
+      }
+    },
+    {
+      "index": 9,
+      "name": "grassland_village1",
+      "source_path": "grassland_village1/grassland_village1.png",
+      "atlas_x": 288,
+      "atlas_y": 0,
+      "uv_rect": {
+        "x": 0.9,
+        "y": 0.0,
+        "width": 0.09999999999999998,
+        "height": 1.0
+      }
+    }
+  ]
+}

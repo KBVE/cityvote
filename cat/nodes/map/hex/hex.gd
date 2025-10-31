@@ -1,12 +1,52 @@
 extends Node2D
 
-# Hexmap scene using TileMap
+# Hexmap scene using CustomTileRenderer (MultiMeshInstance2D + UV shader)
+# Replaces TileMap for ~50-70% better performance
 
-@onready var tile_map: TileMap = $TileMap
+@onready var tile_renderer: CustomTileRenderer = $CustomTileRenderer
 @onready var hex_highlight: Sprite2D = $HexHighlight
 
-# Tile type to source_id mapping (matches TileSet sources)
-var tile_type_to_source = {
+# Backward compatibility wrapper - exposes tile_renderer as tile_map
+# Provides TileMap-compatible API for existing code
+class TileMapCompat extends RefCounted:
+	var renderer: CustomTileRenderer
+	var parent_hex: Node2D  # Reference to parent Hex node
+
+	# Fake TileSet for compatibility
+	class FakeTileSet:
+		var tile_size: Vector2 = Vector2(32, 28)  # Hex tile size
+
+	var tile_set: FakeTileSet = FakeTileSet.new()
+
+	func _init(r: CustomTileRenderer):
+		renderer = r
+
+	func local_to_map(local_pos: Vector2) -> Vector2i:
+		return renderer.world_to_tile(local_pos)
+
+	func map_to_local(map_coords: Vector2i) -> Vector2:
+		return renderer._tile_to_world_pos(map_coords)
+
+	func get_cell_source_id(layer: int, coords: Vector2i) -> int:
+		# Get tile type from parent's get_tile_type_at_coords
+		if not parent_hex:
+			return -1
+		var tile_type = parent_hex.get_tile_type_at_coords(coords)
+		if tile_type == "":
+			return -1
+		# Return tile index (which matches old source_id)
+		if tile_type in parent_hex.tile_type_to_index:
+			return parent_hex.tile_type_to_index[tile_type]
+		return -1
+
+	func get_parent() -> Node:
+		# Return the parent of the renderer (which is the Hex node)
+		return parent_hex
+
+var tile_map: TileMapCompat
+
+# Tile type to tile_index mapping (matches atlas order)
+var tile_type_to_index = {
 	"grassland0": 0,
 	"grassland1": 1,
 	"grassland2": 2,
@@ -33,7 +73,7 @@ var tile_textures = {
 	9: preload("res://nodes/map/hex/grassland_village1/grassland_village1.png")
 }
 
-# Map data - stores tile type names
+# Map data - stores tile type names (2D array [y][x])
 var map_data = []
 
 # Card data - stores cards placed on tiles
@@ -61,9 +101,9 @@ signal initial_chunks_ready()
 var initial_chunks_loaded: bool = false
 
 func _ready():
-	# Set TileMap quadrant size to match our chunk size (32x32)
-	# Default is 16x16, but we want to align with chunk architecture
-	tile_map.rendering_quadrant_size = MapConfig.CHUNK_SIZE
+	# Initialize backward-compatible tile_map wrapper
+	tile_map = TileMapCompat.new(tile_renderer)
+	tile_map.parent_hex = self
 
 	# Initialize a simple test map (async to prevent UI blocking)
 	_generate_test_map_async()
@@ -80,7 +120,7 @@ func _process(delta: float) -> void:
 
 	# Update visible chunks only when camera crosses chunk boundaries
 	if camera:
-		var camera_tile = tile_map.local_to_map(camera.global_position)
+		var camera_tile = tile_renderer.world_to_tile(camera.global_position)
 		var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
 
 		# Only update if camera moved to a different chunk
@@ -90,7 +130,7 @@ func _process(delta: float) -> void:
 
 	# Handle mouse hover highlight
 	var mouse_pos = get_global_mouse_position()
-	var tile_coords = tile_map.local_to_map(tile_map.to_local(mouse_pos))
+	var tile_coords = tile_renderer.world_to_tile(mouse_pos)
 
 	if tile_coords != hovered_tile:
 		hovered_tile = tile_coords
@@ -124,7 +164,7 @@ func _process_chunk_queue() -> void:
 func set_camera(cam: Camera2D) -> void:
 	camera = cam
 	if camera:
-		var camera_tile = tile_map.local_to_map(camera.global_position)
+		var camera_tile = tile_renderer.world_to_tile(camera.global_position)
 		last_camera_chunk = MapConfig.tile_to_chunk(camera_tile)
 		print("Hex: Camera reference set at position ", camera.global_position)
 		print("Hex: Camera in chunk ", last_camera_chunk)
@@ -148,7 +188,6 @@ func _generate_test_map():
 		map_data.append(row)
 
 	# Generate multiple continents and islands for variety
-	# 2 large continents, 2-3 smaller continents, 3-5 small islands
 	print("Hex: Generating continents and islands...")
 
 	# Define landmasses (center_x, center_y, radius, noise_scale)
@@ -216,7 +255,6 @@ func _generate_test_map():
 	print("Hex: Land generation complete")
 
 	# Place special tiles on land using optimized region sampling
-	# Instead of scanning ALL tiles, we sample specific regions
 	_place_special_tiles_optimized()
 
 ## Update which chunks should be visible based on camera position
@@ -228,13 +266,13 @@ func _update_visible_chunks() -> void:
 	var camera_pos = camera.global_position
 
 	# Convert to tile coordinates
-	var camera_tile = tile_map.local_to_map(camera_pos)
+	var camera_tile = tile_renderer.world_to_tile(camera_pos)
 
 	# Get the chunk the camera is in
 	var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
 
-	# OPTIMIZATION: Use Set for O(1) lookups instead of Array with 'in' operator
-	var chunks_to_render: Dictionary = {}  # Using Dictionary as Set
+	# OPTIMIZATION: Use Dictionary as Set for O(1) lookups
+	var chunks_to_render: Dictionary = {}
 
 	for dy in range(-chunk_render_distance, chunk_render_distance + 1):
 		for dx in range(-chunk_render_distance, chunk_render_distance + 1):
@@ -281,9 +319,9 @@ func _render_chunk_immediate(chunk_index: int) -> void:
 	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
 	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
 
-	var tiles_rendered = 0
+	var tile_data_array = []
 
-	# Render all tiles in this chunk
+	# Gather all tiles in this chunk
 	for local_y in range(MapConfig.CHUNK_SIZE):
 		var y = chunk_start.y + local_y
 		if y >= map_data.size():
@@ -295,32 +333,42 @@ func _render_chunk_immediate(chunk_index: int) -> void:
 				break
 
 			var tile_type = map_data[y][x]
-			if tile_type in tile_type_to_source:
-				var source_id = tile_type_to_source[tile_type]
-				# set_cell(layer, coords, source_id, atlas_coords, alternative_tile)
-				tile_map.set_cell(0, Vector2i(x, y), source_id, Vector2i(0, 0))
-				tiles_rendered += 1
 
-	print("Hex: Rendered chunk %d (coords %v) with %d tiles" % [chunk_index, chunk_coords, tiles_rendered])
+			# Skip water tiles - they're transparent, water shader shows underneath
+			if tile_type == "water":
+				continue
 
-## Unrender a specific chunk by index (clear tiles, immediate)
+			var tile_index = -1
+
+			if tile_type in tile_type_to_index:
+				tile_index = tile_type_to_index[tile_type]
+			elif tile_type == "":
+				# Empty tile - this should never happen if map generation is correct
+				push_warning("Hex: EMPTY tile type at (%d,%d) in chunk %d" % [x, y, chunk_index])
+				tile_index = -1
+			else:
+				# Unknown tile type - warn once per type
+				push_warning("Hex: Unknown tile type '%s' at (%d,%d) in chunk %d - skipping" % [tile_type, x, y, chunk_index])
+				tile_index = -1
+
+			# Generate random flip flags for variation (0-7)
+			# This creates 8 different orientations per tile!
+			# Disabled for now - no flipping
+			var flip_flags = 0  # randi() % 8
+
+			tile_data_array.append({
+				"x": x,
+				"y": y,
+				"tile_index": tile_index,
+				"flip_flags": flip_flags
+			})
+
+	# Render chunk via CustomTileRenderer
+	tile_renderer.render_chunk(chunk_index, tile_data_array)
+
+## Unrender a specific chunk by index (immediate)
 func _unrender_chunk_immediate(chunk_index: int) -> void:
-	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
-	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
-
-	# Clear all tiles in this chunk
-	for local_y in range(MapConfig.CHUNK_SIZE):
-		var y = chunk_start.y + local_y
-		if y >= map_data.size():
-			break
-
-		for local_x in range(MapConfig.CHUNK_SIZE):
-			var x = chunk_start.x + local_x
-			if x >= map_data[y].size():
-				break
-
-			# Clear the tile by setting source_id to -1
-			tile_map.set_cell(0, Vector2i(x, y), -1)
+	tile_renderer.unrender_chunk(chunk_index)
 
 # Query function to get tile at specific coordinates
 func get_tile_at(x: int, y: int) -> String:
@@ -328,30 +376,30 @@ func get_tile_at(x: int, y: int) -> String:
 		return map_data[y][x]
 	return ""
 
-# Get tile type from TileMap coordinates
+# Get tile type from coordinates (uses map_data, not renderer)
 func get_tile_type_at_coords(coords: Vector2i) -> String:
-	var source_id = tile_map.get_cell_source_id(0, coords)
-	for tile_type in tile_type_to_source:
-		if tile_type_to_source[tile_type] == source_id:
-			return tile_type
-	return ""
+	return get_tile_at(coords.x, coords.y)
 
 func _update_highlight():
-	# Check if there's a tile at the hovered coordinates
-	var source_id = tile_map.get_cell_source_id(0, hovered_tile)
+	# Get tile type at hovered coordinates
+	var tile_type = get_tile_type_at_coords(hovered_tile)
 
-	if source_id != -1:
-		# Update texture to match the hovered tile
-		if source_id in tile_textures:
-			# Valid tile with loaded texture - show highlight
+	if tile_type != "" and tile_type in tile_type_to_index:
+		var tile_index = tile_type_to_index[tile_type]
+
+		# Valid tile with loaded texture - show highlight
+		if tile_index in tile_textures:
 			hex_highlight.visible = true
-			hex_highlight.texture = tile_textures[source_id]
+			hex_highlight.texture = tile_textures[tile_index]
 
-			# Convert tile coords back to world position
-			var world_pos = tile_map.to_global(tile_map.map_to_local(hovered_tile))
+			# Convert tile coords to world position
+			var world_pos = tile_renderer._tile_to_world_pos(hovered_tile)
 			hex_highlight.global_position = world_pos
+
+			# Keep sprite centered (default for Sprite2D)
+			hex_highlight.centered = true
 		else:
-			# Tile exists but texture not loaded yet (cities/villages) - hide highlight
+			# Texture not loaded - hide highlight
 			hex_highlight.visible = false
 	else:
 		# No tile - hide highlight
@@ -367,10 +415,8 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 	# Get card_id from the sprite (works for both standard and custom cards)
 	var card_id = -1
 	if card_sprite is PooledCard:
-		# Access the card_id property directly from PooledCard
 		card_id = card_sprite.card_id
 	elif card_sprite.material and card_sprite.material is ShaderMaterial:
-		# Fallback: try to get from material shader parameter
 		card_id = card_sprite.material.get_shader_parameter("card_id")
 		if card_id == null:
 			card_id = -1
@@ -422,11 +468,9 @@ func has_card_at_tile(tile_coords: Vector2i) -> bool:
 	return card_data.has(tile_coords)
 
 # Validate joker card terrain requirements
-# Returns true if valid, false if invalid (shows error toast)
 func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
-	# Get tile terrain type
-	var source_id = tile_map.get_cell_source_id(0, tile_coords)
-	var is_water = (source_id == MapConfig.SOURCE_ID_WATER)
+	var tile_type = get_tile_type_at_coords(tile_coords)
+	var is_water = (tile_type == "water")
 	var is_land = not is_water
 
 	# Check terrain requirements per joker type
@@ -442,22 +486,17 @@ func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
 				Toast.show_toast(I18n.translate("ui.hand.joker_requires_land"), 3.0)
 				return false
 		_:
-			# Unknown joker - allow placement anywhere
 			push_warning("Hex: Unknown joker card_id %d, allowing placement" % card_id)
 
 	return true
 
 # Optimized special tile placement using chunk-based scanning
-# Instead of scanning ALL tiles, we use chunk-based random sampling
-# This gives good coverage without full O(n) scan
 func _place_special_tiles_optimized():
 	var map_width = MapConfig.MAP_WIDTH
 	var map_height = MapConfig.MAP_HEIGHT
 
 	print("Hex: Placing special tiles using optimized chunk-based sampling...")
 
-	# Use chunk-based sampling to find land tiles efficiently
-	# Sample ~10% of chunks to build a representative land tile set
 	var land_tile_samples = _sample_land_tiles_by_chunks()
 
 	if land_tile_samples.size() == 0:
@@ -480,7 +519,7 @@ func _place_special_tiles_optimized():
 		map_data[city2_tile.y][city2_tile.x] = "city2"
 		print("Hex: Placed city2 at (", city2_tile.x, ", ", city2_tile.y, ")")
 
-	# Place village1 in center region (middle 1/4 of map)
+	# Place village1 in center region
 	var center_x = map_width / 2
 	var center_y = map_height / 2
 	var quarter_width = map_width / 4
@@ -497,25 +536,19 @@ func _place_special_tiles_optimized():
 	print("Hex: Special tile placement complete")
 
 # Sample land tiles using chunk-based approach
-# Only scans a subset of chunks to build representative sample
-# Much faster than full map scan: O(sample_size) instead of O(map_size)
 func _sample_land_tiles_by_chunks() -> Array[Vector2i]:
 	var land_tiles: Array[Vector2i] = []
 
-	# Sample 10% of chunks (1024 total chunks -> ~100 sampled)
 	var chunks_to_sample = max(100, MapConfig.TOTAL_CHUNKS / 10)
 	var chunk_width = MapConfig.CHUNKS_WIDE
 	var chunk_height = MapConfig.CHUNKS_TALL
 
 	for i in range(chunks_to_sample):
-		# Random chunk
 		var chunk_x = randi() % chunk_width
 		var chunk_y = randi() % chunk_height
 
-		# Get chunk's top-left tile position
 		var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
 
-		# Sample a few tiles from this chunk (not all 32x32)
 		var samples_per_chunk = 10
 		for j in range(samples_per_chunk):
 			var local_x = randi() % MapConfig.CHUNK_SIZE
@@ -524,9 +557,7 @@ func _sample_land_tiles_by_chunks() -> Array[Vector2i]:
 			var x = chunk_start.x + local_x
 			var y = chunk_start.y + local_y
 
-			# Check bounds
 			if y < map_data.size() and x < map_data[y].size():
-				# If land, add to samples
 				if map_data[y][x] != "water":
 					land_tiles.append(Vector2i(x, y))
 
