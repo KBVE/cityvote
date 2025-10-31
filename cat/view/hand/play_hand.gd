@@ -94,6 +94,7 @@ func _initialize() -> void:
 
 	# Connect mulligan button
 	if mulligan_button:
+		mulligan_button.text = I18n.translate("ui.hand.mull_again")
 		mulligan_button.pressed.connect(_on_mulligan_pressed)
 		_update_mulligan_button()  # Set initial state
 
@@ -106,6 +107,7 @@ func _initialize() -> void:
 	var font = Cache.get_font_for_current_language()
 	if font:
 		card_count_label.add_theme_font_override("font", font)
+		mulligan_button.add_theme_font_override("font", font)
 	else:
 		push_warning("PlayHand: Could not load Alagard font from Cache")
 
@@ -166,7 +168,7 @@ func draw_initial_hand() -> void:
 # Update card count label
 func _update_card_count() -> void:
 	if card_count_label:
-		card_count_label.text = "Cards: %d / %d" % [hand.size(), MAX_HAND]
+		card_count_label.text = I18n.translate("ui.hand.card_count") % [hand.size(), MAX_HAND]
 
 # Add a card to the hand (for manual testing/debugging)
 func add_card_to_hand(suit: int, value: int) -> void:

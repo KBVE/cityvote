@@ -65,9 +65,11 @@ func _ready():
 	# Default is 16x16, but we want to align with chunk architecture
 	tile_map.rendering_quadrant_size = MapConfig.CHUNK_SIZE
 
-	# Initialize a simple test map
-	_generate_test_map()
+	# Initialize a simple test map (async to prevent UI blocking)
+	_generate_test_map_async()
 
+func _generate_test_map_async():
+	await _generate_test_map()
 	# Don't render all tiles at startup!
 	# Instead, we'll render chunks dynamically based on camera position
 	print("Hex: Map generation complete. Deferring chunk rendering until camera is available.")
@@ -170,13 +172,20 @@ func _generate_test_map():
 	print("Hex: Creating ", landmasses.size(), " landmasses (2 large continents, 3 smaller continents, 4 islands)")
 
 	# Generate each landmass
+	var landmass_index = 0
 	for landmass in landmasses:
+		landmass_index += 1
 		var center = landmass["center"]
 		var base_radius = landmass["radius"]
 		var noise_scale = landmass["noise"]
 		var peninsula_count = landmass["peninsulas"]
 
+		# Process in chunks to avoid blocking (yield every 64 rows)
 		for y in range(map_height):
+			# Yield control every 64 rows to keep UI responsive
+			if y % 64 == 0:
+				await get_tree().process_frame
+
 			for x in range(map_width):
 				# Skip if already land (prevents overlapping erasure)
 				if map_data[y][x] != "water":
@@ -201,6 +210,8 @@ func _generate_test_map():
 				if distance < effective_radius:
 					var grassland = grassland_types[randi() % grassland_types.size()]
 					map_data[y][x] = grassland
+
+		print("Hex: Generated landmass %d/%d (%s)" % [landmass_index, landmasses.size(), landmass["type"]])
 
 	print("Hex: Land generation complete")
 

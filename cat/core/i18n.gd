@@ -126,6 +126,64 @@ var translations: Dictionary = {
 		Language.HINDI: "रखने के लिए डबल क्लिक या टैप करें",
 		Language.SPANISH: "Doble clic o toca para colocar"
 	},
+	"ui.hand.mull_again": {
+		Language.ENGLISH: "Mull Again (1 Gold)",
+		Language.JAPANESE: "マリガン (1ゴールド)",
+		Language.CHINESE: "重抽 (1金币)",
+		Language.HINDI: "फिर से मिलाएं (1 सोना)",
+		Language.SPANISH: "Mulligan (1 Oro)"
+	},
+	"ui.hand.card_count": {
+		Language.ENGLISH: "Cards: %d / %d",
+		Language.JAPANESE: "カード: %d / %d",
+		Language.CHINESE: "卡牌: %d / %d",
+		Language.HINDI: "कार्ड: %d / %d",
+		Language.SPANISH: "Cartas: %d / %d"
+	},
+
+	# Loading Screen
+	"ui.loading.initializing": {
+		Language.ENGLISH: "Initializing...",
+		Language.JAPANESE: "初期化中...",
+		Language.CHINESE: "初始化中...",
+		Language.HINDI: "शुरुआत हो रही है...",
+		Language.SPANISH: "Iniciando..."
+	},
+	"ui.loading.generating_map": {
+		Language.ENGLISH: "Generating world map...",
+		Language.JAPANESE: "ワールドマップを生成中...",
+		Language.CHINESE: "生成世界地图中...",
+		Language.HINDI: "विश्व मानचित्र बनाया जा रहा है...",
+		Language.SPANISH: "Generando mapa del mundo..."
+	},
+	"ui.loading.rendering_chunks": {
+		Language.ENGLISH: "Rendering terrain...",
+		Language.JAPANESE: "地形をレンダリング中...",
+		Language.CHINESE: "渲染地形中...",
+		Language.HINDI: "भूभाग प्रस्तुत किया जा रहा है...",
+		Language.SPANISH: "Renderizando terreno..."
+	},
+	"ui.loading.pathfinding": {
+		Language.ENGLISH: "Initializing pathfinding...",
+		Language.JAPANESE: "経路探索を初期化中...",
+		Language.CHINESE: "初始化寻路系统...",
+		Language.HINDI: "पथ खोज शुरू की जा रही है...",
+		Language.SPANISH: "Iniciando búsqueda de rutas..."
+	},
+	"ui.loading.spawning_entities": {
+		Language.ENGLISH: "Spawning entities...",
+		Language.JAPANESE: "エンティティを配置中...",
+		Language.CHINESE: "生成实体中...",
+		Language.HINDI: "संस्थाएं बनाई जा रही हैं...",
+		Language.SPANISH: "Generando entidades..."
+	},
+	"ui.loading.complete": {
+		Language.ENGLISH: "Ready!",
+		Language.JAPANESE: "準備完了！",
+		Language.CHINESE: "就绪！",
+		Language.HINDI: "तैयार!",
+		Language.SPANISH: "¡Listo!"
+	},
 
 	# HUD - Timer and Turns
 	"ui.hud.timer": {
@@ -687,27 +745,30 @@ func _ready() -> void:
 	# Load saved language preference
 	var saved_language = _load_language_preference()
 	if saved_language != -1:
-		current_language = saved_language
+		current_language = saved_language as Language
 
 	print("I18n: Initialized with language: %s" % _get_language_name(current_language))
 
 ## Get translated string by key
 ## Returns the English version if key or language not found
 func translate(key: String, format_args: Array = []) -> String:
+	return get_translation_for_language(key, current_language, format_args)
+
+## Get translation for a specific language (not just current language)
+func get_translation_for_language(key: String, language: int, format_args: Array = []) -> String:
 	if not translations.has(key):
 		push_warning("I18n: Missing translation key: %s" % key)
 		return key
 
 	var lang_dict = translations[key]
-	if not lang_dict.has(current_language):
-		push_warning("I18n: Missing translation for language %s, key: %s" % [_get_language_name(current_language), key])
+	if not lang_dict.has(language as int):
 		# Fallback to English
-		if lang_dict.has(Language.ENGLISH):
-			var text = lang_dict[Language.ENGLISH]
+		if lang_dict.has(Language.ENGLISH as int):
+			var text = lang_dict[Language.ENGLISH as int]
 			return text % format_args if format_args.size() > 0 else text
 		return key
 
-	var text = lang_dict[current_language]
+	var text = lang_dict[language as int]
 
 	# Apply string formatting if format_args provided
 	if format_args.size() > 0:
