@@ -278,6 +278,10 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 			# Register with EntityManager for movement tracking
 			register_entity(entity, pool_key, spawn_tile)
 
+			# Reveal chunk where entity spawned (for fog of war)
+			if ChunkManager:
+				ChunkManager.reveal_chunk_at_tile(spawn_tile)
+
 			# Call post-spawn callback if provided (e.g., for wave shader on Vikings)
 			if post_spawn_callback.is_valid():
 				post_spawn_callback.call(entity)
@@ -362,12 +366,27 @@ func _find_valid_tiles(tile_type: TileType, tile_map, occupied_tiles: Dictionary
 ## @param movement_callback: Callable that handles pathfinding for an entity
 ##   Signature: func(entity: Node, current_tile: Vector2i, pool_key: String)
 func update_entities(delta: float, movement_callback: Callable) -> void:
+	var culled_count = 0
+	var active_count = 0
+
 	for entry in registered_entities:
 		var entity = entry["entity"]
 
 		# Skip invalid entities
 		if not entity or not is_instance_valid(entity):
 			continue
+
+		# Skip entities in non-visible chunks (chunk culling optimization)
+		if ChunkManager and ChunkManager.chunk_culling_enabled:
+			var entity_chunk = MapConfig.tile_to_chunk(entry["tile"])
+			var chunk_index = MapConfig.chunk_coords_to_index(entity_chunk)
+
+			# Only update entities in visible chunks
+			if not chunk_index in ChunkManager.visible_chunk_indices:
+				culled_count += 1
+				continue
+
+		active_count += 1
 
 		# Update movement timer
 		entry["move_timer"] += delta
@@ -379,6 +398,11 @@ func update_entities(delta: float, movement_callback: Callable) -> void:
 			# Call the movement callback to handle pathfinding
 			if movement_callback.is_valid():
 				movement_callback.call(entity, entry["tile"], entry["pool_key"], entry)
+
+	# Update statistics for debugging
+	if ChunkManager:
+		ChunkManager.culled_entities_count = culled_count
+		ChunkManager.active_entities_count = active_count
 
 ## Find entity near a world position (spatial query)
 ## @param world_pos: World position to search near
@@ -406,5 +430,10 @@ func update_entity_tile(entity: Node, new_tile: Vector2i) -> bool:
 	for entry in registered_entities:
 		if entry["entity"] == entity:
 			entry["tile"] = new_tile
+
+			# Reveal chunk where entity moved to (for fog of war exploration)
+			if ChunkManager:
+				ChunkManager.reveal_chunk_at_tile(new_tile)
+
 			return true
 	return false

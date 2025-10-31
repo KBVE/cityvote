@@ -51,7 +51,7 @@ impl EntityType {
 /// Entity metadata stored with ULID
 #[derive(Debug, Clone)]
 pub struct EntityData {
-    pub entity_type: EntityType,
+    pub entity_type: EntityType, // The entity type struct is for gd.
     pub godot_instance_id: i64,  // Godot's instance ID for the node
     pub created_at: u64,          // Timestamp when stored
     pub metadata: Dictionary,     // Additional data from GDScript

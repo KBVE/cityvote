@@ -146,8 +146,6 @@ func show_hint(text: String) -> void:
 	if hint_label:
 		hint_label.text = text
 
-	print("HintPanel: Showing hint - ", text)
-
 ## Show hint with custom auto-hide duration
 func show_hint_timed(text: String, duration: float) -> void:
 	auto_hide_delay = duration

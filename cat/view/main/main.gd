@@ -17,7 +17,7 @@ extends Node2D
 @onready var entity_stats_panel = $EntityStatsPanel
 #; TEST
 
-var camera_speed = 300.0
+var camera_speed = 960.0
 var zoom_speed = 0.1
 var min_zoom = 0.5
 var max_zoom = 4.0
@@ -63,6 +63,10 @@ var test_kings: Array = []
 var king_move_timer: float = 0.0
 var king_move_interval: float = 2.0  # Move every 2 seconds
 
+# Chunk culling stats
+var culling_stats_timer: float = 0.0
+var culling_stats_interval: float = 5.0  # Print stats every 5 seconds
+
 func _ready():
 	# Generate player ULID (represents the current player)
 	if UlidManager:
@@ -94,6 +98,13 @@ func _ready():
 
 	# Setup CameraManager with camera reference
 	CameraManager.set_camera(camera)
+
+	# Setup ChunkManager with camera and tilemap references
+	ChunkManager.set_camera(camera)
+	ChunkManager.set_tile_map(hex_map.tile_map)
+
+	# Reveal starting chunks around camera/cities
+	_reveal_starting_chunks()
 
 	#; TEST
 	# Connect hex_map to play_hand for card placement
@@ -265,6 +276,15 @@ func _process(delta):
 	#### TEST ####
 	# Update all entities through EntityManager (handles movement timers)
 	EntityManager.update_entities(delta, _handle_entity_movement)
+
+	# Update chunk visibility based on camera position (for fog of war and culling)
+	ChunkManager.update_visible_chunks()
+
+	# Print culling stats periodically
+	culling_stats_timer += delta
+	if culling_stats_timer >= culling_stats_interval:
+		culling_stats_timer = 0.0
+		_print_culling_stats()
 
 func _input(event):
 	# Handle right-click to open entity stats panel
@@ -784,6 +804,31 @@ func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int
 
 	return start  # No valid destination found
 
+## Reveal starting chunks around camera and cities
+func _reveal_starting_chunks() -> void:
+	# Reveal chunks around camera position
+	var camera_tile = hex_map.tile_map.local_to_map(camera.position)
+	var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
+
+	# Reveal 3x3 area around starting position
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var chunk_coords = Vector2i(camera_chunk.x + dx, camera_chunk.y + dy)
+			if MapConfig.is_chunk_in_bounds(chunk_coords):
+				ChunkManager.reveal_chunk(chunk_coords)
+
+	# Also reveal chunks containing cities
+	for x in range(MapConfig.MAP_WIDTH):
+		for y in range(MapConfig.MAP_HEIGHT):
+			var tile_coords = Vector2i(x, y)
+			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+
+			# If it's a city, reveal its chunk
+			if source_id == 7 or source_id == 8:
+				ChunkManager.reveal_chunk_at_tile(tile_coords)
+
+	print("Main: Revealed starting chunks")
+
 ## Position camera at a city on startup for a nice view
 func _position_camera_at_city() -> void:
 	# Search for a city tile in the tilemap
@@ -1094,3 +1139,24 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 			Toast.show_toast("Spawned %d Viking Ships!" % total_vikings, 3.0)
 		_:
 			push_warning("Main: Unknown joker type: %s" % joker_type)
+
+## Print chunk culling statistics
+func _print_culling_stats() -> void:
+	if not ChunkManager:
+		return
+
+	var stats = ChunkManager.get_culling_stats()
+	var total_entities = EntityManager.get_registered_entities().size()
+	var active = ChunkManager.active_entities_count
+	var culled = ChunkManager.culled_entities_count
+	var culling_percent = 0.0
+	if total_entities > 0:
+		culling_percent = (float(culled) / float(total_entities)) * 100.0
+
+	print("=== CHUNK CULLING STATS ===")
+	print("Visible Chunks: %d / %d (render_radius=%d)" % [stats["visible_chunks"], stats["total_chunks"], stats["render_radius"]])
+	print("Total Entities: %d" % total_entities)
+	print("Active Entities: %d (%.1f%%)" % [active, 100.0 - culling_percent])
+	print("Culled Entities: %d (%.1f%%)" % [culled, culling_percent])
+	print("Culling Enabled: %s" % ("YES" if stats["culling_enabled"] else "NO"))
+	print("============================")

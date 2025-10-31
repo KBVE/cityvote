@@ -72,17 +72,11 @@ impl ShipPathfindingBridge {
                 let r: i32 = dict.get("r")
                     .and_then(|v| v.try_to::<i32>().ok())
                     .unwrap_or(0);
-                let tile_type_int: i32 = dict.get("type")
-                    .and_then(|v| v.try_to::<i32>().ok())
-                    .unwrap_or(0);
+                let tile_type_str: GString = dict.get("type")
+                    .and_then(|v| v.try_to::<GString>().ok())
+                    .unwrap_or_else(|| "water".into());
 
-                let tile_type = match tile_type_int {
-                    0 => TileType::Water,
-                    1 => TileType::Land,
-                    _ => TileType::Obstacle,
-                };
-
-                tile_vec.push(((q, r), tile_type));
+                tile_vec.push(((q, r), tile_type_str.to_string()));
             }
         }
 
@@ -101,17 +95,13 @@ impl ShipPathfindingBridge {
                 let r: i32 = dict.get("r")
                     .and_then(|v| v.try_to::<i32>().ok())
                     .unwrap_or(0);
-                let tile_type_int: i32 = dict.get("type")
-                    .and_then(|v| v.try_to::<i32>().ok())
-                    .unwrap_or(0);
+                let tile_type_str: GString = dict.get("type")
+                    .and_then(|v| v.try_to::<GString>().ok())
+                    .unwrap_or_else(|| "water".into());
 
-                let tile_type = match tile_type_int {
-                    0 => TileType::Water,
-                    1 => TileType::Land,
-                    _ => TileType::Obstacle,
-                };
+                let tile_type = pathfinding::TerrainType::from_string(&tile_type_str.to_string());
 
-                update_vec.push(TileUpdate {
+                update_vec.push(pathfinding::TileUpdate {
                     coord: (q, r),
                     tile_type,
                 });

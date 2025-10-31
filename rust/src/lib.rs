@@ -11,6 +11,7 @@ macro_rules! debug_log {
 //mod animation;
 //mod inventory_data_warehouse;
 
+pub mod config;  // Centralized configuration constants
 mod npc;
 mod ui;
 mod utility;

@@ -50,12 +50,12 @@ func init_map(hex_map: Node) -> void:
 			var tile_coords = Vector2i(x, y)
 			var source_id = tile_map.get_cell_source_id(0, tile_coords)
 
-			# Map source_id to TileType (0=Land, 1=Water, 2=Obstacle)
+			# Map source_id to terrain type string (for terrain_cache)
 			# For NPCs, land is walkable (opposite of ships)
 			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
-				pathfinding_system.set_tile(x, y, 1)  # Water (not walkable for NPCs)
+				pathfinding_system.set_tile(x, y, "water")  # Water (not walkable for NPCs)
 			else:  # Land
-				pathfinding_system.set_tile(x, y, 0)  # Land (walkable for NPCs)
+				pathfinding_system.set_tile(x, y, "land")  # Land (walkable for NPCs)
 
 	print("NpcPathfindingBridge: Map initialized (", MapConfig.MAP_TOTAL_TILES, " tiles)")
 

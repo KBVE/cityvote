@@ -6,32 +6,13 @@ use std::thread;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use crate::ui::toast;
+use crate::config::map as map_config;
+use crate::npc::terrain_cache;
 
-/// Map configuration constants (must match MapConfig in GDScript)
-///
-/// IMPORTANT: These values MUST be kept in sync with:
-/// - cat/core/map_config.gd (GDScript autoload)
-///
-/// Current map size: 200x150 = 30,000 tiles
-pub mod map_config {
-    pub const MAP_WIDTH: i32 = 200;
-    pub const MAP_HEIGHT: i32 = 150;
-    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 30,000
-}
+// Re-export TerrainType for external use
+pub use crate::npc::terrain_cache::TerrainType;
 
-/// Tile types for pathfinding
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TileType {
-    Water,      // Walkable for ships
-    Land,       // Not walkable for ships
-    Obstacle,   // Blocked tile
-}
-
-impl TileType {
-    pub fn is_walkable_for_ship(&self) -> bool {
-        matches!(self, TileType::Water)
-    }
-}
+// TileType is now imported from terrain_cache module
 
 /// Hex coordinate (axial coordinates)
 pub type HexCoord = (i32, i32);
@@ -115,12 +96,10 @@ pub struct PathResult {
 #[derive(Debug, Clone)]
 pub struct TileUpdate {
     pub coord: HexCoord,
-    pub tile_type: TileType,
+    pub tile_type: TerrainType,
 }
 
-/// Global map cache (thread-safe)
-static MAP_CACHE: once_cell::sync::Lazy<Arc<DashMap<HexCoord, TileType>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(DashMap::new()));
+// MAP_CACHE removed - now using terrain_cache module instead
 
 /// Ship data cache (position + state, thread-safe)
 /// Ship tracking using ULID (16-byte Vec<u8>) as key
@@ -177,7 +156,7 @@ impl Ord for AStarNode {
 /// Check if coordinate is within map bounds
 fn is_in_bounds(coord: HexCoord) -> bool {
     let (q, r) = coord;
-    q >= 0 && q < map_config::MAP_WIDTH && r >= 0 && r < map_config::MAP_HEIGHT
+    map_config::is_in_bounds(q, r)
 }
 
 /// Hex distance (Manhattan distance on hex grid)
@@ -327,12 +306,10 @@ fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoo
     }
 }
 
-/// Check if tile is walkable
+/// Check if tile is walkable for ships (uses terrain cache)
 fn is_tile_walkable(coord: HexCoord) -> bool {
-    MAP_CACHE
-        .get(&coord)
-        .map(|tile| tile.is_walkable_for_ship())
-        .unwrap_or(false)
+    let (q, r) = coord;
+    terrain_cache::is_walkable_for_ship(q, r)
 }
 
 /// Check if ship is at position
@@ -366,33 +343,28 @@ fn pathfinding_worker() {
     }
 }
 
-/// Public API: Initialize map cache with full map data
-pub fn init_map_cache(tiles: Vec<(HexCoord, TileType)>) {
-    godot_print!("Pathfinding: Initializing map cache with {} tiles", tiles.len());
+/// Public API: Initialize map cache with full map data (delegates to terrain_cache)
+pub fn init_map_cache(tiles: Vec<(HexCoord, String)>) {
+    godot_print!("Ship Pathfinding: Delegating map initialization to terrain_cache");
 
-    // Validate tile count matches expected map size
-    let expected_tiles = map_config::MAP_TOTAL_TILES;
-    if tiles.len() != expected_tiles {
-        godot_error!(
-            "Pathfinding: Map size mismatch! Expected {} tiles ({}x{}), got {}",
-            expected_tiles,
-            map_config::MAP_WIDTH,
-            map_config::MAP_HEIGHT,
-            tiles.len()
-        );
-    }
+    // Convert HexCoord to (i32, i32, String) for terrain cache
+    let terrain_tiles: Vec<(i32, i32, String)> = tiles
+        .into_iter()
+        .map(|((q, r), tile_type)| (q, r, tile_type))
+        .collect();
 
-    MAP_CACHE.clear();
-    for (coord, tile_type) in tiles {
-        MAP_CACHE.insert(coord, tile_type);
-    }
-    godot_print!("Pathfinding: Map cache initialized!");
+    terrain_cache::init_terrain_cache(terrain_tiles);
+    godot_print!("Ship Pathfinding: Terrain cache initialized!");
 }
 
-/// Public API: Update tiles incrementally (dirty tiles only)
+/// Public API: Update tiles incrementally (dirty tiles only) - delegates to terrain_cache
 pub fn update_tiles(updates: Vec<TileUpdate>) {
+    let cache = terrain_cache::get_terrain_cache();
+    let mut cache_write = cache.write();
+
     for update in updates {
-        MAP_CACHE.insert(update.coord, update.tile_type);
+        let (q, r) = update.coord;
+        cache_write.set(q, r, update.tile_type);
     }
 }
 
@@ -475,9 +447,13 @@ pub fn stop_workers() {
 
 /// Public API: Get statistics
 pub fn get_stats() -> (usize, usize, usize) {
+    let cache = terrain_cache::get_terrain_cache();
+    let cache_read = cache.read();
+    let stats = cache_read.get_stats();
+
     (
-        MAP_CACHE.len(),
-        SHIP_DATA.len(),
-        PATH_REQUESTS.len(),
+        stats.total_tiles,  // Total tiles in terrain cache
+        SHIP_DATA.len(),    // Number of ships being tracked
+        PATH_REQUESTS.len(), // Number of pending path requests
     )
 }

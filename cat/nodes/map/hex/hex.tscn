@@ -12,6 +12,7 @@ script = ExtResource("1_hex")
 [node name="TileMap" type="TileMap" parent="."]
 tile_set = ExtResource("2_tileset")
 format = 2
+rendering_quadrant_size = 32
 layer_0/name = "Ground"
 layer_0/tile_data = PackedInt32Array()
 

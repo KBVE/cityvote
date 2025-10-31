@@ -43,6 +43,10 @@ var card_data: Dictionary = {}  # tile_coords -> {sprite, suit, value}
 var hovered_tile: Vector2i = Vector2i(-1, -1)
 
 func _ready():
+	# Set TileMap quadrant size to match our chunk size (32x32)
+	# Default is 16x16, but we want to align with chunk architecture
+	tile_map.rendering_quadrant_size = MapConfig.CHUNK_SIZE
+
 	# Initialize a simple test map
 	_generate_test_map()
 	_render_tiles()
@@ -60,69 +64,102 @@ func _generate_test_map():
 			row.append("water")
 		map_data.append(row)
 
-	# Create organic island using distance from center with noise
-	var center_x = map_width / 2.0
-	var center_y = map_height / 2.0
-	var base_radius = MapConfig.ISLAND_BASE_RADIUS
+	# Generate multiple continents and islands for variety
+	# 2 large continents, 2-3 smaller continents, 3-5 small islands
+	print("Hex: Generating continents and islands...")
 
-	for y in range(map_height):
-		for x in range(map_width):
-			# Distance from center
-			var dx = x - center_x
-			var dy = y - center_y
-			var distance = sqrt(dx * dx + dy * dy)
+	# Define landmasses (center_x, center_y, radius, noise_scale)
+	var landmasses = [
+		# Two large continents (opposite corners)
+		{"center": Vector2(map_width * 0.25, map_height * 0.25), "radius": 180.0, "noise": 20.0, "peninsulas": 5, "type": "large_continent"},
+		{"center": Vector2(map_width * 0.75, map_height * 0.75), "radius": 180.0, "noise": 20.0, "peninsulas": 5, "type": "large_continent"},
 
-			# Add noise for irregular coastline
-			# Use position-based pseudo-random for consistent generation
-			var noise = sin(x * 0.5 + y * 0.3) * 3.0 + cos(x * 0.3 - y * 0.4) * 2.5
+		# Smaller continents (mid-sized landmasses)
+		{"center": Vector2(map_width * 0.70, map_height * 0.30), "radius": 100.0, "noise": 15.0, "peninsulas": 4, "type": "small_continent"},
+		{"center": Vector2(map_width * 0.30, map_height * 0.70), "radius": 100.0, "noise": 15.0, "peninsulas": 4, "type": "small_continent"},
+		{"center": Vector2(map_width * 0.50, map_height * 0.50), "radius": 90.0, "noise": 12.0, "peninsulas": 3, "type": "small_continent"},
 
-			# Create some peninsulas and bays
-			var angle = atan2(dy, dx)
-			var peninsula_noise = sin(angle * float(MapConfig.PENINSULA_COUNT)) * 4.0
+		# Small islands (scattered around)
+		{"center": Vector2(map_width * 0.15, map_height * 0.60), "radius": 50.0, "noise": 8.0, "peninsulas": 2, "type": "island"},
+		{"center": Vector2(map_width * 0.85, map_height * 0.50), "radius": 45.0, "noise": 7.0, "peninsulas": 2, "type": "island"},
+		{"center": Vector2(map_width * 0.50, map_height * 0.15), "radius": 40.0, "noise": 6.0, "peninsulas": 2, "type": "island"},
+		{"center": Vector2(map_width * 0.60, map_height * 0.85), "radius": 38.0, "noise": 6.0, "peninsulas": 2, "type": "island"},
+	]
 
-			# Combined radius with noise
-			var effective_radius = base_radius + noise + peninsula_noise
+	print("Hex: Creating ", landmasses.size(), " landmasses (2 large continents, 3 smaller continents, 4 islands)")
 
-			# If within radius, make it land
-			if distance < effective_radius:
-				var grassland = grassland_types[randi() % grassland_types.size()]
-				map_data[y][x] = grassland
+	# Generate each landmass
+	for landmass in landmasses:
+		var center = landmass["center"]
+		var base_radius = landmass["radius"]
+		var noise_scale = landmass["noise"]
+		var peninsula_count = landmass["peninsulas"]
 
-	# Place special tiles on land (find valid land tiles first)
-	var land_tiles = []
-	for y in range(map_height):
-		for x in range(map_width):
-			if map_data[y][x] != "water":
-				land_tiles.append(Vector2i(x, y))
+		for y in range(map_height):
+			for x in range(map_width):
+				# Skip if already land (prevents overlapping erasure)
+				if map_data[y][x] != "water":
+					continue
 
-	if land_tiles.size() >= 3:
-		# Place city1 (northern part of island)
-		var north_tiles = land_tiles.filter(func(t): return t.y < map_height / 3)
-		if north_tiles.size() > 0:
-			var city1_tile = north_tiles[randi() % north_tiles.size()]
-			map_data[city1_tile.y][city1_tile.x] = "city1"
+				# Distance from landmass center
+				var dx = x - center.x
+				var dy = y - center.y
+				var distance = sqrt(dx * dx + dy * dy)
 
-		# Place city2 (southern part of island)
-		var south_tiles = land_tiles.filter(func(t): return t.y > map_height * 2 / 3)
-		if south_tiles.size() > 0:
-			var city2_tile = south_tiles[randi() % south_tiles.size()]
-			map_data[city2_tile.y][city2_tile.x] = "city2"
+				# Add noise for irregular coastline
+				var noise = sin(x * 0.1 + y * 0.08) * noise_scale + cos(x * 0.08 - y * 0.1) * (noise_scale * 0.8)
 
-		# Place village1 (center of island)
-		var center_tiles = land_tiles.filter(func(t): return abs(t.y - center_y) < map_height / 4 and abs(t.x - center_x) < map_width / 4)
-		if center_tiles.size() > 0:
-			var village_tile = center_tiles[randi() % center_tiles.size()]
-			map_data[village_tile.y][village_tile.x] = "village1"
+				# Create peninsulas and bays
+				var angle = atan2(dy, dx)
+				var peninsula_noise = sin(angle * float(peninsula_count)) * (noise_scale * 1.2)
+
+				# Combined radius with noise
+				var effective_radius = base_radius + noise + peninsula_noise
+
+				# If within radius, make it land
+				if distance < effective_radius:
+					var grassland = grassland_types[randi() % grassland_types.size()]
+					map_data[y][x] = grassland
+
+	print("Hex: Land generation complete")
+
+	# Place special tiles on land using optimized region sampling
+	# Instead of scanning ALL tiles, we sample specific regions
+	_place_special_tiles_optimized()
 
 func _render_tiles():
-	# Render tiles using TileMap API
-	for y in range(map_data.size()):
-		for x in range(map_data[y].size()):
-			var tile_type = map_data[y][x]
-			if tile_type in tile_type_to_source:
-				var source_id = tile_type_to_source[tile_type]
-				# set_cell(layer, coords, source_id, atlas_coords, alternative_tile)
-				tile_map.set_cell(0, Vector2i(x, y), source_id, Vector2i(0, 0))
+	# Render tiles using TileMap API with chunk-aware batching
+	# Process tiles chunk by chunk for better cache performance
+	print("Hex: Starting tile render (", MapConfig.MAP_WIDTH, "x", MapConfig.MAP_HEIGHT, " = ", MapConfig.MAP_TOTAL_TILES, " tiles)")
+	print("Hex: Using ", MapConfig.TOTAL_CHUNKS, " chunks (", MapConfig.CHUNKS_WIDE, "x", MapConfig.CHUNKS_TALL, ")")
+
+	var tiles_rendered = 0
+
+	# Render chunk by chunk for better memory locality
+	for chunk_y in range(MapConfig.CHUNKS_TALL):
+		for chunk_x in range(MapConfig.CHUNKS_WIDE):
+			# Get chunk's top-left tile
+			var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
+
+			# Render all tiles in this chunk
+			for local_y in range(MapConfig.CHUNK_SIZE):
+				var y = chunk_start.y + local_y
+				if y >= map_data.size():
+					break
+
+				for local_x in range(MapConfig.CHUNK_SIZE):
+					var x = chunk_start.x + local_x
+					if x >= map_data[y].size():
+						break
+
+					var tile_type = map_data[y][x]
+					if tile_type in tile_type_to_source:
+						var source_id = tile_type_to_source[tile_type]
+						# set_cell(layer, coords, source_id, atlas_coords, alternative_tile)
+						tile_map.set_cell(0, Vector2i(x, y), source_id, Vector2i(0, 0))
+						tiles_rendered += 1
+
+	print("Hex: Rendered ", tiles_rendered, " tiles across ", MapConfig.TOTAL_CHUNKS, " chunks")
 
 # Query function to get tile at specific coordinates
 func get_tile_at(x: int, y: int) -> String:
@@ -260,3 +297,88 @@ func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
 			push_warning("Hex: Unknown joker card_id %d, allowing placement" % card_id)
 
 	return true
+
+# Optimized special tile placement using chunk-based scanning
+# Instead of scanning ALL tiles, we use chunk-based random sampling
+# This gives good coverage without full O(n) scan
+func _place_special_tiles_optimized():
+	var map_width = MapConfig.MAP_WIDTH
+	var map_height = MapConfig.MAP_HEIGHT
+
+	print("Hex: Placing special tiles using optimized chunk-based sampling...")
+
+	# Use chunk-based sampling to find land tiles efficiently
+	# Sample ~10% of chunks to build a representative land tile set
+	var land_tile_samples = _sample_land_tiles_by_chunks()
+
+	if land_tile_samples.size() == 0:
+		push_warning("Hex: No land tiles found for special tile placement!")
+		return
+
+	print("Hex: Sampled ", land_tile_samples.size(), " land tiles from chunk-based search")
+
+	# Place city1 in north region (top 1/3 of map)
+	var north_tiles = land_tile_samples.filter(func(t): return t.y < map_height / 3)
+	if north_tiles.size() > 0:
+		var city1_tile = north_tiles[randi() % north_tiles.size()]
+		map_data[city1_tile.y][city1_tile.x] = "city1"
+		print("Hex: Placed city1 at (", city1_tile.x, ", ", city1_tile.y, ")")
+
+	# Place city2 in south region (bottom 1/3 of map)
+	var south_tiles = land_tile_samples.filter(func(t): return t.y > map_height * 2 / 3)
+	if south_tiles.size() > 0:
+		var city2_tile = south_tiles[randi() % south_tiles.size()]
+		map_data[city2_tile.y][city2_tile.x] = "city2"
+		print("Hex: Placed city2 at (", city2_tile.x, ", ", city2_tile.y, ")")
+
+	# Place village1 in center region (middle 1/4 of map)
+	var center_x = map_width / 2
+	var center_y = map_height / 2
+	var quarter_width = map_width / 4
+	var quarter_height = map_height / 4
+
+	var center_tiles = land_tile_samples.filter(func(t):
+		return abs(t.y - center_y) < quarter_height and abs(t.x - center_x) < quarter_width
+	)
+	if center_tiles.size() > 0:
+		var village1_tile = center_tiles[randi() % center_tiles.size()]
+		map_data[village1_tile.y][village1_tile.x] = "village1"
+		print("Hex: Placed village1 at (", village1_tile.x, ", ", village1_tile.y, ")")
+
+	print("Hex: Special tile placement complete")
+
+# Sample land tiles using chunk-based approach
+# Only scans a subset of chunks to build representative sample
+# Much faster than full map scan: O(sample_size) instead of O(map_size)
+func _sample_land_tiles_by_chunks() -> Array[Vector2i]:
+	var land_tiles: Array[Vector2i] = []
+
+	# Sample 10% of chunks (1024 total chunks -> ~100 sampled)
+	var chunks_to_sample = max(100, MapConfig.TOTAL_CHUNKS / 10)
+	var chunk_width = MapConfig.CHUNKS_WIDE
+	var chunk_height = MapConfig.CHUNKS_TALL
+
+	for i in range(chunks_to_sample):
+		# Random chunk
+		var chunk_x = randi() % chunk_width
+		var chunk_y = randi() % chunk_height
+
+		# Get chunk's top-left tile position
+		var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
+
+		# Sample a few tiles from this chunk (not all 32x32)
+		var samples_per_chunk = 10
+		for j in range(samples_per_chunk):
+			var local_x = randi() % MapConfig.CHUNK_SIZE
+			var local_y = randi() % MapConfig.CHUNK_SIZE
+
+			var x = chunk_start.x + local_x
+			var y = chunk_start.y + local_y
+
+			# Check bounds
+			if y < map_data.size() and x < map_data[y].size():
+				# If land, add to samples
+				if map_data[y][x] != "water":
+					land_tiles.append(Vector2i(x, y))
+
+	return land_tiles

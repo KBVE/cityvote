@@ -6,27 +6,11 @@ use std::thread;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use crate::ui::toast;
+use crate::config::map as map_config;
+use crate::npc::terrain_cache;
+use crate::npc::terrain_cache::TerrainType;
 
-/// Map configuration constants (must match MapConfig in GDScript)
-pub mod map_config {
-    pub const MAP_WIDTH: i32 = 200;
-    pub const MAP_HEIGHT: i32 = 150;
-    pub const MAP_TOTAL_TILES: usize = (MAP_WIDTH * MAP_HEIGHT) as usize; // 30,000
-}
-
-/// Tile types for ground NPC pathfinding
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TileType {
-    Water,      // Not walkable for ground NPCs
-    Land,       // Walkable for ground NPCs
-    Obstacle,   // Blocked tile
-}
-
-impl TileType {
-    pub fn is_walkable_for_npc(&self) -> bool {
-        matches!(self, TileType::Land)
-    }
-}
+// TileType is now imported from terrain_cache module
 
 /// Hex coordinate (axial coordinates)
 pub type HexCoord = (i32, i32);
@@ -73,7 +57,7 @@ impl NpcState {
 /// Check if coordinate is within map bounds
 fn is_in_bounds(coord: HexCoord) -> bool {
     let (q, r) = coord;
-    q >= 0 && q < map_config::MAP_WIDTH && r >= 0 && r < map_config::MAP_HEIGHT
+    map_config::is_in_bounds(q, r)
 }
 
 /// Get hex neighbors (6 directions in axial coordinates)
@@ -136,11 +120,72 @@ pub struct PathResult {
     pub success: bool,
 }
 
-/// A* pathfinding algorithm
+/// A* pathfinding using terrain cache (optimized, no HashMap snapshot!)
+fn find_path_with_terrain_cache(
+    start: HexCoord,
+    goal: HexCoord,
+) -> Option<Vec<HexCoord>> {
+    let mut open_set = BinaryHeap::new();
+    let mut came_from: HashMap<HexCoord, HexCoord> = HashMap::new();
+    let mut g_score: HashMap<HexCoord, i32> = HashMap::new();
+    let mut closed_set: HashSet<HexCoord> = HashSet::new();
+
+    g_score.insert(start, 0);
+    open_set.push(PathNode {
+        coord: start,
+        f_score: heuristic(start, goal),
+    });
+
+    while let Some(PathNode { coord: current, .. }) = open_set.pop() {
+        if current == goal {
+            // Reconstruct path
+            let mut path = vec![current];
+            let mut current = current;
+            while let Some(&prev) = came_from.get(&current) {
+                path.push(prev);
+                current = prev;
+            }
+            path.reverse();
+            return Some(path);
+        }
+
+        if closed_set.contains(&current) {
+            continue;
+        }
+        closed_set.insert(current);
+
+        let current_g = *g_score.get(&current).unwrap_or(&i32::MAX);
+
+        for neighbor in hex_neighbors(current) {
+            // Check if tile is walkable using terrain cache (fast!)
+            let (q, r) = neighbor;
+            if !terrain_cache::is_walkable_for_npc(q, r) {
+                continue;
+            }
+
+            let tentative_g = current_g + 1;
+            let neighbor_g = *g_score.get(&neighbor).unwrap_or(&i32::MAX);
+
+            if tentative_g < neighbor_g {
+                came_from.insert(neighbor, current);
+                g_score.insert(neighbor, tentative_g);
+                open_set.push(PathNode {
+                    coord: neighbor,
+                    f_score: tentative_g + heuristic(neighbor, goal),
+                });
+            }
+        }
+    }
+
+    None  // No path found
+}
+
+/// A* pathfinding algorithm (OLD VERSION - kept for compatibility)
+#[allow(dead_code)]
 fn find_path(
     start: HexCoord,
     goal: HexCoord,
-    tile_map: &HashMap<HexCoord, TileType>,
+    tile_map: &HashMap<HexCoord, TerrainType>,
 ) -> Option<Vec<HexCoord>> {
     let mut open_set = BinaryHeap::new();
     let mut came_from: HashMap<HexCoord, HexCoord> = HashMap::new();
@@ -175,7 +220,7 @@ fn find_path(
 
         for neighbor in hex_neighbors(current) {
             // Check if tile is walkable for ground NPCs
-            let tile_type = tile_map.get(&neighbor).copied().unwrap_or(TileType::Obstacle);
+            let tile_type = tile_map.get(&neighbor).copied().unwrap_or(TerrainType::Obstacle);
             if !tile_type.is_walkable_for_npc() {
                 continue;
             }
@@ -205,9 +250,6 @@ pub struct NpcPathfindingSystem {
     #[base]
     base: Base<Node>,
 
-    /// Tile map (shared across all NPCs)
-    tile_map: Arc<DashMap<HexCoord, TileType>>,
-
     /// Request queue
     request_queue: Arc<SegQueue<PathRequest>>,
 
@@ -218,26 +260,23 @@ pub struct NpcPathfindingSystem {
     worker_handle: Option<thread::JoinHandle<()>>,
 }
 
+// tile_map removed - now using terrain_cache module instead
+
 #[godot_api]
 impl INode for NpcPathfindingSystem {
     fn init(base: Base<Node>) -> Self {
-        let tile_map: Arc<DashMap<HexCoord, TileType>> = Arc::new(DashMap::new());
         let request_queue: Arc<SegQueue<PathRequest>> = Arc::new(SegQueue::new());
         let result_map: Arc<DashMap<u64, PathResult>> = Arc::new(DashMap::new());
 
-        // Spawn worker thread
-        let tile_map_clone = Arc::clone(&tile_map);
+        // Spawn worker thread (uses terrain_cache directly, no tile_map snapshot needed)
         let request_queue_clone = Arc::clone(&request_queue);
         let result_map_clone = Arc::clone(&result_map);
 
         let worker_handle = thread::spawn(move || {
             loop {
                 if let Some(request) = request_queue_clone.pop() {
-                    // Convert DashMap to HashMap for pathfinding
-                    let tile_map_snapshot: HashMap<_, _> =
-                        tile_map_clone.iter().map(|entry| (*entry.key(), *entry.value())).collect();
-
-                    let path = find_path(request.start, request.goal, &tile_map_snapshot);
+                    // Use terrain cache directly - no snapshot needed!
+                    let path = find_path_with_terrain_cache(request.start, request.goal);
 
                     let result = PathResult {
                         npc_id: request.npc_id,
@@ -254,7 +293,6 @@ impl INode for NpcPathfindingSystem {
 
         Self {
             base,
-            tile_map,
             request_queue,
             result_map,
             worker_handle: Some(worker_handle),
@@ -264,15 +302,13 @@ impl INode for NpcPathfindingSystem {
 
 #[godot_api]
 impl NpcPathfindingSystem {
-    /// Set tile type at coordinate
+    /// Set tile type at coordinate (delegates to terrain_cache)
     #[func]
-    pub fn set_tile(&mut self, q: i32, r: i32, tile_type: i32) {
-        let tile = match tile_type {
-            0 => TileType::Land,
-            1 => TileType::Water,
-            _ => TileType::Obstacle,
-        };
-        self.tile_map.insert((q, r), tile);
+    pub fn set_tile(&mut self, q: i32, r: i32, tile_type_str: GString) {
+        let terrain_type = TerrainType::from_string(&tile_type_str.to_string());
+        let cache = terrain_cache::get_terrain_cache();
+        let mut cache_write = cache.write();
+        cache_write.set(q, r, terrain_type);
     }
 
     /// Request pathfinding for an NPC
@@ -309,7 +345,12 @@ impl NpcPathfindingSystem {
     /// Clear all pathfinding data
     #[func]
     pub fn clear_all(&mut self) {
-        self.tile_map.clear();
+        // Clear terrain cache
+        let cache = terrain_cache::get_terrain_cache();
+        let mut cache_write = cache.write();
+        cache_write.clear();
+
+        // Clear results
         self.result_map.clear();
         // Note: Can't clear SegQueue, but old requests will be processed and discarded
     }

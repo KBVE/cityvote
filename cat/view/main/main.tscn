@@ -130,7 +130,7 @@ texture = SubResource("GradientTexture2D_godrays")
 
 [node name="Camera2D" type="Camera2D" parent="SubViewport"]
 position = Vector2(640, 540)
-zoom = Vector2(1.2, 1.2)
+zoom = Vector2(0.375, 0.375)
 
 [node name="PlayHand" parent="SubViewport" instance=ExtResource("6_hand")]
 
