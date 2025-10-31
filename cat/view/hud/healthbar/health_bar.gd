@@ -183,8 +183,8 @@ func _update_visual() -> void:
 		# Set anchor_right to health percentage (0.0 to 1.0)
 		health_fill.anchor_right = health_pct
 
-		# Force update the size (deferred to avoid anchor warning)
-		health_fill.set_deferred("size", Vector2.ZERO)  # Reset size since we're using anchors
+		# Force layout update to apply anchor changes immediately
+		health_fill.reset_size()
 
 		# Update color based on health percentage (using StyleBoxFlat)
 		if health_fill_style:

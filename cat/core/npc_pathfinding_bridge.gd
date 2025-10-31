@@ -43,21 +43,20 @@ func init_map(hex_map: Node) -> void:
 		push_error("NpcPathfindingBridge: Not initialized!")
 		return
 
-	# Get all tiles from hex map using MapConfig
-	var tile_map = hex_map.tile_map
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
-			var tile_coords = Vector2i(x, y)
-			var source_id = tile_map.get_cell_source_id(0, tile_coords)
+	# Read directly from map_data array (memory) instead of TileMap (which may not be rendered yet)
+	var map_data = hex_map.map_data
+	for y in range(MapConfig.MAP_HEIGHT):
+		for x in range(MapConfig.MAP_WIDTH):
+			var tile_type_str = map_data[y][x]
 
-			# Map source_id to terrain type string (for terrain_cache)
+			# Map tile_type string to terrain type string (for terrain_cache)
 			# For NPCs, land is walkable (opposite of ships)
-			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
+			if tile_type_str == "water":  # Water
 				pathfinding_system.set_tile(x, y, "water")  # Water (not walkable for NPCs)
-			else:  # Land
+			else:  # Land (all grasslands, cities, villages)
 				pathfinding_system.set_tile(x, y, "land")  # Land (walkable for NPCs)
 
-	print("NpcPathfindingBridge: Map initialized (", MapConfig.MAP_TOTAL_TILES, " tiles)")
+	print("NpcPathfindingBridge: Map initialized from map_data array (%d tiles)" % MapConfig.MAP_TOTAL_TILES)
 
 ## Request pathfinding for an NPC (async, callback receives result)
 func request_path(npc_id: int, start: Vector2i, goal: Vector2i, callback: Callable) -> void:

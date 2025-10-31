@@ -244,7 +244,7 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 	])
 
 	# Find valid tiles based on tile_type
-	var valid_tiles: Array = _find_valid_tiles(tile_type, tile_map, occupied_tiles, near_pos)
+	var valid_tiles: Array = _find_valid_tiles(tile_type, hex_map, occupied_tiles, near_pos)
 
 	if valid_tiles.size() < count:
 		push_error("EntityManager: Not enough valid tiles to spawn %d %s(s) (found %d)" % [count, entity_name, valid_tiles.size()])
@@ -303,25 +303,26 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 ## Helper: Find valid tiles for spawning based on tile type
 ## Uses optimized spatial sampling instead of full map scan
 ## @param tile_type: TileType - What type of tiles to find
-## @param tile_map: TileMap - The tile map to search
+## @param hex_map: Node - The hex map node (contains map_data array)
 ## @param occupied_tiles: Dictionary - Tiles that are already occupied
 ## @param near_pos: Vector2i - Optional position to spawn near (uses radial search)
 ## @return: Array of Vector2i - Valid spawn tiles (sorted by distance if near_pos provided)
-func _find_valid_tiles(tile_type: TileType, tile_map, occupied_tiles: Dictionary, near_pos: Vector2i) -> Array:
+func _find_valid_tiles(tile_type: TileType, hex_map, occupied_tiles: Dictionary, near_pos: Vector2i) -> Array:
 	var has_near_pos = near_pos != Vector2i(-1, -1)
 
 	# If we have a specific position, use radial search
 	if has_near_pos:
-		return _find_tiles_radial(tile_type, tile_map, occupied_tiles, near_pos)
+		return _find_tiles_radial(tile_type, hex_map, occupied_tiles, near_pos)
 	else:
 		# Otherwise use chunk-based random sampling
-		return _find_tiles_chunk_sampling(tile_type, tile_map, occupied_tiles)
+		return _find_tiles_chunk_sampling(tile_type, hex_map, occupied_tiles)
 
 ## Radial search from a specific position (for spawning near a card)
 ## Searches in expanding rings until enough tiles are found
-func _find_tiles_radial(tile_type: TileType, tile_map, occupied_tiles: Dictionary, center: Vector2i, max_tiles: int = 100) -> Array:
+func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary, center: Vector2i, max_tiles: int = 100) -> Array:
 	var tiles_with_distance: Array = []
 	var max_radius = 50  # Search up to 50 tiles away
+	var map_data = hex_map.map_data
 
 	# Helper for hex distance calculation
 	var hex_distance = func(a: Vector2i, b: Vector2i) -> int:
@@ -350,11 +351,11 @@ func _find_tiles_radial(tile_type: TileType, tile_map, occupied_tiles: Dictionar
 				if occupied_tiles.has(tile_coords):
 					continue
 
-				# Get tile source
-				var source_id = tile_map.get_cell_source_id(0, tile_coords)
+				# Read tile type from map_data array (not TileMap!)
+				var tile_type_str = map_data[tile_coords.y][tile_coords.x]
 
 				# Check if tile matches the required type
-				var is_valid = _is_tile_type_match(source_id, tile_type)
+				var is_valid = _is_tile_type_match_str(tile_type_str, tile_type)
 
 				if is_valid:
 					tiles_with_distance.append({"pos": tile_coords, "dist": dist})
@@ -378,9 +379,10 @@ func _find_tiles_radial(tile_type: TileType, tile_map, occupied_tiles: Dictionar
 
 ## Chunk-based random sampling (for spawning without specific position)
 ## Samples random chunks and checks tiles within them
-func _find_tiles_chunk_sampling(tile_type: TileType, tile_map, occupied_tiles: Dictionary, max_tiles: int = 100) -> Array:
+func _find_tiles_chunk_sampling(tile_type: TileType, hex_map, occupied_tiles: Dictionary, max_tiles: int = 100) -> Array:
 	var valid_tiles: Array = []
 	var max_attempts = max_tiles * 3  # Try 3x the needed tiles to account for occupied/wrong type
+	var map_data = hex_map.map_data
 
 	for i in range(max_attempts):
 		# Pick a random chunk
@@ -405,11 +407,11 @@ func _find_tiles_chunk_sampling(tile_type: TileType, tile_map, occupied_tiles: D
 		if tile_coords in valid_tiles:
 			continue
 
-		# Get tile source
-		var source_id = tile_map.get_cell_source_id(0, tile_coords)
+		# Read tile type from map_data array (not TileMap!)
+		var tile_type_str = map_data[tile_coords.y][tile_coords.x]
 
 		# Check if tile matches the required type
-		var is_valid = _is_tile_type_match(source_id, tile_type)
+		var is_valid = _is_tile_type_match_str(tile_type_str, tile_type)
 
 		if is_valid:
 			valid_tiles.append(tile_coords)
@@ -421,13 +423,25 @@ func _find_tiles_chunk_sampling(tile_type: TileType, tile_map, occupied_tiles: D
 	print("EntityManager: Found %d valid tiles using chunk sampling" % valid_tiles.size())
 	return valid_tiles
 
-## Helper to check if a source_id matches the required tile type
+## Helper to check if a source_id matches the required tile type (DEPRECATED - use _is_tile_type_match_str)
 func _is_tile_type_match(source_id: int, tile_type: TileType) -> bool:
 	match tile_type:
 		TileType.LAND:
 			return source_id != MapConfig.SOURCE_ID_WATER
 		TileType.WATER:
 			return source_id == MapConfig.SOURCE_ID_WATER
+		TileType.ANY:
+			return true
+	return false
+
+## Helper to check if a tile_type string matches the required tile type
+## Reads from map_data array instead of TileMap
+func _is_tile_type_match_str(tile_type_str: String, tile_type: TileType) -> bool:
+	match tile_type:
+		TileType.LAND:
+			return tile_type_str != "water"
+		TileType.WATER:
+			return tile_type_str == "water"
 		TileType.ANY:
 			return true
 	return false

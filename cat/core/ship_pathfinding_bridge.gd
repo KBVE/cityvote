@@ -61,27 +61,27 @@ func init_map(hex_map: Node) -> void:
 
 	var tiles: Array[Dictionary] = []
 
-	# Get all tiles from hex map using MapConfig
-	var tile_map = hex_map.tile_map
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
-			var tile_coords = Vector2i(x, y)
-			var source_id = tile_map.get_cell_source_id(0, tile_coords)
+	# Read directly from map_data array (memory) instead of TileMap (which may not be rendered yet)
+	var map_data = hex_map.map_data
+	for y in range(MapConfig.MAP_HEIGHT):
+		for x in range(MapConfig.MAP_WIDTH):
+			var tile_type_str = map_data[y][x]
 
 			# Convert to axial hex coords and tile type
 			var tile_dict = Dictionary()
 			tile_dict["q"] = x
 			tile_dict["r"] = y
 
-			# Map source_id to TileType (0=Water, 1=Land, 2=Obstacle)
-			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
+			# Map tile_type string to TileType (0=Water, 1=Land, 2=Obstacle)
+			if tile_type_str == "water":  # Water
 				tile_dict["type"] = 0
-			else:  # Land
+			else:  # Land (all grasslands, cities, villages)
 				tile_dict["type"] = 1
 
 			tiles.append(tile_dict)
 
 	pathfinding_bridge.init_map(tiles)
+	print("ShipPathfindingBridge: Map initialized from map_data array (%d tiles)" % tiles.size())
 
 ## Check if ship can accept a path request (not already moving)
 func can_ship_request_path(ship_ulid: PackedByteArray) -> bool:

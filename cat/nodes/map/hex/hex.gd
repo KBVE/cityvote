@@ -52,6 +52,14 @@ var rendered_chunks: Dictionary = {}  # chunk_index -> true
 var chunk_render_distance: int = 3  # Render chunks within N chunks of camera
 var last_camera_chunk: Vector2i = Vector2i(-999, -999)  # Track which chunk camera was in
 
+# Performance optimization settings
+var max_chunks_per_frame: int = 4  # Limit chunk renders per frame to avoid lag spikes
+var chunk_render_queue: Array = []  # Queue for deferred chunk rendering
+
+# Signal emitted when initial chunks around camera are fully rendered
+signal initial_chunks_ready()
+var initial_chunks_loaded: bool = false
+
 func _ready():
 	# Set TileMap quadrant size to match our chunk size (32x32)
 	# Default is 16x16, but we want to align with chunk architecture
@@ -65,6 +73,9 @@ func _ready():
 	print("Hex: Map generation complete. Deferring chunk rendering until camera is available.")
 
 func _process(delta: float) -> void:
+	# OPTIMIZATION: Process queued chunk renders (limit per frame to avoid lag spikes)
+	_process_chunk_queue()
+
 	# Update visible chunks only when camera crosses chunk boundaries
 	if camera:
 		var camera_tile = tile_map.local_to_map(camera.global_position)
@@ -82,6 +93,30 @@ func _process(delta: float) -> void:
 	if tile_coords != hovered_tile:
 		hovered_tile = tile_coords
 		_update_highlight()
+
+## Process queued chunk renders to spread work across frames
+func _process_chunk_queue() -> void:
+	var chunks_rendered_this_frame = 0
+
+	while chunk_render_queue.size() > 0 and chunks_rendered_this_frame < max_chunks_per_frame:
+		var chunk_data = chunk_render_queue.pop_front()
+		var chunk_index = chunk_data["index"]
+		var render = chunk_data["render"]
+
+		if render:
+			_render_chunk_immediate(chunk_index)
+			rendered_chunks[chunk_index] = true
+		else:
+			_unrender_chunk_immediate(chunk_index)
+			rendered_chunks.erase(chunk_index)
+
+		chunks_rendered_this_frame += 1
+
+	# Check if initial chunks are done loading
+	if not initial_chunks_loaded and chunk_render_queue.size() == 0 and rendered_chunks.size() > 0:
+		initial_chunks_loaded = true
+		print("Hex: Initial chunks loaded (%d chunks rendered). Emitting initial_chunks_ready signal." % rendered_chunks.size())
+		initial_chunks_ready.emit()
 
 ## Set the camera reference for chunk culling
 func set_camera(cam: Camera2D) -> void:
@@ -187,8 +222,8 @@ func _update_visible_chunks() -> void:
 	# Get the chunk the camera is in
 	var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
 
-	# Calculate which chunks should be visible
-	var chunks_to_render: Array = []
+	# OPTIMIZATION: Use Set for O(1) lookups instead of Array with 'in' operator
+	var chunks_to_render: Dictionary = {}  # Using Dictionary as Set
 
 	for dy in range(-chunk_render_distance, chunk_render_distance + 1):
 		for dx in range(-chunk_render_distance, chunk_render_distance + 1):
@@ -197,34 +232,41 @@ func _update_visible_chunks() -> void:
 			# Check if chunk is in bounds
 			if MapConfig.is_chunk_in_bounds(chunk_coords):
 				var chunk_index = MapConfig.chunk_coords_to_index(chunk_coords)
-				chunks_to_render.append(chunk_index)
+				chunks_to_render[chunk_index] = true
 
-	# Render new chunks
-	var newly_rendered = 0
+	# OPTIMIZATION: Queue new chunks for rendering (spread across frames)
+	var newly_queued = 0
 	for chunk_index in chunks_to_render:
-		if not rendered_chunks.has(chunk_index):
-			_render_chunk(chunk_index)
-			rendered_chunks[chunk_index] = true
-			newly_rendered += 1
+		if not rendered_chunks.has(chunk_index) and not _is_in_queue(chunk_index):
+			chunk_render_queue.append({"index": chunk_index, "render": true})
+			newly_queued += 1
 
-	# Unrender chunks that are too far away
+	# OPTIMIZATION: Queue chunks for unrendering
 	var chunks_to_unrender: Array = []
 	for chunk_index in rendered_chunks.keys():
-		if chunk_index not in chunks_to_render:
+		if not chunks_to_render.has(chunk_index):
 			chunks_to_unrender.append(chunk_index)
 
+	# Queue unrender operations
 	for chunk_index in chunks_to_unrender:
-		_unrender_chunk(chunk_index)
-		rendered_chunks.erase(chunk_index)
+		if not _is_in_queue(chunk_index):
+			chunk_render_queue.append({"index": chunk_index, "render": false})
 
 	# Debug output on first call or when chunks change
-	if newly_rendered > 0 or chunks_to_unrender.size() > 0:
-		print("Hex: Camera at tile %v (chunk %v). Rendered: %d new, %d total visible, unrendered: %d" % [
-			camera_tile, camera_chunk, newly_rendered, rendered_chunks.size(), chunks_to_unrender.size()
+	if newly_queued > 0 or chunks_to_unrender.size() > 0:
+		print("Hex: Camera at tile %v (chunk %v). Queued: %d new, %d to unrender, queue size: %d" % [
+			camera_tile, camera_chunk, newly_queued, chunks_to_unrender.size(), chunk_render_queue.size()
 		])
 
-## Render a specific chunk by index
-func _render_chunk(chunk_index: int) -> void:
+## Check if chunk is already in render queue
+func _is_in_queue(chunk_index: int) -> bool:
+	for chunk_data in chunk_render_queue:
+		if chunk_data["index"] == chunk_index:
+			return true
+	return false
+
+## Render a specific chunk by index (immediate, used by queue processor)
+func _render_chunk_immediate(chunk_index: int) -> void:
 	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
 	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
 
@@ -250,8 +292,8 @@ func _render_chunk(chunk_index: int) -> void:
 
 	print("Hex: Rendered chunk %d (coords %v) with %d tiles" % [chunk_index, chunk_coords, tiles_rendered])
 
-## Unrender a specific chunk by index (clear tiles)
-func _unrender_chunk(chunk_index: int) -> void:
+## Unrender a specific chunk by index (clear tiles, immediate)
+func _unrender_chunk_immediate(chunk_index: int) -> void:
 	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
 	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
 

@@ -132,6 +132,12 @@ func _initialize_game() -> void:
 	play_hand.card_cancelled.connect(_on_card_cancelled)
 	#; TEST
 
+	# IMPORTANT: Wait for initial chunks to render before spawning entities
+	# This prevents race condition where entities spawn before terrain is ready
+	print("Main: Waiting for initial chunks to render...")
+	await hex_map.initial_chunks_ready
+	print("Main: Initial chunks ready! Proceeding with entity spawning...")
+
 	#### TEST ####
 	# Initialize Rust pathfinding map cache
 	print("Initializing Rust ship pathfinding map cache...")
