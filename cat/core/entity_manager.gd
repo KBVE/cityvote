@@ -301,14 +301,27 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 	return spawned_count
 
 ## Helper: Find valid tiles for spawning based on tile type
+## Uses optimized spatial sampling instead of full map scan
 ## @param tile_type: TileType - What type of tiles to find
 ## @param tile_map: TileMap - The tile map to search
 ## @param occupied_tiles: Dictionary - Tiles that are already occupied
-## @param near_pos: Vector2i - Optional position to sort tiles by distance from
+## @param near_pos: Vector2i - Optional position to spawn near (uses radial search)
 ## @return: Array of Vector2i - Valid spawn tiles (sorted by distance if near_pos provided)
 func _find_valid_tiles(tile_type: TileType, tile_map, occupied_tiles: Dictionary, near_pos: Vector2i) -> Array:
-	var tiles_with_distance: Array = []
 	var has_near_pos = near_pos != Vector2i(-1, -1)
+
+	# If we have a specific position, use radial search
+	if has_near_pos:
+		return _find_tiles_radial(tile_type, tile_map, occupied_tiles, near_pos)
+	else:
+		# Otherwise use chunk-based random sampling
+		return _find_tiles_chunk_sampling(tile_type, tile_map, occupied_tiles)
+
+## Radial search from a specific position (for spawning near a card)
+## Searches in expanding rings until enough tiles are found
+func _find_tiles_radial(tile_type: TileType, tile_map, occupied_tiles: Dictionary, center: Vector2i, max_tiles: int = 100) -> Array:
+	var tiles_with_distance: Array = []
+	var max_radius = 50  # Search up to 50 tiles away
 
 	# Helper for hex distance calculation
 	var hex_distance = func(a: Vector2i, b: Vector2i) -> int:
@@ -317,48 +330,107 @@ func _find_valid_tiles(tile_type: TileType, tile_map, occupied_tiles: Dictionary
 		var dz = abs(dx + dy)
 		return (dx + dy + dz) / 2
 
-	# Scan all tiles
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
-			var tile_coords = Vector2i(x, y)
+	# Expand search radius until we find enough tiles
+	for radius in range(1, max_radius + 1):
+		# Check tiles in a ring at this radius
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				var tile_coords = Vector2i(center.x + dx, center.y + dy)
 
-			# Skip occupied tiles
-			if occupied_tiles.has(tile_coords):
-				continue
+				# Only check tiles roughly at this radius (not every tile in the square)
+				var dist = hex_distance.call(center, tile_coords)
+				if dist != radius:
+					continue
 
-			# Get tile source
-			var source_id = tile_map.get_cell_source_id(0, tile_coords)
+				# Bounds check
+				if not MapConfig.is_tile_in_bounds(tile_coords):
+					continue
 
-			# Check if tile matches the required type
-			var is_valid = false
-			match tile_type:
-				TileType.LAND:
-					is_valid = source_id != MapConfig.SOURCE_ID_WATER
-				TileType.WATER:
-					is_valid = source_id == MapConfig.SOURCE_ID_WATER
-				TileType.ANY:
-					is_valid = true
+				# Skip occupied tiles
+				if occupied_tiles.has(tile_coords):
+					continue
 
-			if is_valid:
-				if has_near_pos:
-					var distance = hex_distance.call(near_pos, tile_coords)
-					tiles_with_distance.append({"pos": tile_coords, "dist": distance})
-				else:
-					tiles_with_distance.append({"pos": tile_coords, "dist": 0})
+				# Get tile source
+				var source_id = tile_map.get_cell_source_id(0, tile_coords)
 
-	# Sort by distance if near_pos provided
-	if has_near_pos:
-		tiles_with_distance.sort_custom(func(a, b): return a["dist"] < b["dist"])
-		print("EntityManager: Found %d valid tiles sorted by distance from %v" % [tiles_with_distance.size(), near_pos])
-	else:
-		print("EntityManager: Found %d valid tiles (no sorting)" % tiles_with_distance.size())
+				# Check if tile matches the required type
+				var is_valid = _is_tile_type_match(source_id, tile_type)
 
-	# Extract just the positions
+				if is_valid:
+					tiles_with_distance.append({"pos": tile_coords, "dist": dist})
+
+					# Early exit if we have enough tiles
+					if tiles_with_distance.size() >= max_tiles:
+						tiles_with_distance.sort_custom(func(a, b): return a["dist"] < b["dist"])
+						var result: Array = []
+						for tile_data in tiles_with_distance:
+							result.append(tile_data["pos"])
+						print("EntityManager: Found %d valid tiles near %v using radial search (radius %d)" % [result.size(), center, radius])
+						return result
+
+	# Sort by distance
+	tiles_with_distance.sort_custom(func(a, b): return a["dist"] < b["dist"])
 	var result: Array = []
 	for tile_data in tiles_with_distance:
 		result.append(tile_data["pos"])
-
+	print("EntityManager: Found %d valid tiles near %v using radial search" % [result.size(), center])
 	return result
+
+## Chunk-based random sampling (for spawning without specific position)
+## Samples random chunks and checks tiles within them
+func _find_tiles_chunk_sampling(tile_type: TileType, tile_map, occupied_tiles: Dictionary, max_tiles: int = 100) -> Array:
+	var valid_tiles: Array = []
+	var max_attempts = max_tiles * 3  # Try 3x the needed tiles to account for occupied/wrong type
+
+	for i in range(max_attempts):
+		# Pick a random chunk
+		var chunk_x = randi() % MapConfig.CHUNKS_WIDE
+		var chunk_y = randi() % MapConfig.CHUNKS_TALL
+		var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
+
+		# Pick a random tile within that chunk
+		var local_x = randi() % MapConfig.CHUNK_SIZE
+		var local_y = randi() % MapConfig.CHUNK_SIZE
+		var tile_coords = Vector2i(chunk_start.x + local_x, chunk_start.y + local_y)
+
+		# Bounds check
+		if not MapConfig.is_tile_in_bounds(tile_coords):
+			continue
+
+		# Skip occupied tiles
+		if occupied_tiles.has(tile_coords):
+			continue
+
+		# Skip if we already found this tile
+		if tile_coords in valid_tiles:
+			continue
+
+		# Get tile source
+		var source_id = tile_map.get_cell_source_id(0, tile_coords)
+
+		# Check if tile matches the required type
+		var is_valid = _is_tile_type_match(source_id, tile_type)
+
+		if is_valid:
+			valid_tiles.append(tile_coords)
+
+			# Early exit if we have enough tiles
+			if valid_tiles.size() >= max_tiles:
+				break
+
+	print("EntityManager: Found %d valid tiles using chunk sampling" % valid_tiles.size())
+	return valid_tiles
+
+## Helper to check if a source_id matches the required tile type
+func _is_tile_type_match(source_id: int, tile_type: TileType) -> bool:
+	match tile_type:
+		TileType.LAND:
+			return source_id != MapConfig.SOURCE_ID_WATER
+		TileType.WATER:
+			return source_id == MapConfig.SOURCE_ID_WATER
+		TileType.ANY:
+			return true
+	return false
 
 ## Update all registered entities (movement timers)
 ## Call this from main scene's _process(delta)
