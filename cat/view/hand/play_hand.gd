@@ -836,13 +836,36 @@ func _on_timer_reset() -> void:
 	# Hand has space - draw a card
 	var card = CardDeck.draw_card(deck_id)
 	if card:
-		# Add the already-initialized card directly to hand
+		# Add the card to hand
 		hand.append(card)
-		display_card(card, hand.size() - 1)
+
+		# Create wrapper for the new card
+		var card_wrapper = Control.new()
+		card_wrapper.name = "Card_%d" % (hand.size() - 1)
+		card_wrapper.custom_minimum_size = Vector2(card_width + card_wrapper_padding * 2, card_height + card_wrapper_padding * 2)
+		card_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+
+		# Reparent PooledCard to wrapper
+		if card.get_parent():
+			card.get_parent().remove_child(card)
+		card_wrapper.add_child(card)
+
+		# Position sprite within wrapper (centered, accounting for padding)
+		card.scale = Vector2.ONE
+		card.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
+
+		# Connect hover and input signals
+		card_wrapper.mouse_entered.connect(_on_card_mouse_entered.bind(card_wrapper))
+		card_wrapper.mouse_exited.connect(_on_card_mouse_exited.bind(card_wrapper))
+		card_wrapper.gui_input.connect(_on_card_gui_input.bind(card_wrapper))
+
+		# Add to container at END
+		card_container.add_child(card_wrapper)
+
 		_update_card_count()
 
-		# Refresh fan layout to show new card properly
-		call_deferred("_refresh_card_positions")
+		# Refresh fan layout to show all cards properly positioned
+		_refresh_card_positions()
 
 		# Send toast: Drew a card
 		Toast.show_toast(I18n.translate("ui.hand.drew", [card.get_card_name()]), 2.5)
@@ -1130,6 +1153,9 @@ func _on_mulligan_pressed() -> void:
 	for bonus_card in bonus_cards:
 		hand.append(bonus_card)
 		display_card(bonus_card, hand.size() - 1)
+
+	# Refresh all card positions to properly fan the entire hand
+	_refresh_card_positions()
 
 	# Update button state
 	_update_mulligan_button()
