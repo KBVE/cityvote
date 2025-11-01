@@ -359,9 +359,9 @@ func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary
 					continue
 
 				# PROCEDURAL WORLD: Use WorldGenerator to check terrain type
-				var world_x = tile_coords.x * MapConfig.TILE_WIDTH
-				var world_y = tile_coords.y * MapConfig.TILE_HEIGHT
-				var is_water = world_generator.is_water(world_x, world_y) if world_generator else false
+				# Use proper hex tile-to-world conversion (accounts for hex offset pattern)
+				var world_pos = hex_map.tile_renderer._tile_to_world_pos(tile_coords)
+				var is_water = world_generator.is_water(world_pos.x, world_pos.y) if world_generator else false
 
 				# Check if tile matches the required type
 				var is_valid = _is_tile_type_match_procedural(is_water, tile_type)
@@ -426,9 +426,9 @@ func _find_tiles_chunk_sampling(tile_type: TileType, hex_map, occupied_tiles: Di
 			continue
 
 		# PROCEDURAL WORLD: Use WorldGenerator to check terrain type
-		var world_x = tile_coords.x * MapConfig.TILE_WIDTH
-		var world_y = tile_coords.y * MapConfig.TILE_HEIGHT
-		var is_water = world_generator.is_water(world_x, world_y) if world_generator else false
+		# Use proper hex tile-to-world conversion (accounts for hex offset pattern)
+		var world_pos = hex_map.tile_renderer._tile_to_world_pos(tile_coords)
+		var is_water = world_generator.is_water(world_pos.x, world_pos.y) if world_generator else false
 
 		# Check if tile matches the required type
 		var is_valid = _is_tile_type_match_procedural(is_water, tile_type)

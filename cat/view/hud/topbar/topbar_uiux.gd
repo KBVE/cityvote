@@ -26,6 +26,15 @@ class_name TopbarUIUX
 # Reference to camera (set by main scene)
 var camera: Camera2D = null
 
+# Camera zoom states (4 levels that cycle through)
+var zoom_states: Array[Vector2] = [
+	Vector2(1.0, 1.0),   # Default zoom
+	Vector2(0.75, 0.75), # Slight zoom out
+	Vector2(0.5, 0.5),   # Medium zoom out
+	Vector2(0.35, 0.35)  # Far zoom out
+]
+var current_zoom_index: int = 0
+
 # Current displayed values (for lerping animation)
 var displayed_gold: float = 0.0
 var displayed_food: float = 0.0
@@ -157,13 +166,19 @@ func _on_language_changed(_new_language: int) -> void:
 	_update_resource_labels()
 
 func _on_city_vote_pressed() -> void:
-	# Zoom out camera when CityVote is clicked
+	# Cycle through camera zoom states
 	if camera:
-		var target_zoom = Vector2(0.5, 0.5)  # Zoom out to 0.5x
+		# Move to next zoom state
+		current_zoom_index = (current_zoom_index + 1) % zoom_states.size()
+		var target_zoom = zoom_states[current_zoom_index]
+
+		# Animate to new zoom level
 		var tween = create_tween()
 		tween.set_ease(Tween.EASE_OUT)
 		tween.set_trans(Tween.TRANS_CUBIC)
 		tween.tween_property(camera, "zoom", target_zoom, 0.5)
+
+		print("TopbarUIUX: Cycling to zoom state %d: %v" % [current_zoom_index, target_zoom])
 
 func _on_timer_tick(time_left: int) -> void:
 	_update_timer_display(time_left)

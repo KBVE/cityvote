@@ -64,12 +64,9 @@ enum CardState { IDLE, HOVER, HELD, PREVIEW, PLACED, CANCELED }
 var card_state: CardState = CardState.IDLE
 
 # === Held Card (Game Logic) ===
-var held_card: Control = null  # Authoritative game state
-var held_card_pooled: PooledCard = null  # Reference to the actual PooledCard
-var held_card_source_position: Vector2 = Vector2.ZERO  # Origin in fan
-var held_card_source_rotation: float = 0.0
-var held_card_source_scale: Vector2 = Vector2.ONE
-var held_card_source_index: int = -1
+var held_card: Control = null  # The wrapper Control (never moves from its slot)
+var held_card_pooled: PooledCard = null  # The actual PooledCard sprite (becomes ghost)
+var held_card_source_index: int = -1  # Index in hand array
 
 # === Card Preview Ghost (Visual) ===
 var preview_ghost: MeshInstance2D = null  # Visual proxy that follows cursor
@@ -214,6 +211,13 @@ func _refresh_card_positions() -> void:
 		# Set pivot point to bottom center of card for rotation (accounting for padding)
 		card_wrapper.pivot_offset = Vector2(card_width / 2.0 + card_wrapper_padding, card_height + card_wrapper_padding)
 
+		# Set z-index: cards from left to right increase in z-index (rightmost cards on top)
+		card_wrapper.z_index = i
+
+		# Reset scale and modulate (undo any hover effects)
+		card_wrapper.scale = Vector2(1.0, 1.0)
+		card_wrapper.modulate = Color(1.0, 1.0, 1.0, 1.0)
+
 		# Calculate horizontal position (spread cards with dynamic spacing)
 		var base_x = container_center_x + (offset_from_center * dynamic_spacing) - (card_width / 2.0)
 		card_wrapper.position.x = base_x
@@ -245,6 +249,10 @@ func _reorganize_hand() -> void:
 
 		# Set pivot point to bottom center of card for rotation (accounting for padding)
 		card_wrapper.pivot_offset = Vector2(card_width / 2.0 + card_wrapper_padding, card_height + card_wrapper_padding)
+
+		# Set z-index: cards from left to right increase in z-index (rightmost cards on top)
+		# This ensures no card gets hidden behind others
+		card_wrapper.z_index = i
 
 		# Calculate new positions
 		var target_x = container_center_x + (offset_from_center * card_spacing) - (card_width / 2.0)
@@ -315,6 +323,9 @@ func display_card(card: PooledCard, index: int) -> void:
 	var vertical_center_offset = (container_height - card_height - card_wrapper_padding * 2) / 2.0
 	var arc_offset = abs(offset_from_center) * arc_height
 	card_wrapper.position.y = vertical_center_offset + arc_offset
+
+	# Set z-index: cards from left to right increase in z-index (rightmost cards on top)
+	card_wrapper.z_index = index
 
 	# Connect hover and input signals
 	card_wrapper.mouse_entered.connect(_on_card_mouse_entered.bind(card_wrapper))
@@ -490,35 +501,37 @@ func _input(event: InputEvent) -> void:
 
 # EVENT: Pick Card - Transition IDLE → HELD (or swap if already holding)
 func _event_pick_card(card: Control) -> void:
-	# If we're already holding a card, return it to hand first
+	# If we're already holding a card, swap it
 	if card_state == CardState.HELD or card_state == CardState.PREVIEW:
 		# Don't pick the same card twice
 		if held_card == card:
 			return
 
-		# Return the previous card to its position
-		_return_card_to_source()
-		print("State: Swapping cards - returned previous card to hand")
+		# SWAP: Return old card to END of hand, then pick new card
+		_return_card_to_end()
+		print("State: Swapping cards - old card moved to end")
 
 		# Emit signal that cards were swapped
 		card_swapped.emit()
 
 	held_card = card
 	held_card_source_index = card.get_index()
-	held_card_source_position = card.position
-	held_card_source_rotation = card.rotation_degrees
-	held_card_source_scale = card.scale
 
 	# Get PooledCard from hand array
 	if held_card_source_index < hand.size():
 		held_card_pooled = hand[held_card_source_index]
+	else:
+		push_error("PlayHand: Card index %d out of range (hand size: %d)" % [held_card_source_index, hand.size()])
+		return
 
-	# Create preview ghost
+	# Create preview ghost (reparents PooledCard to hex_map)
 	_create_preview_ghost()
 
-	# Hide source card in hand and block mouse input so clicks pass through
-	held_card.modulate = Color(1, 1, 1, 0.3)  # Make semi-transparent
-	held_card.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Let clicks pass through
+	# Hide the wrapper (card is now ghost)
+	held_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# Reorganize remaining cards in hand
+	call_deferred("_reorganize_hand")
 
 	# Transition to HELD state
 	card_state = CardState.HELD
@@ -549,7 +562,7 @@ func _event_confirm_place() -> void:
 
 # EVENT: Cancel - Transition * → CANCELED → IDLE
 func _event_cancel() -> void:
-	_return_card_to_source()
+	_return_card_to_end()
 	card_state = CardState.IDLE
 
 	# Hide swap indicator
@@ -719,7 +732,7 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 		# Tile is occupied - return card to hand
 		push_warning("PlayHand: Cannot place card - tile is occupied!")
 		Toast.show_toast(I18n.translate("ui.hand.tile_occupied"), 2.0)
-		_return_card_to_source()
+		_return_card_to_end()
 		return
 
 	# Show toast notification for card placement
@@ -758,36 +771,39 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 
 	print("Card placed on tile ", tile_coords, " at world pos ", world_pos)
 
-func _return_card_to_source() -> void:
+func _return_card_to_end() -> void:
 	if held_card == null or held_card_pooled == null:
 		return
 
-	# Reparent the PooledCard back to the hand wrapper
+	# Reparent the PooledCard back to the hand wrapper (from hex_map)
 	if held_card_pooled.get_parent():
 		held_card_pooled.get_parent().remove_child(held_card_pooled)
 	held_card.add_child(held_card_pooled)
 
-	# Reset PooledCard transform (accounting for wrapper padding)
+	# Reset PooledCard transform to its proper position within the wrapper
 	held_card_pooled.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
 	held_card_pooled.rotation = 0
 	held_card_pooled.scale = Vector2.ONE
 	held_card_pooled.modulate = Color.WHITE
 
-	# Restore wrapper visibility and mouse filter
-	held_card.modulate = Color(1, 1, 1, 1)
-	held_card.mouse_filter = Control.MOUSE_FILTER_PASS  # Re-enable mouse input
+	# Re-enable mouse input on wrapper
+	held_card.mouse_filter = Control.MOUSE_FILTER_PASS
 
-	# Animate wrapper back to source position
-	var tween = create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(held_card, "position", held_card_source_position, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
-	tween.tween_property(held_card, "rotation_degrees", held_card_source_rotation, 0.3).set_ease(Tween.EASE_OUT)
-	tween.tween_property(held_card, "scale", held_card_source_scale, 0.2).set_ease(Tween.EASE_OUT)
+	# Update hand array: remove card from old position and add to end
+	if held_card_source_index >= 0 and held_card_source_index < hand.size():
+		hand.remove_at(held_card_source_index)
+	hand.append(held_card_pooled)
+
+	# Move wrapper to END of container (rightmost position)
+	card_container.move_child(held_card, -1)
 
 	# Clean up
 	_destroy_preview_ghost()
 	held_card = null
 	held_card_pooled = null
+
+	# Reorganize hand to fan properly with card at end
+	call_deferred("_reorganize_hand")
 
 # Clear all cards from display
 func clear_hand_display() -> void:
@@ -1108,7 +1124,7 @@ func _on_mulligan_pressed() -> void:
 			continue
 
 		hand.append(card)
-		display_card(card, i)
+		display_card(card, hand.size() - 1)
 
 	# Re-add bonus cards to hand
 	for bonus_card in bonus_cards:
