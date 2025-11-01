@@ -396,6 +396,10 @@ func _update_highlight():
 			var world_pos = tile_renderer._tile_to_world_pos(hovered_tile)
 			hex_highlight.global_position = world_pos
 
+			# Set z-index above tiles but below entities
+			# Tiles use z_index = tile_y, highlight should be just above
+			hex_highlight.z_index = hovered_tile.y + 500
+
 			# Keep sprite centered (default for Sprite2D)
 			hex_highlight.centered = true
 		else:

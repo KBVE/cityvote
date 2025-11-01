@@ -274,6 +274,10 @@ func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 		path_visualizer = Node2D.new()
 		path_visualizer.set_script(PathVisualizerScript)
 
+		# Set z-index high enough to be above all entities
+		# Use 2000 which is above tiles (0-500) and entities (1000+)
+		path_visualizer.z_index = 2000
+
 		# Add to parent so it's visible
 		var parent = get_parent()
 		if parent:
@@ -285,16 +289,14 @@ func _advance_to_next_waypoint():
 		return
 
 	var next_tile = current_path[path_index]
-	var hex_map = get_parent()
-	if hex_map and hex_map.tile_map:
-		var next_pos = hex_map.tile_map.map_to_local(next_tile)
+	if Cache.tile_map:
+		var next_pos = Cache.tile_map.map_to_local(next_tile)
 		move_to(next_pos)
 
 ## Update z-index based on current tile position for proper isometric layering
 func _update_z_index() -> void:
-	var hex_map = get_parent()
-	if hex_map and hex_map.tile_map:
-		var tile_coords = hex_map.tile_map.local_to_map(position)
+	if Cache.tile_map:
+		var tile_coords = Cache.tile_map.local_to_map(position)
 		z_index = Z_INDEX_BASE + tile_coords.y + Z_INDEX_NPC_OFFSET
 
 func _process(delta):

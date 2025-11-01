@@ -117,6 +117,9 @@ func _initialize_game() -> void:
 	ChunkManager.set_camera(camera)
 	ChunkManager.set_tile_map(hex_map.tile_map)
 
+	# Setup Cache with tilemap reference for global access
+	Cache.set_tile_map(hex_map.tile_map)
+
 	# Reveal starting chunks around camera/cities
 	_reveal_starting_chunks()
 

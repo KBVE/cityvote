@@ -23,10 +23,27 @@ var fonts: Dictionary = {}
 # Preloaded shaders for effects
 var shaders: Dictionary = {}
 
+# ===== GAME REFERENCES =====
+# Central references to key game systems (set by main.gd)
+var tile_map = null  # TileMapCompat wrapper for coordinate conversion
+
 func _ready():
 	_load_fonts()
 	_load_shaders()
 	_load_strings()
+
+# Set tile_map reference (called by main.gd after hex_map initializes)
+func set_tile_map(tmap) -> void:
+	if tmap == null:
+		push_error("Cache: Attempted to set null tile_map reference")
+		return
+	tile_map = tmap
+
+# Get tile_map reference
+func get_tile_map():
+	if tile_map == null:
+		push_error("Cache: tile_map not initialized - call set_tile_map() first")
+	return tile_map
 
 # Load all fonts
 func _load_fonts():
