@@ -38,25 +38,39 @@ func _process(_delta: float) -> void:
 # === PUBLIC API ===
 
 ## Initialize map cache (call once at startup)
+## PROCEDURAL WORLD: No initialization needed - chunks are loaded on-demand
 func init_map(hex_map: Node) -> void:
 	if not pathfinding_system:
 		push_error("NpcPathfindingBridge: Not initialized!")
 		return
 
-	# Read directly from map_data array (memory) instead of TileMap (which may not be rendered yet)
-	var map_data = hex_map.map_data
-	for y in range(MapConfig.MAP_HEIGHT):
-		for x in range(MapConfig.MAP_WIDTH):
-			var tile_type_str = map_data[y][x]
+	# PROCEDURAL WORLD: Skip full map initialization
+	# Terrain cache is populated incrementally as chunks are generated
+	# The WorldGenerator provides terrain data on-demand
+	print("NpcPathfindingBridge: init_map called - using on-demand chunk loading (infinite world)")
+	print("NpcPathfindingBridge: Map initialized for infinite world (0 tiles pre-loaded, chunks loaded on-demand)")
 
-			# Map tile_type string to terrain type string (for terrain_cache)
-			# For NPCs, land is walkable (opposite of ships)
-			if tile_type_str == "water":  # Water
-				pathfinding_system.set_tile(x, y, "water")  # Water (not walkable for NPCs)
-			else:  # Land (all grasslands, cities, villages)
-				pathfinding_system.set_tile(x, y, "land")  # Land (walkable for NPCs)
+## Load a chunk into the pathfinding terrain cache (for procedural world)
+func load_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
+	if not pathfinding_system:
+		return
 
-	print("NpcPathfindingBridge: Map initialized from map_data array (%d tiles)" % MapConfig.MAP_TOTAL_TILES)
+	# Convert chunk tile data to terrain cache format
+	# For NPCs: land is walkable, water is not (opposite of ships)
+	# tile_data contains: {tile_index: int, x: int, y: int}
+	# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
+	for tile in tile_data:
+		var x = tile["x"]
+		var y = tile["y"]
+		var tile_index = tile["tile_index"]
+
+		# Set terrain type in Rust pathfinding cache
+		if tile_index == 4:
+			pathfinding_system.set_tile(x, y, "water")  # Not walkable for NPCs
+		else:
+			pathfinding_system.set_tile(x, y, "land")  # Walkable for NPCs
+
+	print("NpcPathfindingBridge: Loaded chunk %v (%d tiles) into pathfinding cache" % [chunk_coords, tile_data.size()])
 
 ## Request pathfinding for an NPC (async, callback receives result)
 func request_path(npc_id: int, start: Vector2i, goal: Vector2i, callback: Callable) -> void:

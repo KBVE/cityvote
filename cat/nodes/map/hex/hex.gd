@@ -28,16 +28,13 @@ class TileMapCompat extends RefCounted:
 		return renderer._tile_to_world_pos(map_coords)
 
 	func get_cell_source_id(layer: int, coords: Vector2i) -> int:
-		# Get tile type from parent's get_tile_type_at_coords
+		# Get tile index from parent's get_tile_type_at_coords (now returns int)
 		if not parent_hex:
 			return -1
-		var tile_type = parent_hex.get_tile_type_at_coords(coords)
-		if tile_type == "":
-			return -1
-		# Return tile index (which matches old source_id)
-		if tile_type in parent_hex.tile_type_to_index:
-			return parent_hex.tile_type_to_index[tile_type]
-		return -1
+		var tile_index = parent_hex.get_tile_type_at_coords(coords)
+		# tile_index: 0 = water, 1-6 = grassland variants
+		# Return tile_index directly (it IS the source_id)
+		return tile_index
 
 	func get_parent() -> Node:
 		# Return the parent of the renderer (which is the Hex node)
@@ -73,9 +70,6 @@ var tile_textures = {
 	9: preload("res://nodes/map/hex/grassland_village1/grassland_village1.png")
 }
 
-# Map data - stores tile type names (2D array [y][x])
-var map_data = []
-
 # Card data - stores cards placed on tiles
 var card_data: Dictionary = {}  # tile_coords -> {sprite, suit, value}
 
@@ -85,16 +79,25 @@ var hovered_tile: Vector2i = Vector2i(-1, -1)
 # Camera reference for chunk culling
 var camera: Camera2D = null
 
+# References to managers
+var chunk_manager = null  # ChunkManager reference
+var chunk_pool: ChunkPool = null  # ChunkPool instance
+
+# Rust world generator
+var world_generator = null  # WorldGenerator instance (from Rust)
+
 # Track which chunks are currently rendered
-var rendered_chunks: Dictionary = {}  # chunk_index -> true
+var rendered_chunks: Dictionary = {}  # chunk_coords (Vector2i) -> Array[MultiMeshInstance2D]
 
 # Chunk rendering settings
-var chunk_render_distance: int = 3  # Render chunks within N chunks of camera
+var chunk_render_distance: int = MapConfig.CHUNK_RENDER_DISTANCE
 var last_camera_chunk: Vector2i = Vector2i(-999, -999)  # Track which chunk camera was in
 
 # Performance optimization settings
-var max_chunks_per_frame: int = 4  # Limit chunk renders per frame to avoid lag spikes
+var max_chunks_per_frame: int = 8  # Limit chunk renders per frame to avoid lag spikes (increased for smoother loading)
+var max_chunk_generations_per_frame: int = 2  # Limit chunk generations per frame to avoid blocking
 var chunk_render_queue: Array = []  # Queue for deferred chunk rendering
+var chunk_generation_queue: Array = []  # Queue for deferred chunk generation
 
 # Signal emitted when initial chunks around camera are fully rendered
 signal initial_chunks_ready()
@@ -105,28 +108,80 @@ func _ready():
 	tile_map = TileMapCompat.new(tile_renderer)
 	tile_map.parent_hex = self
 
-	# Initialize a simple test map (async to prevent UI blocking)
-	_generate_test_map_async()
+	# Initialize ChunkPool
+	chunk_pool = ChunkPool.new()
+	add_child(chunk_pool)
 
-func _generate_test_map_async():
-	await _generate_test_map()
-	# Don't render all tiles at startup!
-	# Instead, we'll render chunks dynamically based on camera position
-	print("Hex: Map generation complete. Deferring chunk rendering until camera is available.")
+	# Initialize Rust WorldGenerator
+	world_generator = ClassDB.instantiate("WorldGenerator")
+	if world_generator:
+		world_generator.set_seed(MapConfig.world_seed)
+		print("Hex: WorldGenerator initialized with seed: ", MapConfig.world_seed)
+	else:
+		push_error("Hex: Failed to instantiate WorldGenerator! Make sure Rust extension is loaded.")
+
+	print("Hex: Infinite world initialized. Chunks will generate on-demand.")
+
+## Set chunk manager reference and connect signals
+func set_chunk_manager(manager) -> void:
+	chunk_manager = manager
+	if chunk_manager:
+		chunk_manager.chunk_requested.connect(_on_chunk_requested)
+		print("Hex: ChunkManager connected")
+
+## Handle chunk generation requests from ChunkManager
+func _on_chunk_requested(chunk_coords: Vector2i) -> void:
+	if not world_generator:
+		push_error("Hex: Cannot generate chunk - WorldGenerator not initialized!")
+		return
+
+	# Check if already loaded or queued
+	if chunk_pool.is_chunk_loaded(chunk_coords):
+		return
+
+	# Check if already in generation queue
+	for queued_chunk in chunk_generation_queue:
+		if queued_chunk == chunk_coords:
+			return
+
+	# Add to generation queue
+	chunk_generation_queue.append(chunk_coords)
+
+## Generate a single chunk (called from queue processor)
+func _generate_chunk(chunk_coords: Vector2i) -> void:
+	# Generate chunk using Rust (source of truth - uses hex grid coordinates)
+	var tile_data = world_generator.generate_chunk(chunk_coords.x, chunk_coords.y)
+
+	if not tile_data or tile_data.size() != MapConfig.CHUNK_SIZE * MapConfig.CHUNK_SIZE:
+		push_error("Hex: Chunk generation failed for %s" % chunk_coords)
+		return
+
+	# Load into pool
+	var chunk = chunk_pool.load_chunk(chunk_coords, tile_data)
+
+	# Load chunk into pathfinding terrain caches (for both ship and NPC pathfinding)
+	if has_node("/root/ShipPathfindingBridge"):
+		get_node("/root/ShipPathfindingBridge").load_chunk(chunk_coords, tile_data)
+	if has_node("/root/NpcPathfindingBridge"):
+		get_node("/root/NpcPathfindingBridge").load_chunk(chunk_coords, tile_data)
+
+	# Queue for rendering
+	chunk_render_queue.append({
+		"chunk_coords": chunk_coords,
+		"render": true
+	})
+
+	print("Hex: Chunk %s generated and queued for render (%d tiles)" % [chunk_coords, tile_data.size()])
 
 func _process(delta: float) -> void:
+	# OPTIMIZATION: Process queued chunk generation (limit per frame to avoid lag spikes)
+	_process_chunk_generation_queue()
+
 	# OPTIMIZATION: Process queued chunk renders (limit per frame to avoid lag spikes)
 	_process_chunk_queue()
 
-	# Update visible chunks only when camera crosses chunk boundaries
-	if camera:
-		var camera_tile = tile_renderer.world_to_tile(camera.global_position)
-		var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
-
-		# Only update if camera moved to a different chunk
-		if camera_chunk != last_camera_chunk:
-			_update_visible_chunks()
-			last_camera_chunk = camera_chunk
+	# NOTE: Chunk visibility updates are now handled by ChunkManager.update_visible_chunks()
+	# which is called from main.gd's _process() function
 
 	# Handle mouse hover highlight
 	var mouse_pos = get_global_mouse_position()
@@ -136,21 +191,34 @@ func _process(delta: float) -> void:
 		hovered_tile = tile_coords
 		_update_highlight()
 
+## Process queued chunk generation to spread work across frames
+func _process_chunk_generation_queue() -> void:
+	var chunks_generated_this_frame = 0
+
+	while chunk_generation_queue.size() > 0 and chunks_generated_this_frame < max_chunk_generations_per_frame:
+		var chunk_coords = chunk_generation_queue.pop_front()
+		_generate_chunk(chunk_coords)
+		chunks_generated_this_frame += 1
+
 ## Process queued chunk renders to spread work across frames
 func _process_chunk_queue() -> void:
 	var chunks_rendered_this_frame = 0
 
 	while chunk_render_queue.size() > 0 and chunks_rendered_this_frame < max_chunks_per_frame:
 		var chunk_data = chunk_render_queue.pop_front()
-		var chunk_index = chunk_data["index"]
 		var render = chunk_data["render"]
 
+		# Get chunk coordinates
+		if not chunk_data.has("chunk_coords"):
+			push_error("Hex: Invalid chunk_data format - missing chunk_coords")
+			continue
+
+		var chunk_coords: Vector2i = chunk_data["chunk_coords"]
+
 		if render:
-			_render_chunk_immediate(chunk_index)
-			rendered_chunks[chunk_index] = true
+			_render_chunk_immediate(chunk_coords)
 		else:
-			_unrender_chunk_immediate(chunk_index)
-			rendered_chunks.erase(chunk_index)
+			_unrender_chunk_immediate(chunk_coords)
 
 		chunks_rendered_this_frame += 1
 
@@ -169,243 +237,116 @@ func set_camera(cam: Camera2D) -> void:
 		print("Hex: Camera reference set at position ", camera.global_position)
 		print("Hex: Camera in chunk ", last_camera_chunk)
 		print("Hex: Enabling camera-based chunk culling with render distance: ", chunk_render_distance, " chunks")
-		# Immediately render chunks around camera
-		_update_visible_chunks()
+		# NOTE: Chunk rendering is now handled by ChunkManager via chunk_requested signals
+		# The old _update_visible_chunks() is no longer used for initial rendering
 	else:
 		push_warning("Hex: Camera is null, cannot render chunks!")
 
-func _generate_test_map():
-	# Create map using global MapConfig constants
-	var grassland_types = ["grassland0", "grassland1", "grassland2", "grassland3", "grassland4", "grassland5"]
-	var map_width = MapConfig.MAP_WIDTH
-	var map_height = MapConfig.MAP_HEIGHT
-
-	# Initialize with water everywhere first
-	for y in range(map_height):
-		var row = []
-		for x in range(map_width):
-			row.append("water")
-		map_data.append(row)
-
-	# Generate multiple continents and islands for variety
-	print("Hex: Generating continents and islands...")
-
-	# Define landmasses (center_x, center_y, radius, noise_scale)
-	var landmasses = [
-		# Two large continents (opposite corners)
-		{"center": Vector2(map_width * 0.25, map_height * 0.25), "radius": 180.0, "noise": 20.0, "peninsulas": 5, "type": "large_continent"},
-		{"center": Vector2(map_width * 0.75, map_height * 0.75), "radius": 180.0, "noise": 20.0, "peninsulas": 5, "type": "large_continent"},
-
-		# Smaller continents (mid-sized landmasses)
-		{"center": Vector2(map_width * 0.70, map_height * 0.30), "radius": 100.0, "noise": 15.0, "peninsulas": 4, "type": "small_continent"},
-		{"center": Vector2(map_width * 0.30, map_height * 0.70), "radius": 100.0, "noise": 15.0, "peninsulas": 4, "type": "small_continent"},
-		{"center": Vector2(map_width * 0.50, map_height * 0.50), "radius": 90.0, "noise": 12.0, "peninsulas": 3, "type": "small_continent"},
-
-		# Small islands (scattered around)
-		{"center": Vector2(map_width * 0.15, map_height * 0.60), "radius": 50.0, "noise": 8.0, "peninsulas": 2, "type": "island"},
-		{"center": Vector2(map_width * 0.85, map_height * 0.50), "radius": 45.0, "noise": 7.0, "peninsulas": 2, "type": "island"},
-		{"center": Vector2(map_width * 0.50, map_height * 0.15), "radius": 40.0, "noise": 6.0, "peninsulas": 2, "type": "island"},
-		{"center": Vector2(map_width * 0.60, map_height * 0.85), "radius": 38.0, "noise": 6.0, "peninsulas": 2, "type": "island"},
-	]
-
-	print("Hex: Creating ", landmasses.size(), " landmasses (2 large continents, 3 smaller continents, 4 islands)")
-
-	# Generate each landmass
-	var landmass_index = 0
-	for landmass in landmasses:
-		landmass_index += 1
-		var center = landmass["center"]
-		var base_radius = landmass["radius"]
-		var noise_scale = landmass["noise"]
-		var peninsula_count = landmass["peninsulas"]
-
-		# Process in chunks to avoid blocking (yield every 64 rows)
-		for y in range(map_height):
-			# Yield control every 64 rows to keep UI responsive
-			if y % 64 == 0:
-				await get_tree().process_frame
-
-			for x in range(map_width):
-				# Skip if already land (prevents overlapping erasure)
-				if map_data[y][x] != "water":
-					continue
-
-				# Distance from landmass center
-				var dx = x - center.x
-				var dy = y - center.y
-				var distance = sqrt(dx * dx + dy * dy)
-
-				# Add noise for irregular coastline
-				var noise = sin(x * 0.1 + y * 0.08) * noise_scale + cos(x * 0.08 - y * 0.1) * (noise_scale * 0.8)
-
-				# Create peninsulas and bays
-				var angle = atan2(dy, dx)
-				var peninsula_noise = sin(angle * float(peninsula_count)) * (noise_scale * 1.2)
-
-				# Combined radius with noise
-				var effective_radius = base_radius + noise + peninsula_noise
-
-				# If within radius, make it land
-				if distance < effective_radius:
-					var grassland = grassland_types[randi() % grassland_types.size()]
-					map_data[y][x] = grassland
-
-		print("Hex: Generated landmass %d/%d (%s)" % [landmass_index, landmasses.size(), landmass["type"]])
-
-	print("Hex: Land generation complete")
-
-	# Place special tiles on land using optimized region sampling
-	_place_special_tiles_optimized()
-
-## Update which chunks should be visible based on camera position
-func _update_visible_chunks() -> void:
-	if not camera:
-		return
-
-	# Get camera position in world coordinates
-	var camera_pos = camera.global_position
-
-	# Convert to tile coordinates
-	var camera_tile = tile_renderer.world_to_tile(camera_pos)
-
-	# Get the chunk the camera is in
-	var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
-
-	# OPTIMIZATION: Use Dictionary as Set for O(1) lookups
-	var chunks_to_render: Dictionary = {}
-
-	for dy in range(-chunk_render_distance, chunk_render_distance + 1):
-		for dx in range(-chunk_render_distance, chunk_render_distance + 1):
-			var chunk_coords = Vector2i(camera_chunk.x + dx, camera_chunk.y + dy)
-
-			# Check if chunk is in bounds
-			if MapConfig.is_chunk_in_bounds(chunk_coords):
-				var chunk_index = MapConfig.chunk_coords_to_index(chunk_coords)
-				chunks_to_render[chunk_index] = true
-
-	# OPTIMIZATION: Queue new chunks for rendering (spread across frames)
-	var newly_queued = 0
-	for chunk_index in chunks_to_render:
-		if not rendered_chunks.has(chunk_index) and not _is_in_queue(chunk_index):
-			chunk_render_queue.append({"index": chunk_index, "render": true})
-			newly_queued += 1
-
-	# OPTIMIZATION: Queue chunks for unrendering
-	var chunks_to_unrender: Array = []
-	for chunk_index in rendered_chunks.keys():
-		if not chunks_to_render.has(chunk_index):
-			chunks_to_unrender.append(chunk_index)
-
-	# Queue unrender operations
-	for chunk_index in chunks_to_unrender:
-		if not _is_in_queue(chunk_index):
-			chunk_render_queue.append({"index": chunk_index, "render": false})
-
-	# Debug output on first call or when chunks change
-	if newly_queued > 0 or chunks_to_unrender.size() > 0:
-		print("Hex: Camera at tile %v (chunk %v). Queued: %d new, %d to unrender, queue size: %d" % [
-			camera_tile, camera_chunk, newly_queued, chunks_to_unrender.size(), chunk_render_queue.size()
-		])
-
-## Check if chunk is already in render queue
-func _is_in_queue(chunk_index: int) -> bool:
-	for chunk_data in chunk_render_queue:
-		if chunk_data["index"] == chunk_index:
-			return true
-	return false
+# LEGACY FUNCTIONS REMOVED - Chunk visibility now handled by ChunkManager
+# Old _update_visible_chunks() and _is_in_queue() removed in favor of signal-based system
 
 ## Render a specific chunk by index (immediate, used by queue processor)
-func _render_chunk_immediate(chunk_index: int) -> void:
-	var chunk_coords = MapConfig.chunk_index_to_coords(chunk_index)
-	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
+## Render a chunk immediately (called from queue processor)
+func _render_chunk_immediate(chunk_coords: Vector2i) -> void:
+	# Get chunk data from pool
+	var chunk = chunk_pool.get_chunk(chunk_coords)
+	if not chunk:
+		push_error("Hex: Cannot render chunk %s - not loaded in pool!" % chunk_coords)
+		return
 
+	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
 	var tile_data_array = []
 
-	# Gather all tiles in this chunk
-	for local_y in range(MapConfig.CHUNK_SIZE):
-		var y = chunk_start.y + local_y
-		if y >= map_data.size():
-			break
+	# Debug: Count terrain types in received data
+	var water_count = 0
+	var land_count = 0
 
-		for local_x in range(MapConfig.CHUNK_SIZE):
-			var x = chunk_start.x + local_x
-			if x >= map_data[y].size():
-				break
+	# Convert chunk terrain_data to render format (int-based)
+	for tile_dict in chunk.terrain_data:
+		var local_x = tile_dict["x"]
+		var local_y = tile_dict["y"]
+		var tile_index = tile_dict["tile_index"]  # Atlas index: 0-3,5-6 = grassland, 4 = water
 
-			var tile_type = map_data[y][x]
+		# Count terrain types (atlas index 4 = water)
+		if tile_index == 4:
+			water_count += 1
+		else:
+			land_count += 1
 
-			# Skip water tiles - they're transparent, water shader shows underneath
-			if tile_type == "water":
-				continue
+		# Calculate world tile coordinates
+		var world_x = chunk_start.x + local_x
+		var world_y = chunk_start.y + local_y
 
-			var tile_index = -1
+		# Skip water tiles (atlas index 4) - they're transparent, water shader shows underneath
+		if tile_index == 4:
+			continue
 
-			if tile_type in tile_type_to_index:
-				tile_index = tile_type_to_index[tile_type]
-			elif tile_type == "":
-				# Empty tile - this should never happen if map generation is correct
-				push_warning("Hex: EMPTY tile type at (%d,%d) in chunk %d" % [x, y, chunk_index])
-				tile_index = -1
-			else:
-				# Unknown tile type - warn once per type
-				push_warning("Hex: Unknown tile type '%s' at (%d,%d) in chunk %d - skipping" % [tile_type, x, y, chunk_index])
-				tile_index = -1
+		tile_data_array.append({
+			"x": world_x,
+			"y": world_y,
+			"tile_index": tile_index,
+			"flip_flags": 0  # No flipping for now
+		})
 
-			# Generate random flip flags for variation (0-7)
-			# This creates 8 different orientations per tile!
-			# Disabled for now - no flipping
-			var flip_flags = 0  # randi() % 8
+	print("Hex: Chunk %s - Received Water: %d, Land: %d, Rendering: %d tiles" % [chunk_coords, water_count, land_count, tile_data_array.size()])
 
-			tile_data_array.append({
-				"x": x,
-				"y": y,
-				"tile_index": tile_index,
-				"flip_flags": flip_flags
-			})
+	# Render chunk via CustomTileRenderer (using a unique chunk index)
+	# For infinite world, we'll use a hash of chunk coords as the index
+	var chunk_hash = _chunk_coords_to_hash(chunk_coords)
+	tile_renderer.render_chunk(chunk_hash, tile_data_array)
 
-	# Render chunk via CustomTileRenderer
-	tile_renderer.render_chunk(chunk_index, tile_data_array)
+	# Track as rendered
+	rendered_chunks[chunk_coords] = true
 
-## Unrender a specific chunk by index (immediate)
-func _unrender_chunk_immediate(chunk_index: int) -> void:
-	tile_renderer.unrender_chunk(chunk_index)
+## Unrender a specific chunk by coordinates (immediate)
+func _unrender_chunk_immediate(chunk_coords: Vector2i) -> void:
+	var chunk_hash = _chunk_coords_to_hash(chunk_coords)
+	tile_renderer.unrender_chunk(chunk_hash)
+	rendered_chunks.erase(chunk_coords)
+	print("Hex: Unrendered chunk %s" % chunk_coords)
 
-# Query function to get tile at specific coordinates
-func get_tile_at(x: int, y: int) -> String:
-	if y >= 0 and y < map_data.size() and x >= 0 and x < map_data[y].size():
-		return map_data[y][x]
-	return ""
+## Convert chunk coordinates to a unique hash for renderer indexing
+func _chunk_coords_to_hash(chunk_coords: Vector2i) -> int:
+	# Simple hash: combine x and y with bitwise operations
+	# This works for infinite coordinates (positive and negative)
+	return (chunk_coords.y << 16) | (chunk_coords.x & 0xFFFF)
 
-# Get tile type from coordinates (uses map_data, not renderer)
-func get_tile_type_at_coords(coords: Vector2i) -> String:
+## Helper function to convert terrain string to tile index
+# Query function to get tile at specific coordinates (queries chunk pool)
+# Returns atlas tile_index (int): 0-3,5-6 = grassland variants, 4 = water
+func get_tile_at(x: int, y: int) -> int:
+	if not world_generator:
+		return 4  # Default to water if no generator (atlas index 4)
+
+	# Get proper world position using tile renderer's conversion (accounts for hex staggering)
+	var world_pos = tile_renderer._tile_to_world_pos(Vector2i(x, y))
+	return world_generator.get_terrain_at(world_pos.x, world_pos.y)
+
+# Get tile type from coordinates
+# Returns atlas tile_index (int): 0-3,5-6 = grassland variants, 4 = water
+func get_tile_type_at_coords(coords: Vector2i) -> int:
 	return get_tile_at(coords.x, coords.y)
 
 func _update_highlight():
-	# Get tile type at hovered coordinates
-	var tile_type = get_tile_type_at_coords(hovered_tile)
+	# Get tile index at hovered coordinates (atlas index: 0-3,5-6 = grassland, 4 = water)
+	var tile_index = get_tile_type_at_coords(hovered_tile)
 
-	if tile_type != "" and tile_type in tile_type_to_index:
-		var tile_index = tile_type_to_index[tile_type]
+	# Valid tile with loaded texture - show highlight
+	if tile_index >= 0 and tile_index in tile_textures:
+		hex_highlight.visible = true
+		hex_highlight.texture = tile_textures[tile_index]
 
-		# Valid tile with loaded texture - show highlight
-		if tile_index in tile_textures:
-			hex_highlight.visible = true
-			hex_highlight.texture = tile_textures[tile_index]
+		# Convert tile coords to world position
+		var world_pos = tile_renderer._tile_to_world_pos(hovered_tile)
+		hex_highlight.global_position = world_pos
 
-			# Convert tile coords to world position
-			var world_pos = tile_renderer._tile_to_world_pos(hovered_tile)
-			hex_highlight.global_position = world_pos
+		# Set z-index above tiles but below entities
+		hex_highlight.z_index = hovered_tile.y + Cache.Z_INDEX_HEX_HIGHLIGHT_OFFSET
 
-			# Set z-index above tiles but below entities
-			hex_highlight.z_index = hovered_tile.y + Cache.Z_INDEX_HEX_HIGHLIGHT_OFFSET
-
-			# Keep sprite centered (default for Sprite2D)
-			hex_highlight.centered = true
-		else:
-			# Texture not loaded - hide highlight
-			hex_highlight.visible = false
+		# Keep sprite centered (default for Sprite2D)
+		hex_highlight.centered = true
 	else:
-		# No tile - hide highlight
+		# No tile or texture not loaded - hide highlight
 		hex_highlight.visible = false
 
 # Register a card placed on a tile (accepts PooledCard which is now MeshInstance2D)
@@ -472,8 +413,9 @@ func has_card_at_tile(tile_coords: Vector2i) -> bool:
 
 # Validate joker card terrain requirements
 func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
-	var tile_type = get_tile_type_at_coords(tile_coords)
-	var is_water = (tile_type == "water")
+	var tile_index = get_tile_type_at_coords(tile_coords)
+	# Atlas index 4 = water, all others (0-3, 5-6) = grassland variants
+	var is_water = (tile_index == 4)
 	var is_land = not is_water
 
 	# Check terrain requirements per joker type
@@ -494,74 +436,4 @@ func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
 	return true
 
 # Optimized special tile placement using chunk-based scanning
-func _place_special_tiles_optimized():
-	var map_width = MapConfig.MAP_WIDTH
-	var map_height = MapConfig.MAP_HEIGHT
-
-	print("Hex: Placing special tiles using optimized chunk-based sampling...")
-
-	var land_tile_samples = _sample_land_tiles_by_chunks()
-
-	if land_tile_samples.size() == 0:
-		push_warning("Hex: No land tiles found for special tile placement!")
-		return
-
-	print("Hex: Sampled ", land_tile_samples.size(), " land tiles from chunk-based search")
-
-	# Place city1 in north region (top 1/3 of map)
-	var north_tiles = land_tile_samples.filter(func(t): return t.y < map_height / 3)
-	if north_tiles.size() > 0:
-		var city1_tile = north_tiles[randi() % north_tiles.size()]
-		map_data[city1_tile.y][city1_tile.x] = "city1"
-		print("Hex: Placed city1 at (", city1_tile.x, ", ", city1_tile.y, ")")
-
-	# Place city2 in south region (bottom 1/3 of map)
-	var south_tiles = land_tile_samples.filter(func(t): return t.y > map_height * 2 / 3)
-	if south_tiles.size() > 0:
-		var city2_tile = south_tiles[randi() % south_tiles.size()]
-		map_data[city2_tile.y][city2_tile.x] = "city2"
-		print("Hex: Placed city2 at (", city2_tile.x, ", ", city2_tile.y, ")")
-
-	# Place village1 in center region
-	var center_x = map_width / 2
-	var center_y = map_height / 2
-	var quarter_width = map_width / 4
-	var quarter_height = map_height / 4
-
-	var center_tiles = land_tile_samples.filter(func(t):
-		return abs(t.y - center_y) < quarter_height and abs(t.x - center_x) < quarter_width
-	)
-	if center_tiles.size() > 0:
-		var village1_tile = center_tiles[randi() % center_tiles.size()]
-		map_data[village1_tile.y][village1_tile.x] = "village1"
-		print("Hex: Placed village1 at (", village1_tile.x, ", ", village1_tile.y, ")")
-
-	print("Hex: Special tile placement complete")
-
-# Sample land tiles using chunk-based approach
-func _sample_land_tiles_by_chunks() -> Array[Vector2i]:
-	var land_tiles: Array[Vector2i] = []
-
-	var chunks_to_sample = max(100, MapConfig.TOTAL_CHUNKS / 10)
-	var chunk_width = MapConfig.CHUNKS_WIDE
-	var chunk_height = MapConfig.CHUNKS_TALL
-
-	for i in range(chunks_to_sample):
-		var chunk_x = randi() % chunk_width
-		var chunk_y = randi() % chunk_height
-
-		var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
-
-		var samples_per_chunk = 10
-		for j in range(samples_per_chunk):
-			var local_x = randi() % MapConfig.CHUNK_SIZE
-			var local_y = randi() % MapConfig.CHUNK_SIZE
-
-			var x = chunk_start.x + local_x
-			var y = chunk_start.y + local_y
-
-			if y < map_data.size() and x < map_data[y].size():
-				if map_data[y][x] != "water":
-					land_tiles.append(Vector2i(x, y))
-
-	return land_tiles
+# OLD FUNCTIONS REMOVED - Special tiles now handled in procedural generation

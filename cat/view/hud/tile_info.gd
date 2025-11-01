@@ -57,23 +57,18 @@ func _process(_delta: float) -> void:
 	# Convert to tile coordinates
 	var tile_coords = hex_map.tile_map.local_to_map(mouse_world_pos)
 
-	# Check if tile is valid using MapConfig
-	if MapConfig.is_tile_in_bounds(tile_coords):
-		# Valid tile - show info
-		visible = true
-		update_tile_info(tile_coords, mouse_world_pos)
-	else:
-		# Outside map - hide
-		visible = false
+	# In infinite world, all tiles are valid - always show info
+	visible = true
+	update_tile_info(tile_coords, mouse_world_pos)
 
 func update_tile_info(tile_coords: Vector2i, world_pos: Vector2) -> void:
 	# Update coordinates
 	var coords_label = I18n.translate("tile_info.coords")
 	coordinates_label.text = "%s: (%d, %d)" % [coords_label, tile_coords.x, tile_coords.y]
 
-	# Get tile type from hex map
-	var tile_type = hex_map.get_tile_type_at_coords(tile_coords)
-	var display_name = get_tile_display_name(tile_type)
+	# Get tile index from hex map (0 = water, 1-6 = grassland)
+	var tile_index = hex_map.get_tile_type_at_coords(tile_coords)
+	var display_name = get_tile_display_name(tile_index)
 	var type_label = I18n.translate("tile_info.type")
 	tile_type_label.text = "%s: %s" % [type_label, display_name]
 
@@ -88,17 +83,14 @@ func update_tile_info(tile_coords: Vector2i, world_pos: Vector2) -> void:
 	else:
 		_hide_card_info()
 
-func get_tile_display_name(tile_type: String) -> String:
-	if tile_type.begins_with("grassland"):
-		return I18n.translate("tile.grassland")
-	elif tile_type == "water":
+func get_tile_display_name(tile_index: int) -> String:
+	# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
+	if tile_index == 4:
 		return I18n.translate("tile.water")
-	elif tile_type.begins_with("city"):
-		return I18n.translate("tile.city")
-	elif tile_type.begins_with("village"):
-		return I18n.translate("tile.village")
+	elif tile_index >= 0 and tile_index <= 6:
+		return I18n.translate("tile.grassland")
 	else:
-		return tile_type.capitalize()
+		return "Unknown (%d)" % tile_index
 
 func _apply_fonts() -> void:
 	# Get Alagard font from Cache

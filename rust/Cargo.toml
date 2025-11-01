@@ -20,6 +20,7 @@ bevy = { version = "0.17.2", default-features = false, features = [
 bitflags = "2.10.0"
 crossbeam-queue = "0.3.12"
 dashmap = "6.1.0"
+fastnoise-lite = "1.1.1"
 godot = { version = "0.3.5", features = [
     "experimental-wasm",
     "experimental-threads",

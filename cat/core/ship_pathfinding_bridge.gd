@@ -54,34 +54,21 @@ func _on_path_found(ship_ulid: PackedByteArray, path: Array, success: bool, cost
 # === PUBLIC API ===
 
 ## Initialize map cache (call once at startup)
+## PROCEDURAL WORLD: No initialization needed - chunks are loaded on-demand
 func init_map(hex_map: Node) -> void:
 	if not pathfinding_bridge:
 		push_error("ShipPathfindingBridge: Not initialized!")
 		return
 
+	# PROCEDURAL WORLD: Skip full map initialization
+	# Terrain cache is populated incrementally as chunks are generated
+	# The WorldGenerator provides terrain data on-demand
+	print("ShipPathfindingBridge: init_map called - using on-demand chunk loading (infinite world)")
+
+	# Initialize with empty array - terrain will be loaded as chunks are requested
 	var tiles: Array[Dictionary] = []
-
-	# Read directly from map_data array (memory) instead of TileMap (which may not be rendered yet)
-	var map_data = hex_map.map_data
-	for y in range(MapConfig.MAP_HEIGHT):
-		for x in range(MapConfig.MAP_WIDTH):
-			var tile_type_str = map_data[y][x]
-
-			# Convert to axial hex coords and tile type
-			var tile_dict = Dictionary()
-			tile_dict["q"] = x
-			tile_dict["r"] = y
-
-			# Map tile_type string to TileType (0=Water, 1=Land, 2=Obstacle)
-			if tile_type_str == "water":  # Water
-				tile_dict["type"] = 0
-			else:  # Land (all grasslands, cities, villages)
-				tile_dict["type"] = 1
-
-			tiles.append(tile_dict)
-
 	pathfinding_bridge.init_map(tiles)
-	print("ShipPathfindingBridge: Map initialized from map_data array (%d tiles)" % tiles.size())
+	print("ShipPathfindingBridge: Map initialized for infinite world (0 tiles pre-loaded, chunks loaded on-demand)")
 
 ## Check if ship can accept a path request (not already moving)
 func can_ship_request_path(ship_ulid: PackedByteArray) -> bool:
@@ -127,6 +114,33 @@ func remove_ship(ship_ulid: PackedByteArray) -> void:
 		var ulid_key = UlidManager.to_hex(ship_ulid)
 		pathfinding_bridge.remove_ship(ship_ulid)
 		pending_requests.erase(ulid_key)
+
+## Load a chunk into the pathfinding terrain cache (for procedural world)
+func load_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
+	if not pathfinding_bridge:
+		return
+
+	# Convert chunk tile data to pathfinding format
+	var tiles: Array[Dictionary] = []
+	for tile in tile_data:
+		var tile_dict = Dictionary()
+		# tile_data contains: {tile_index: int, x: int, y: int}
+		# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
+		tile_dict["q"] = tile["x"]
+		tile_dict["r"] = tile["y"]
+
+		# Map tile_index to TileType (0=Water, 1=Land, 2=Obstacle)
+		if tile["tile_index"] == 4:
+			tile_dict["type"] = 0  # Water
+		else:
+			tile_dict["type"] = 1  # Land (grasslands, etc.)
+
+		tiles.append(tile_dict)
+
+	# Update pathfinding cache with chunk data
+	if tiles.size() > 0:
+		pathfinding_bridge.update_tiles(tiles)
+		print("ShipPathfindingBridge: Loaded chunk %v (%d tiles) into pathfinding cache" % [chunk_coords, tiles.size()])
 
 ## Mark tile as dirty (will sync on next interval)
 func mark_tile_dirty(coord: Vector2i, tile_type: int) -> void:

@@ -47,9 +47,9 @@ func find_valid_adjacent_water_tiles(
 		if neighbor.x < 0 or neighbor.x >= MapConfig.MAP_WIDTH or neighbor.y < 0 or neighbor.y >= MapConfig.MAP_HEIGHT:
 			continue
 
-		# Check if water tile
-		var tile_type = hex_map.get_tile_type_at_coords(neighbor)
-		if tile_type != "water":
+		# Check if water tile (atlas index 4 = water)
+		var tile_index = hex_map.get_tile_type_at_coords(neighbor)
+		if tile_index != 4:
 			continue
 
 		# Check if occupied (allow current ship's own tile)
@@ -151,9 +151,9 @@ func _is_tile_valid(tile: Vector2i, hex_map, occupied_tiles: Dictionary, current
 	if tile.x < 0 or tile.x >= MapConfig.MAP_WIDTH or tile.y < 0 or tile.y >= MapConfig.MAP_HEIGHT:
 		return false
 
-	# Check if water tile
-	var tile_type = hex_map.get_tile_type_at_coords(tile)
-	if tile_type != "water":
+	# Check if water tile (atlas index 4 = water)
+	var tile_index = hex_map.get_tile_type_at_coords(tile)
+	if tile_index != 4:
 		return false
 
 	# Check if occupied (allow current ship's own tile)

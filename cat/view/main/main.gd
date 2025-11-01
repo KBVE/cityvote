@@ -22,12 +22,8 @@ var zoom_speed = 0.1
 var min_zoom = 0.5
 var max_zoom = 4.0
 
-# Camera bounds (keep camera within land area, away from water border)
-# Map is 50x50 tiles at ~32x28 tile size = ~1600x1400 world coords
-# Water border is 12 tiles (~384 pixels), land area tiles (12,12) to (38,38)
-# Land area in world coords: ~(384, 336) to (~1216, ~1064)
-var camera_min_bounds = Vector2(400, 350)  # Left/top edge of land area
-var camera_max_bounds = Vector2(1200, 1050)  # Right/bottom edge of land area
+# NOTE: Camera bounds removed for infinite world
+# Chunks are generated on-demand based on camera position
 
 # Drag panning variables
 var is_dragging = false
@@ -104,8 +100,8 @@ func _initialize_game() -> void:
 		language_selector.set_map_generation()
 		await get_tree().process_frame
 
-	# Calculate camera bounds based on actual tilemap (must be done first!)
-	_calculate_camera_bounds()
+	# NOTE: Camera bounds not needed for infinite world
+	# Chunks are generated on-demand based on camera position
 
 	# Setup CameraManager with camera reference
 	CameraManager.set_camera(camera)
@@ -113,9 +109,12 @@ func _initialize_game() -> void:
 	# Setup hex_map with camera for chunk culling
 	hex_map.set_camera(camera)
 
-	# Setup ChunkManager with camera and tilemap references
+	# Setup ChunkManager with camera and chunk pool references
 	ChunkManager.set_camera(camera)
-	ChunkManager.set_tile_map(hex_map.tile_map)
+	ChunkManager.set_chunk_pool(hex_map.chunk_pool)
+
+	# Connect HexMap to ChunkManager for chunk generation
+	hex_map.set_chunk_manager(ChunkManager)
 
 	# Setup Cache with tilemap reference for global access
 	Cache.set_tile_map(hex_map.tile_map)
@@ -123,14 +122,17 @@ func _initialize_game() -> void:
 	# Reveal starting chunks around camera/cities
 	_reveal_starting_chunks()
 
+	# Wait a few frames for initial chunks to generate and render
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
+
 	#; TEST
 	# Connect hex_map to play_hand for card placement
 	play_hand.hex_map = hex_map
 	# Connect camera to play_hand for auto-follow
 	play_hand.camera = camera
-	# Pass camera bounds to play_hand for proper clamping (after bounds are calculated)
-	play_hand.camera_min_bounds = camera_min_bounds
-	play_hand.camera_max_bounds = camera_max_bounds
+	# NOTE: Camera bounds not needed for infinite world
 	# Connect hex_map to tile_info for tile hover display
 	tile_info.hex_map = hex_map
 	# Connect camera to topbar for CityVote button
@@ -183,7 +185,8 @@ func _initialize_game() -> void:
 	_spawn_test_kings()
 
 	# Position camera at a city for a nice starting view
-	_position_camera_at_city()
+	# DISABLED: Cities don't exist in procedurally generated world yet
+	# _position_camera_at_city()
 
 	# Connect to joker consumption signal
 	if CardComboBridge:
@@ -236,42 +239,8 @@ func _on_card_placed() -> void:
 func _on_card_cancelled() -> void:
 	print("Card cancelled")
 
-func _calculate_camera_bounds():
-	# Calculate bounds by checking all 4 corners using MapConfig
-	var top_left_tile = Vector2i(0, 0)
-	var top_right_tile = Vector2i(MapConfig.MAP_WIDTH - 1, 0)
-	var bottom_left_tile = Vector2i(0, MapConfig.MAP_HEIGHT - 1)
-	var bottom_right_tile = Vector2i(MapConfig.MAP_WIDTH - 1, MapConfig.MAP_HEIGHT - 1)
-
-	var top_left_world = hex_map.tile_map.map_to_local(top_left_tile)
-	var top_right_world = hex_map.tile_map.map_to_local(top_right_tile)
-	var bottom_left_world = hex_map.tile_map.map_to_local(bottom_left_tile)
-	var bottom_right_world = hex_map.tile_map.map_to_local(bottom_right_tile)
-
-	print("=== CORNER WATER TILES ===")
-	print("Top-Left (0,0): ", top_left_world)
-	print("Top-Right (49,0): ", top_right_world)
-	print("Bottom-Left (0,49): ", bottom_left_world)
-	print("Bottom-Right (49,49): ", bottom_right_world)
-
-	# Account for viewport size
-	var viewport_size = Vector2(subviewport.size)
-	var viewport_half_size = (viewport_size / camera.zoom) / 2.0
-	print("Viewport size: ", viewport_size, " Zoom: ", camera.zoom, " Half size in world: ", viewport_half_size)
-
-	# Find actual min/max from all corners
-	var min_world_x = min(min(top_left_world.x, top_right_world.x), min(bottom_left_world.x, bottom_right_world.x)) + 100
-	var max_world_x = max(max(top_left_world.x, top_right_world.x), max(bottom_left_world.x, bottom_right_world.x)) - 100
-	var min_world_y = min(min(top_left_world.y, top_right_world.y), min(bottom_left_world.y, bottom_right_world.y)) + 50
-	var max_world_y = max(max(top_left_world.y, top_right_world.y), max(bottom_left_world.y, bottom_right_world.y)) - 50
-
-	camera_min_bounds = Vector2(min_world_x, min_world_y) + viewport_half_size
-	camera_max_bounds = Vector2(max_world_x, max_world_y) - viewport_half_size
-
-	print("=== CAMERA ===")
-	print("Camera bounds: ", camera_min_bounds, " to ", camera_max_bounds)
-	print("Camera starting position: ", camera.position)
-	print("Usable camera area width: ", camera_max_bounds.x - camera_min_bounds.x)
+# REMOVED: _calculate_camera_bounds() - Not needed for infinite world
+# Camera bounds are unlimited in procedurally generated infinite world
 
 func _unhandled_input(event):
 	# Forward input events to the SubViewport
@@ -417,19 +386,21 @@ func _input(event):
 
 #### TEST ####
 func _spawn_test_vikings():
-	# Find water tiles and spawn vikings on them
+	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
+	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
 	var water_tiles: Array = []
 
-	# Collect all water tile coordinates using MapConfig
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
+	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
+	var search_radius = 25
+	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
+		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
-			if source_id == MapConfig.SOURCE_ID_WATER:  # Water tile
+			# Use WorldGenerator to check terrain (no tilemap access needed)
+			if hex_map.world_generator and hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
 				water_tiles.append(tile_coords)
 
 	print("=== VIKING SPAWN ===")
-	print("Found ", water_tiles.size(), " water tiles")
+	print("Found ", water_tiles.size(), " water tiles (near camera)")
 
 	if water_tiles.size() < 10:
 		print("Not enough water tiles to spawn vikings")
@@ -848,27 +819,19 @@ func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int
 ## Reveal starting chunks around camera and cities
 func _reveal_starting_chunks() -> void:
 	# Reveal chunks around camera position
-	var camera_tile = hex_map.tile_map.local_to_map(camera.position)
+	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
 	var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
 
 	# Reveal 3x3 area around starting position
 	for dy in range(-1, 2):
 		for dx in range(-1, 2):
 			var chunk_coords = Vector2i(camera_chunk.x + dx, camera_chunk.y + dy)
-			if MapConfig.is_chunk_in_bounds(chunk_coords):
-				ChunkManager.reveal_chunk(chunk_coords)
+			ChunkManager.reveal_chunk(chunk_coords)
 
-	# Also reveal chunks containing cities
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
-			var tile_coords = Vector2i(x, y)
-			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
+	print("Main: Revealed starting chunks around camera chunk: %v" % camera_chunk)
 
-			# If it's a city, reveal its chunk
-			if source_id == 7 or source_id == 8:
-				ChunkManager.reveal_chunk_at_tile(tile_coords)
-
-	print("Main: Revealed starting chunks")
+	# Trigger initial chunk generation
+	ChunkManager.update_visible_chunks()
 
 ## Position camera at a city on startup for a nice view
 func _position_camera_at_city() -> void:
@@ -897,13 +860,10 @@ func _position_camera_at_city() -> void:
 	else:
 		print("Main: No city found, camera remains at default position")
 
-# Clamp camera position within bounds
-# TODO: Implement smooth wrapping with duplicate tiles at edges for seamless looping
+# Camera position clamping - DISABLED for infinite world
+# Chunks are generated on-demand, so camera can move freely
 func _clamp_camera_position(pos: Vector2) -> Vector2:
-	return Vector2(
-		clamp(pos.x, camera_min_bounds.x, camera_max_bounds.x),
-		clamp(pos.y, camera_min_bounds.y, camera_max_bounds.y)
-	)
+	return pos  # No clamping needed for infinite world
 
 # Apply wave shader to viking ships
 func _apply_wave_shader_to_viking(viking: Node2D) -> void:
@@ -923,19 +883,21 @@ func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 			sprite.material = shader_material
 
 func _spawn_test_jezza():
-	# Find land tiles (non-water) and spawn Jezza
+	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
+	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
 	var land_tiles: Array = []
 
-	# Collect all land tile coordinates
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
+	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
+	var search_radius = 25
+	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
+		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
-			if source_id != 4:  # Not water = land
+			# Use WorldGenerator to check terrain (no tilemap access needed)
+			if hex_map.world_generator and not hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
 				land_tiles.append(tile_coords)
 
 	print("=== JEZZA SPAWN ===")
-	print("Found ", land_tiles.size(), " land tiles")
+	print("Found ", land_tiles.size(), " land tiles (near camera)")
 
 	if land_tiles.size() < 3:
 		print("Not enough land tiles to spawn Jezza")
@@ -980,19 +942,21 @@ func _spawn_test_jezza():
 	print("Total Jezza raptors spawned: 3")
 
 func _spawn_test_fantasy_warriors():
-	# Find land tiles (non-water) and spawn Fantasy Warriors
+	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
+	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
 	var land_tiles: Array = []
 
-	# Collect all land tile coordinates
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
+	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
+	var search_radius = 25
+	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
+		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
-			if source_id != 4:  # Not water = land
+			# Use WorldGenerator to check terrain (no tilemap access needed)
+			if hex_map.world_generator and not hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
 				land_tiles.append(tile_coords)
 
 	print("=== FANTASY WARRIOR SPAWN ===")
-	print("Found ", land_tiles.size(), " land tiles")
+	print("Found ", land_tiles.size(), " land tiles (near camera)")
 
 	if land_tiles.size() < 3:
 		print("Not enough land tiles to spawn Fantasy Warriors")
@@ -1037,19 +1001,21 @@ func _spawn_test_fantasy_warriors():
 	print("Total Fantasy Warriors spawned: 3")
 
 func _spawn_test_kings():
-	# Find land tiles (non-water) and spawn Kings
+	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
+	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
 	var land_tiles: Array = []
 
-	# Collect all land tile coordinates
-	for x in range(MapConfig.MAP_WIDTH):
-		for y in range(MapConfig.MAP_HEIGHT):
+	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
+	var search_radius = 25
+	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
+		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			var source_id = hex_map.tile_map.get_cell_source_id(0, tile_coords)
-			if source_id != MapConfig.SOURCE_ID_WATER:  # Not water = land
+			# Use WorldGenerator to check terrain (no tilemap access needed)
+			if hex_map.world_generator and not hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
 				land_tiles.append(tile_coords)
 
 	print("=== KING SPAWN ===")
-	print("Found ", land_tiles.size(), " land tiles")
+	print("Found ", land_tiles.size(), " land tiles (near camera)")
 
 	if land_tiles.size() < 3:
 		print("Not enough land tiles to spawn Kings")
@@ -1195,7 +1161,8 @@ func _print_culling_stats() -> void:
 		culling_percent = (float(culled) / float(total_entities)) * 100.0
 
 	print("=== CHUNK CULLING STATS ===")
-	print("Visible Chunks: %d / %d (render_radius=%d)" % [stats["visible_chunks"], stats["total_chunks"], stats["render_radius"]])
+	# PROCEDURAL WORLD: Show loaded_chunks instead of total_chunks (infinite world has no total)
+	print("Visible Chunks: %d / %d loaded (render_radius=%d)" % [stats["visible_chunks"], stats["loaded_chunks"], stats["render_radius"]])
 	print("Total Entities: %d" % total_entities)
 	print("Active Entities: %d (%.1f%%)" % [active, 100.0 - culling_percent])
 	print("Culled Entities: %d (%.1f%%)" % [culled, culling_percent])

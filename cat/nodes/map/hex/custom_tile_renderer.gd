@@ -241,8 +241,7 @@ func world_to_tile(world_pos: Vector2) -> Vector2i:
 
 	for col_offset in [-1, 0, 1]:
 		var col = col_estimate + col_offset
-		if col < 0:
-			continue
+		# Allow negative coordinates for infinite world
 
 		# Rough estimate of row for this column
 		var y_adjusted = world_pos.y - 28.0
@@ -254,8 +253,7 @@ func world_to_tile(world_pos: Vector2) -> Vector2i:
 		# Check nearby rows
 		for row_offset in [-1, 0, 1]:
 			var row = row_estimate + row_offset
-			if row < 0:
-				continue
+			# Allow negative coordinates for infinite world
 
 			# Get the center position of this hex
 			var hex_center = _tile_to_world_pos(Vector2i(col, row))

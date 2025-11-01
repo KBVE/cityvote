@@ -331,7 +331,7 @@ func _find_valid_tiles(tile_type: TileType, hex_map, occupied_tiles: Dictionary,
 func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary, center: Vector2i, max_tiles: int = 100) -> Array:
 	var tiles_with_distance: Array = []
 	var max_radius = 50  # Search up to 50 tiles away
-	var map_data = hex_map.map_data
+	var world_generator = hex_map.world_generator  # Use WorldGenerator for procedural terrain
 
 	# Helper for hex distance calculation
 	var hex_distance = func(a: Vector2i, b: Vector2i) -> int:
@@ -352,19 +352,19 @@ func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary
 				if dist != radius:
 					continue
 
-				# Bounds check
-				if not MapConfig.is_tile_in_bounds(tile_coords):
-					continue
+				# NOTE: Bounds check removed - infinite world has no bounds
 
 				# Skip occupied tiles
 				if occupied_tiles.has(tile_coords):
 					continue
 
-				# Read tile type from map_data array (not TileMap!)
-				var tile_type_str = map_data[tile_coords.y][tile_coords.x]
+				# PROCEDURAL WORLD: Use WorldGenerator to check terrain type
+				var world_x = tile_coords.x * MapConfig.TILE_WIDTH
+				var world_y = tile_coords.y * MapConfig.TILE_HEIGHT
+				var is_water = world_generator.is_water(world_x, world_y) if world_generator else false
 
 				# Check if tile matches the required type
-				var is_valid = _is_tile_type_match_str(tile_type_str, tile_type)
+				var is_valid = _is_tile_type_match_procedural(is_water, tile_type)
 
 				if is_valid:
 					tiles_with_distance.append({"pos": tile_coords, "dist": dist})
@@ -391,22 +391,31 @@ func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary
 func _find_tiles_chunk_sampling(tile_type: TileType, hex_map, occupied_tiles: Dictionary, max_tiles: int = 100) -> Array:
 	var valid_tiles: Array = []
 	var max_attempts = max_tiles * 3  # Try 3x the needed tiles to account for occupied/wrong type
-	var map_data = hex_map.map_data
+	var world_generator = hex_map.world_generator  # Use WorldGenerator for procedural terrain
+
+	# PROCEDURAL WORLD: Sample from visible/loaded chunks instead of random chunks
+	# Get loaded chunks from ChunkPool
+	var loaded_chunks = hex_map.chunk_pool.get_loaded_chunks() if hex_map.chunk_pool else []
+
+	# If no chunks loaded yet, search near origin (0,0)
+	if loaded_chunks.is_empty():
+		print("EntityManager: No chunks loaded yet, searching near origin")
+		var camera = hex_map.camera if hex_map.has("camera") else null
+		var center = Vector2i(0, 0)
+		if camera:
+			var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
+			center = camera_tile
+		return _find_tiles_radial(tile_type, hex_map, occupied_tiles, center, max_tiles)
 
 	for i in range(max_attempts):
-		# Pick a random chunk
-		var chunk_x = randi() % MapConfig.CHUNKS_WIDE
-		var chunk_y = randi() % MapConfig.CHUNKS_TALL
-		var chunk_start = MapConfig.chunk_to_tile(Vector2i(chunk_x, chunk_y))
+		# Pick a random loaded chunk
+		var random_chunk = loaded_chunks[randi() % loaded_chunks.size()]
+		var chunk_start = MapConfig.chunk_to_tile(random_chunk)
 
 		# Pick a random tile within that chunk
 		var local_x = randi() % MapConfig.CHUNK_SIZE
 		var local_y = randi() % MapConfig.CHUNK_SIZE
 		var tile_coords = Vector2i(chunk_start.x + local_x, chunk_start.y + local_y)
-
-		# Bounds check
-		if not MapConfig.is_tile_in_bounds(tile_coords):
-			continue
 
 		# Skip occupied tiles
 		if occupied_tiles.has(tile_coords):
@@ -416,11 +425,13 @@ func _find_tiles_chunk_sampling(tile_type: TileType, hex_map, occupied_tiles: Di
 		if tile_coords in valid_tiles:
 			continue
 
-		# Read tile type from map_data array (not TileMap!)
-		var tile_type_str = map_data[tile_coords.y][tile_coords.x]
+		# PROCEDURAL WORLD: Use WorldGenerator to check terrain type
+		var world_x = tile_coords.x * MapConfig.TILE_WIDTH
+		var world_y = tile_coords.y * MapConfig.TILE_HEIGHT
+		var is_water = world_generator.is_water(world_x, world_y) if world_generator else false
 
 		# Check if tile matches the required type
-		var is_valid = _is_tile_type_match_str(tile_type_str, tile_type)
+		var is_valid = _is_tile_type_match_procedural(is_water, tile_type)
 
 		if is_valid:
 			valid_tiles.append(tile_coords)
@@ -444,13 +455,25 @@ func _is_tile_type_match(source_id: int, tile_type: TileType) -> bool:
 	return false
 
 ## Helper to check if a tile_type string matches the required tile type
-## Reads from map_data array instead of TileMap
+## Reads from map_data array instead of TileMap (DEPRECATED - use _is_tile_type_match_procedural)
 func _is_tile_type_match_str(tile_type_str: String, tile_type: TileType) -> bool:
 	match tile_type:
 		TileType.LAND:
 			return tile_type_str != "water"
 		TileType.WATER:
 			return tile_type_str == "water"
+		TileType.ANY:
+			return true
+	return false
+
+## Helper to check if procedurally generated terrain matches the required tile type
+## Uses WorldGenerator.is_water() result instead of map_data
+func _is_tile_type_match_procedural(is_water: bool, tile_type: TileType) -> bool:
+	match tile_type:
+		TileType.LAND:
+			return not is_water
+		TileType.WATER:
+			return is_water
 		TileType.ANY:
 			return true
 	return false
@@ -480,10 +503,9 @@ func update_entities(delta: float, movement_callback: Callable) -> void:
 		# Skip entities in non-visible chunks (chunk culling optimization)
 		if ChunkManager and ChunkManager.chunk_culling_enabled:
 			var entity_chunk = MapConfig.tile_to_chunk(entry["tile"])
-			var chunk_index = MapConfig.chunk_coords_to_index(entity_chunk)
 
-			# Only update entities in visible chunks
-			if not chunk_index in ChunkManager.visible_chunk_indices:
+			# PROCEDURAL WORLD: Use visible_chunks (Array of Vector2i) instead of visible_chunk_indices
+			if not entity_chunk in ChunkManager.visible_chunks:
 				culled_count += 1
 				continue
 

@@ -20,6 +20,7 @@ mod card;
 mod economy;
 mod stats;
 mod combat;
+mod world_gen;
 
 struct Godo;
 

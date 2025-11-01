@@ -8,42 +8,65 @@
 
 /// Map configuration constants
 pub mod map {
-    /// Map dimensions: 1024x1024 tiles = 1,048,576 tiles total
-    pub const WIDTH: i32 = 1024;
-    pub const HEIGHT: i32 = 1024;
-    pub const TOTAL_TILES: usize = (WIDTH * HEIGHT) as usize;  // 1,048,576
+    /// INFINITE WORLD: No fixed map dimensions
+    /// Chunks are generated procedurally on-demand
 
-    /// Chunk settings: 32x32 chunks = 1024 chunks total (power of 2 for bitwise optimization)
-    pub const CHUNK_SIZE: i32 = 32;
-    pub const CHUNKS_WIDE: i32 = WIDTH / CHUNK_SIZE;  // 32
-    pub const CHUNKS_TALL: i32 = HEIGHT / CHUNK_SIZE;  // 32
-    pub const TOTAL_CHUNKS: usize = (CHUNKS_WIDE * CHUNKS_TALL) as usize;  // 1024
+    /// Chunk settings
+    pub const CHUNK_SIZE: usize = 32;  // 32x32 tiles per chunk
+    pub const CHUNK_CACHE_SIZE: usize = 100;  // Maximum chunks in memory (LRU cache)
+    pub const CHUNK_RENDER_DISTANCE: i32 = 3;  // Chunks to render around camera
 
-    /// Check if tile coordinates are within map bounds
+    /// Tile dimensions (legacy - not used for hex grid)
+    /// NOTE: These are kept for backward compatibility but hex grid uses fixed spacing below
+    pub const TILE_WIDTH: f32 = 32.0;
+    pub const TILE_HEIGHT: f32 = 28.0;
+
+    /// Hex grid layout constants (STACKED_OFFSET VERTICAL)
+    /// These values must match GDScript's custom_tile_renderer.gd
+    pub const HEX_HORIZONTAL_SPACING: f32 = 24.5;  // Horizontal spacing between hex centers
+    pub const HEX_VERTICAL_SPACING: f32 = 28.5;    // Vertical spacing between hex centers
+    pub const HEX_OFFSET_X: f32 = 16.0;            // Initial X offset for first tile
+    pub const HEX_OFFSET_Y: f32 = 28.0;            // Initial Y offset for first tile
+    pub const HEX_ODD_COLUMN_OFFSET: f32 = 14.25;  // Odd columns offset UP by this amount
+
+    /// Legacy bounds checking (always returns true for infinite world)
+    /// TODO: Remove bounds checks from pathfinding code
     #[inline]
-    pub fn is_in_bounds(x: i32, y: i32) -> bool {
-        x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT
+    pub fn is_in_bounds(_x: i32, _y: i32) -> bool {
+        true  // Infinite world has no bounds
     }
 
-    /// Convert tile coordinates to chunk coordinates
+    /// Legacy constants for spatial_hash, quad_tree, flow_field
+    /// TODO: Refactor these systems to work without fixed bounds
+    pub const WIDTH: i32 = 10000;
+    pub const HEIGHT: i32 = 10000;
+    pub const TOTAL_TILES: usize = (WIDTH * HEIGHT) as usize;
+
+    /// Convert tile coordinates to chunk coordinates (supports negative coords)
     #[inline]
-    pub fn tile_to_chunk(x: i32, y: i32) -> (i32, i32) {
-        (x / CHUNK_SIZE, y / CHUNK_SIZE)
+    pub fn tile_to_chunk(tile_x: i32, tile_y: i32) -> (i32, i32) {
+        (
+            tile_x.div_euclid(CHUNK_SIZE as i32),
+            tile_y.div_euclid(CHUNK_SIZE as i32),
+        )
     }
 
-    /// Convert chunk coordinates to linear chunk index (0-1023)
-    /// Uses bitwise optimization: chunk_y * 32 + chunk_x becomes (chunk_y << 5) | chunk_x
+    /// Get local tile coordinates within a chunk (0-31)
     #[inline]
-    pub fn chunk_to_index(chunk_x: i32, chunk_y: i32) -> usize {
-        ((chunk_y << 5) | chunk_x) as usize
+    pub fn tile_to_local(tile_x: i32, tile_y: i32) -> (usize, usize) {
+        (
+            tile_x.rem_euclid(CHUNK_SIZE as i32) as usize,
+            tile_y.rem_euclid(CHUNK_SIZE as i32) as usize,
+        )
     }
 
-    /// Convert linear chunk index back to chunk coordinates
-    /// Uses bitwise optimization: index % 32 becomes index & 31, index / 32 becomes index >> 5
+    /// Convert chunk coordinates to top-left tile coordinates
     #[inline]
-    pub fn index_to_chunk(index: usize) -> (i32, i32) {
-        let index = index as i32;
-        (index & 31, index >> 5)
+    pub fn chunk_to_tile(chunk_x: i32, chunk_y: i32) -> (i32, i32) {
+        (
+            chunk_x * CHUNK_SIZE as i32,
+            chunk_y * CHUNK_SIZE as i32,
+        )
     }
 }
 

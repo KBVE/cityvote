@@ -682,7 +682,7 @@ impl CardComboDetector {
         *self.result_rx.lock().unwrap() = Some(result_rx);
 
         // Spawn worker thread
-        let worker_handle = thread::spawn(move || {
+        let worker_handle: thread::JoinHandle<()> = thread::spawn(move || {
             godot_print!("CardComboDetector: Worker thread started");
 
             loop {
