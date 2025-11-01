@@ -71,11 +71,6 @@ var player_ulid: PackedByteArray = PackedByteArray()
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
-## Z-index offset to ensure ships render above tiles
-## Tiles use z_index = tile_y (0-500+), so we need to be well above that
-const Z_INDEX_BASE: int = 1000  # Base offset above all tiles
-const Z_INDEX_SHIP_OFFSET: int = 2  # Ships at +2 (above NPCs)
-
 func _ready():
 	# Set initial z-index based on spawn position
 	_update_z_index()
@@ -249,9 +244,8 @@ func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 		path_visualizer = Node2D.new()
 		path_visualizer.set_script(PathVisualizerScript)
 
-		# Set z-index high enough to be above all entities
-		# Use 2000 which is above tiles (0-500) and entities (1000+)
-		path_visualizer.z_index = 2000
+		# Set z-index above all entities for visibility
+		path_visualizer.z_index = Cache.Z_INDEX_WAYPOINTS
 
 		# Add to parent (hex_map) so it's visible
 		var parent = get_parent()
@@ -273,7 +267,7 @@ func _advance_to_next_waypoint():
 func _update_z_index() -> void:
 	if Cache.tile_map:
 		var tile_coords = Cache.tile_map.local_to_map(position)
-		z_index = Z_INDEX_BASE + tile_coords.y + Z_INDEX_SHIP_OFFSET
+		z_index = Cache.Z_INDEX_ENTITY_BASE + tile_coords.y + Cache.Z_INDEX_SHIP_OFFSET
 
 func _process(delta):
 	# Update z-index for proper layering as ship moves

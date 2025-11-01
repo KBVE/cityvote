@@ -582,6 +582,9 @@ func _create_preview_ghost() -> void:
 		held_card_pooled.modulate = Color(1, 1, 1, ghost_alpha_moving)
 		held_card_pooled.scale = Vector2(ghost_scale, ghost_scale)
 
+		# Set z-index above all entities so ghost is always visible
+		held_card_pooled.z_index = Cache.Z_INDEX_GHOST_CARD
+
 func _update_preview_ghost(delta: float) -> void:
 	if preview_ghost == null or hex_map == null:
 		return
@@ -702,9 +705,8 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	card_sprite.scale = Vector2(0.15, 0.15)  # Downscale to fit tile
 	card_sprite.modulate = Color.WHITE
 
-	# Set z-index to render above tiles
-	# Tiles use z_index = tile_y (0-500+), cards use base 1000 + tile_y + 3
-	card_sprite.z_index = 1000 + tile_coords.y + 3  # Above NPCs (+1) and ships (+2)
+	# Set z-index to render above tiles and other entities
+	card_sprite.z_index = Cache.Z_INDEX_ENTITY_BASE + tile_coords.y + Cache.Z_INDEX_CARD_OFFSET
 
 	# Note: Wave shader disabled for cards because it would override the card atlas material
 	# and lose the card_id instance parameter. Cards keep their atlas material so they
