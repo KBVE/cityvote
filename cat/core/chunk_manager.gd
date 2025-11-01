@@ -41,7 +41,7 @@ var culled_entities_count: int = 0
 var active_entities_count: int = 0
 
 ## How many chunks around camera to render
-var render_radius: int = 3  # Render 3 chunks in each direction from camera (wider view)
+var render_radius: int = 5  # Render 5 chunks in each direction from camera (async loading buffer)
 
 ## Last camera chunk position (to avoid recalculating every frame)
 var last_camera_chunk: Vector2i = Vector2i(-1, -1)

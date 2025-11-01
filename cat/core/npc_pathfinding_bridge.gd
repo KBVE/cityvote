@@ -55,20 +55,24 @@ func load_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
 	if not pathfinding_system:
 		return
 
+	# Calculate chunk's top-left tile coordinates
+	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
+
 	# Convert chunk tile data to terrain cache format
 	# For NPCs: land is walkable, water is not (opposite of ships)
-	# tile_data contains: {tile_index: int, x: int, y: int}
-	# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
+	# tile_data contains: {tile_index: int, x: int (local 0-31), y: int (local 0-31)}
 	for tile in tile_data:
-		var x = tile["x"]
-		var y = tile["y"]
+		# Convert local coordinates to absolute world coordinates
+		var world_x = chunk_start.x + tile["x"]
+		var world_y = chunk_start.y + tile["y"]
 		var tile_index = tile["tile_index"]
 
-		# Set terrain type in Rust pathfinding cache
+		# Set terrain type in Rust pathfinding cache using absolute coordinates
+		# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
 		if tile_index == 4:
-			pathfinding_system.set_tile(x, y, "water")  # Not walkable for NPCs
+			pathfinding_system.set_tile(world_x, world_y, "water")  # Not walkable for NPCs
 		else:
-			pathfinding_system.set_tile(x, y, "land")  # Walkable for NPCs
+			pathfinding_system.set_tile(world_x, world_y, "land")  # Walkable for NPCs
 
 	print("NpcPathfindingBridge: Loaded chunk %v (%d tiles) into pathfinding cache" % [chunk_coords, tile_data.size()])
 

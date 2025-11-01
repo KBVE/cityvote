@@ -217,9 +217,10 @@ func _tile_to_world_pos(tile_coords: Vector2i) -> Vector2:
 	var x = 16.0 + float(tile_coords.x) * 24.5  # Horizontal spacing: 24.5px
 	var y = 28.0 + float(tile_coords.y) * 28.5  # Vertical spacing: 28.5px
 
-	# Odd COLUMNS (1, 3, 5...) are offset UP by 14.25 pixels
+	# Odd COLUMNS (1, 3, 5, -1, -3, -5...) are offset UP by 14.25 pixels
 	# This creates the stacked hex pattern (half of 28.5px vertical spacing)
-	if tile_coords.x % 2 == 1:
+	# Note: Use abs() to handle negative coordinates correctly
+	if abs(tile_coords.x) % 2 == 1:
 		y -= 14.25  # Move UP by half of 28.5px vertical spacing
 
 	return Vector2(x, y)
@@ -245,7 +246,7 @@ func world_to_tile(world_pos: Vector2) -> Vector2i:
 
 		# Rough estimate of row for this column
 		var y_adjusted = world_pos.y - 28.0
-		if col % 2 == 1:
+		if abs(col) % 2 == 1:
 			y_adjusted += 14.25  # Undo odd column offset
 		var row_float = y_adjusted / 28.5
 		var row_estimate = int(round(row_float))

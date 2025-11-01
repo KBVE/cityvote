@@ -95,9 +95,12 @@ var last_camera_chunk: Vector2i = Vector2i(-999, -999)  # Track which chunk came
 
 # Performance optimization settings
 var max_chunks_per_frame: int = 8  # Limit chunk renders per frame to avoid lag spikes (increased for smoother loading)
-var max_chunk_generations_per_frame: int = 2  # Limit chunk generations per frame to avoid blocking
 var chunk_render_queue: Array = []  # Queue for deferred chunk rendering
-var chunk_generation_queue: Array = []  # Queue for deferred chunk generation
+
+# Track pending async chunk requests
+var pending_chunk_requests: Dictionary = {}  # request_id -> chunk_coords
+var pending_low_priority_count: int = 0  # Track how many low-priority chunks are pending
+const MAX_LOW_PRIORITY_CHUNKS: int = 10  # Limit low-priority chunks to prevent queue flooding
 
 # Signal emitted when initial chunks around camera are fully rendered
 signal initial_chunks_ready()
@@ -116,7 +119,9 @@ func _ready():
 	world_generator = ClassDB.instantiate("WorldGenerator")
 	if world_generator:
 		world_generator.set_seed(MapConfig.world_seed)
+		world_generator.start_async_worker()
 		print("Hex: WorldGenerator initialized with seed: ", MapConfig.world_seed)
+		print("Hex: Async chunk generation worker started")
 	else:
 		push_error("Hex: Failed to instantiate WorldGenerator! Make sure Rust extension is loaded.")
 
@@ -135,25 +140,60 @@ func _on_chunk_requested(chunk_coords: Vector2i) -> void:
 		push_error("Hex: Cannot generate chunk - WorldGenerator not initialized!")
 		return
 
-	# Check if already loaded or queued
+	# Check if already loaded
 	if chunk_pool.is_chunk_loaded(chunk_coords):
 		return
 
-	# Check if already in generation queue
-	for queued_chunk in chunk_generation_queue:
-		if queued_chunk == chunk_coords:
+	# Check if already requested
+	for request_id in pending_chunk_requests:
+		if pending_chunk_requests[request_id] == chunk_coords:
+			return  # Already pending
+
+	# Calculate priority based on distance to camera
+	# Closer chunks get requested first (immediate), far chunks can wait
+	if camera:
+		var camera_tile = tile_renderer.world_to_tile(camera.global_position)
+		var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
+		var distance = camera_chunk.distance_to(chunk_coords)
+
+		# Priority zones:
+		# - Distance 0-2: Immediate (on screen or just off screen) - request immediately
+		# - Distance 3-5: Background (edge chunks) - request with lower priority
+		if distance <= 2:
+			# High priority - request immediately
+			_request_chunk_generation(chunk_coords, "high")
+		else:
+			# Low priority - request in background (still async, just lower importance)
+			_request_chunk_generation(chunk_coords, "low")
+	else:
+		# No camera reference, just request normally
+		_request_chunk_generation(chunk_coords, "normal")
+
+## Request chunk generation (internal helper)
+func _request_chunk_generation(chunk_coords: Vector2i, priority: String) -> void:
+	# Limit low-priority chunks to prevent queue flooding
+	# High priority chunks always get through
+	if priority == "low":
+		if pending_low_priority_count >= MAX_LOW_PRIORITY_CHUNKS:
+			# Too many low-priority chunks already pending, skip this one
 			return
 
-	# Add to generation queue
-	chunk_generation_queue.append(chunk_coords)
+	# Request async chunk generation
+	var request_id = world_generator.request_chunk_async(chunk_coords.x, chunk_coords.y)
+	if request_id >= 0:
+		pending_chunk_requests[request_id] = chunk_coords
+		if priority == "low":
+			pending_low_priority_count += 1
+		if priority == "high":
+			print("Hex: [HIGH PRIORITY] Requested async generation for chunk %s (request_id: %d)" % [chunk_coords, request_id])
+		# Don't print low priority requests to reduce console spam
+	else:
+		push_error("Hex: Failed to request async chunk generation for %s" % chunk_coords)
 
-## Generate a single chunk (called from queue processor)
-func _generate_chunk(chunk_coords: Vector2i) -> void:
-	# Generate chunk using Rust (source of truth - uses hex grid coordinates)
-	var tile_data = world_generator.generate_chunk(chunk_coords.x, chunk_coords.y)
-
+## Load a generated chunk (called when async result arrives)
+func _load_generated_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
 	if not tile_data or tile_data.size() != MapConfig.CHUNK_SIZE * MapConfig.CHUNK_SIZE:
-		push_error("Hex: Chunk generation failed for %s" % chunk_coords)
+		push_error("Hex: Invalid chunk data for %s" % chunk_coords)
 		return
 
 	# Load into pool
@@ -171,11 +211,11 @@ func _generate_chunk(chunk_coords: Vector2i) -> void:
 		"render": true
 	})
 
-	print("Hex: Chunk %s generated and queued for render (%d tiles)" % [chunk_coords, tile_data.size()])
+	print("Hex: Chunk %s loaded and queued for render (%d tiles)" % [chunk_coords, tile_data.size()])
 
 func _process(delta: float) -> void:
-	# OPTIMIZATION: Process queued chunk generation (limit per frame to avoid lag spikes)
-	_process_chunk_generation_queue()
+	# Poll for completed async chunk results
+	_poll_async_chunk_results()
 
 	# OPTIMIZATION: Process queued chunk renders (limit per frame to avoid lag spikes)
 	_process_chunk_queue()
@@ -191,14 +231,44 @@ func _process(delta: float) -> void:
 		hovered_tile = tile_coords
 		_update_highlight()
 
-## Process queued chunk generation to spread work across frames
-func _process_chunk_generation_queue() -> void:
-	var chunks_generated_this_frame = 0
+## Poll for completed async chunk generation results
+func _poll_async_chunk_results() -> void:
+	if not world_generator:
+		return
 
-	while chunk_generation_queue.size() > 0 and chunks_generated_this_frame < max_chunk_generations_per_frame:
-		var chunk_coords = chunk_generation_queue.pop_front()
-		_generate_chunk(chunk_coords)
-		chunks_generated_this_frame += 1
+	# Poll for results (non-blocking)
+	var result = world_generator.poll_chunk_results()
+
+	while result != null:
+		# Extract chunk data
+		var chunk_x = result.get("chunk_x", 0)
+		var chunk_y = result.get("chunk_y", 0)
+		var tile_data = result.get("tile_data", [])
+		var chunk_coords = Vector2i(chunk_x, chunk_y)
+
+		# Calculate if this was a low-priority chunk (for counter tracking)
+		var was_low_priority = false
+		if camera:
+			var camera_tile = tile_renderer.world_to_tile(camera.global_position)
+			var camera_chunk = MapConfig.tile_to_chunk(camera_tile)
+			var distance = camera_chunk.distance_to(chunk_coords)
+			was_low_priority = (distance > 2)
+
+		# Remove from pending requests (find by chunk_coords)
+		for request_id in pending_chunk_requests.keys():
+			if pending_chunk_requests[request_id] == chunk_coords:
+				pending_chunk_requests.erase(request_id)
+				break
+
+		# Decrement low-priority counter if needed
+		if was_low_priority:
+			pending_low_priority_count = max(0, pending_low_priority_count - 1)
+
+		# Load the generated chunk
+		_load_generated_chunk(chunk_coords, tile_data)
+
+		# Poll for next result
+		result = world_generator.poll_chunk_results()
 
 ## Process queued chunk renders to spread work across frames
 func _process_chunk_queue() -> void:

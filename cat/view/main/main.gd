@@ -395,8 +395,10 @@ func _spawn_test_vikings():
 	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
 		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			# Use WorldGenerator to check terrain (no tilemap access needed)
-			if hex_map.world_generator and hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
+			# Convert tile coordinates to world position (center of tile)
+			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
+			# Use WorldGenerator to check terrain (queries procedural generation)
+			if hex_map.world_generator and hex_map.world_generator.is_water(world_pos.x, world_pos.y):
 				water_tiles.append(tile_coords)
 
 	print("=== VIKING SPAWN ===")
@@ -528,6 +530,15 @@ func _handle_viking_movement(viking: Node, current_tile: Vector2i) -> void:
 	# Use Rust ship pathfinding
 	var ship_ulid = viking.ulid
 	var pathfinding_bridge = get_node("/root/ShipPathfindingBridge")
+
+	# DEBUG: Check terrain cache for start and goal
+	var start_terrain = pathfinding_bridge.debug_check_terrain(current_tile)
+	var goal_terrain = pathfinding_bridge.debug_check_terrain(destination)
+	var start_walkable = pathfinding_bridge.debug_is_walkable(current_tile)
+	var goal_walkable = pathfinding_bridge.debug_is_walkable(destination)
+	print("DEBUG: Ship pathfinding from %v to %v" % [current_tile, destination])
+	print("  Start terrain: %s (walkable: %s)" % [start_terrain, start_walkable])
+	print("  Goal terrain: %s (walkable: %s)" % [goal_terrain, goal_walkable])
 
 	# Update ship position in Rust
 	pathfinding_bridge.update_ship_position(ship_ulid, current_tile)
@@ -892,8 +903,10 @@ func _spawn_test_jezza():
 	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
 		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			# Use WorldGenerator to check terrain (no tilemap access needed)
-			if hex_map.world_generator and not hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
+			# Convert tile coordinates to world position (center of tile)
+			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
+			# Use WorldGenerator to check terrain (queries procedural generation)
+			if hex_map.world_generator and not hex_map.world_generator.is_water(world_pos.x, world_pos.y):
 				land_tiles.append(tile_coords)
 
 	print("=== JEZZA SPAWN ===")
@@ -951,8 +964,10 @@ func _spawn_test_fantasy_warriors():
 	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
 		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			# Use WorldGenerator to check terrain (no tilemap access needed)
-			if hex_map.world_generator and not hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
+			# Convert tile coordinates to world position (center of tile)
+			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
+			# Use WorldGenerator to check terrain (queries procedural generation)
+			if hex_map.world_generator and not hex_map.world_generator.is_water(world_pos.x, world_pos.y):
 				land_tiles.append(tile_coords)
 
 	print("=== FANTASY WARRIOR SPAWN ===")
@@ -1010,8 +1025,10 @@ func _spawn_test_kings():
 	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
 		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
 			var tile_coords = Vector2i(x, y)
-			# Use WorldGenerator to check terrain (no tilemap access needed)
-			if hex_map.world_generator and not hex_map.world_generator.is_water(x * MapConfig.TILE_WIDTH, y * MapConfig.TILE_HEIGHT):
+			# Convert tile coordinates to world position (center of tile)
+			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
+			# Use WorldGenerator to check terrain (queries procedural generation)
+			if hex_map.world_generator and not hex_map.world_generator.is_water(world_pos.x, world_pos.y):
 				land_tiles.append(tile_coords)
 
 	print("=== KING SPAWN ===")

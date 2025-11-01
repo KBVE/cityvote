@@ -9,7 +9,7 @@ extends Node
 # Chunk settings (for performance and fog of war)
 const CHUNK_SIZE: int = 32  # 32x32 tiles per chunk
 const CHUNK_CACHE_SIZE: int = 100  # Maximum number of chunks kept in memory (LRU cache)
-const CHUNK_RENDER_DISTANCE: int = 3  # Number of chunks to render around camera
+const CHUNK_RENDER_DISTANCE: int = 5  # Number of chunks to render around camera (increased for async loading buffer)
 
 # World generation settings (procedural seed-based generation)
 var world_seed: int = 12345  # Default seed, can be changed at runtime

@@ -638,6 +638,7 @@ pub struct CardComboDetector {
 
     // Pending combo results (request_id -> ComboDetectionResult)
     // Stored so we can apply rewards when player accepts
+    // We could double check the hashmap that we are using in the pending combos.
     pending_combos: Arc<Mutex<HashMap<u64, ComboDetectionResult>>>,
 }
 
@@ -740,6 +741,7 @@ impl CardComboDetector {
     /// Request combo detection (async, result via signal)
     /// Accepts PackedByteArray with serialized card data for maximum performance
     /// Format per card (31 bytes): [16 ULID][1 suit][1 value][4 card_id][1 is_custom][4 x][4 y]
+    /// Another 47 bytes total, to include [16 ULID -> playerId]
     /// Returns request_id for tracking
     #[func]
     fn request_combo_detection(&mut self, card_data: PackedByteArray) -> u64 {

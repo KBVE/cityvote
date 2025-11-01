@@ -12,6 +12,7 @@ macro_rules! debug_log {
 //mod inventory_data_warehouse;
 
 pub mod config;  // Centralized configuration constants
+mod db;  // Platform-specific SQLite abstraction
 mod npc;
 mod ui;
 mod utility;

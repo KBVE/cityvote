@@ -87,6 +87,9 @@ impl ShipPathfindingBridge {
     #[func]
     fn update_tiles(&mut self, updates: Array<Dictionary>) {
         let mut update_vec = Vec::new();
+        let mut water_count = 0;
+        let mut land_count = 0;
+
         for i in 0..updates.len() {
             if let Some(dict) = updates.get(i) {
                 let q: i32 = dict.get("q")
@@ -97,9 +100,19 @@ impl ShipPathfindingBridge {
                     .unwrap_or(0);
                 let tile_type_str: GString = dict.get("type")
                     .and_then(|v| v.try_to::<GString>().ok())
-                    .unwrap_or_else(|| "water".into());
+                    .unwrap_or_else(|| {
+                        godot_warn!("ShipPathfindingBridge: Failed to parse terrain type for tile ({}, {}), defaulting to water", q, r);
+                        "water".into()
+                    });
 
                 let tile_type = pathfinding::TerrainType::from_string(&tile_type_str.to_string());
+
+                // Count terrain types for debug
+                match tile_type {
+                    pathfinding::TerrainType::Water => water_count += 1,
+                    pathfinding::TerrainType::Land => land_count += 1,
+                    _ => {}
+                }
 
                 update_vec.push(pathfinding::TileUpdate {
                     coord: (q, r),
@@ -109,6 +122,10 @@ impl ShipPathfindingBridge {
         }
 
         pathfinding::update_tiles(update_vec);
+
+        // Debug logging to verify terrain data
+        godot_print!("ShipPathfindingBridge: Updated {} tiles - Water: {}, Land: {}",
+            updates.len(), water_count, land_count);
     }
 
     /// Update ship position
@@ -181,5 +198,24 @@ impl ShipPathfindingBridge {
         dict.set("ships", ship_count as i32);
         dict.set("pending_requests", pending as i32);
         dict
+    }
+
+    /// Debug function: Check if a tile is walkable for ships (water)
+    #[func]
+    fn is_tile_walkable(&self, q: i32, r: i32) -> bool {
+        use crate::npc::terrain_cache;
+        terrain_cache::is_walkable_for_ship(q, r)
+    }
+
+    /// Debug function: Get terrain type at coordinates
+    #[func]
+    fn get_terrain_type(&self, q: i32, r: i32) -> GString {
+        use crate::npc::terrain_cache;
+        let terrain = terrain_cache::get_terrain(q, r);
+        match terrain {
+            pathfinding::TerrainType::Water => "water".into(),
+            pathfinding::TerrainType::Land => "land".into(),
+            pathfinding::TerrainType::Obstacle => "obstacle".into(),
+        }
     }
 }

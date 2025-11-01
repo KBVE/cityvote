@@ -1,13 +1,33 @@
 use super::biomes::{BiomeGenerator, TerrainType};
 use super::noise::NoiseGenerator;
 use godot::prelude::*;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 
 /// Thread-safe cache of noise generators by seed
 static NOISE_CACHE: once_cell::sync::Lazy<RwLock<HashMap<i32, Arc<NoiseGenerator>>>> =
     once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Chunk generation request
+#[derive(Debug, Clone)]
+struct ChunkRequest {
+    request_id: u64,
+    chunk_x: i32,
+    chunk_y: i32,
+    seed: i32,
+}
+
+/// Chunk generation result
+#[derive(Debug, Clone)]
+struct ChunkResult {
+    request_id: u64,
+    chunk_x: i32,
+    chunk_y: i32,
+    tile_data: Vec<(i32, i32, i32)>, // (x, y, tile_index)
+}
 
 /// Chunk generator bridge to GDScript
 #[derive(GodotClass)]
@@ -15,6 +35,11 @@ static NOISE_CACHE: once_cell::sync::Lazy<RwLock<HashMap<i32, Arc<NoiseGenerator
 pub struct WorldGenerator {
     base: Base<Object>,
     current_seed: i32,
+    // Async chunk generation
+    next_request_id: Arc<Mutex<u64>>,
+    request_tx: Arc<Mutex<Option<Sender<ChunkRequest>>>>,
+    result_rx: Arc<Mutex<Option<Receiver<ChunkResult>>>>,
+    worker_handle: Option<JoinHandle<()>>,
 }
 
 #[godot_api]
@@ -23,6 +48,10 @@ impl IObject for WorldGenerator {
         Self {
             base,
             current_seed: 0,
+            next_request_id: Arc::new(Mutex::new(0)),
+            request_tx: Arc::new(Mutex::new(None)),
+            result_rx: Arc::new(Mutex::new(None)),
+            worker_handle: None,
         }
     }
 }
@@ -190,5 +219,170 @@ impl WorldGenerator {
             .expect("Noise generator not initialized - call set_seed() first");
 
         noise.get_elevation(world_x, world_y)
+    }
+
+    /// Start async chunk generation worker thread
+    #[func]
+    pub fn start_async_worker(&mut self) {
+        if self.worker_handle.is_some() {
+            godot_warn!("WorldGenerator: Async worker already running");
+            return;
+        }
+
+        let (request_tx, request_rx) = channel();
+        let (result_tx, result_rx) = channel();
+
+        *self.request_tx.lock() = Some(request_tx);
+        *self.result_rx.lock() = Some(result_rx);
+
+        // Spawn worker thread
+        let worker_handle = thread::spawn(move || {
+            godot_print!("WorldGenerator: Async worker thread started");
+
+            loop {
+                match request_rx.recv() {
+                    Ok(request) => {
+                        const CHUNK_SIZE: usize = 32;
+                        const TILE_WIDTH: f32 = 32.0;
+                        const TILE_HEIGHT: f32 = 28.0;
+
+                        // Get noise generator for this seed
+                        let cache = NOISE_CACHE.read();
+                        let noise = match cache.get(&request.seed) {
+                            Some(n) => n.clone(),
+                            None => {
+                                godot_error!("WorldGenerator: Noise generator not found for seed {}", request.seed);
+                                continue;
+                            }
+                        };
+                        drop(cache);
+
+                        // Generate terrain data
+                        let terrain_data = BiomeGenerator::generate_chunk(
+                            &noise,
+                            request.chunk_x,
+                            request.chunk_y,
+                            CHUNK_SIZE,
+                            TILE_WIDTH,
+                            TILE_HEIGHT,
+                        );
+
+                        // Convert to flat format (x, y, tile_index)
+                        let mut tile_data = Vec::with_capacity(CHUNK_SIZE * CHUNK_SIZE);
+                        for (idx, terrain_type) in terrain_data.iter().enumerate() {
+                            let x = (idx % CHUNK_SIZE) as i32;
+                            let y = (idx / CHUNK_SIZE) as i32;
+                            let tile_index = terrain_type.to_tile_index();
+                            tile_data.push((x, y, tile_index));
+                        }
+
+                        // Send result back
+                        let result = ChunkResult {
+                            request_id: request.request_id,
+                            chunk_x: request.chunk_x,
+                            chunk_y: request.chunk_y,
+                            tile_data,
+                        };
+
+                        if result_tx.send(result).is_err() {
+                            godot_error!("WorldGenerator: Failed to send chunk result");
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        godot_print!("WorldGenerator: Async worker thread shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.worker_handle = Some(worker_handle);
+        godot_print!("WorldGenerator: Async worker started successfully");
+    }
+
+    /// Request async chunk generation
+    /// Returns request_id for tracking
+    #[func]
+    pub fn request_chunk_async(&mut self, chunk_x: i32, chunk_y: i32) -> i64 {
+        let request_tx = self.request_tx.lock();
+        let tx = match request_tx.as_ref() {
+            Some(tx) => tx,
+            None => {
+                godot_error!("WorldGenerator: Async worker not started - call start_async_worker() first");
+                return -1;
+            }
+        };
+
+        // Generate request ID
+        let mut next_id = self.next_request_id.lock();
+        let request_id = *next_id;
+        *next_id += 1;
+        drop(next_id);
+
+        // Send request
+        let request = ChunkRequest {
+            request_id,
+            chunk_x,
+            chunk_y,
+            seed: self.current_seed,
+        };
+
+        if tx.send(request).is_err() {
+            godot_error!("WorldGenerator: Failed to send chunk request");
+            return -1;
+        }
+
+        request_id as i64
+    }
+
+    /// Poll for completed chunk results
+    /// Returns null if no results available, otherwise returns Dictionary with:
+    /// - "chunk_x": int
+    /// - "chunk_y": int
+    /// - "tile_data": Array of Dictionaries (x, y, tile_index)
+    #[func]
+    pub fn poll_chunk_results(&self) -> Variant {
+        let result_rx = self.result_rx.lock();
+        let rx = match result_rx.as_ref() {
+            Some(rx) => rx,
+            None => return Variant::nil(),
+        };
+
+        // Try to receive without blocking
+        match rx.try_recv() {
+            Ok(result) => {
+                // Convert to GDScript format
+                let mut dict = Dictionary::new();
+                dict.set("chunk_x", result.chunk_x);
+                dict.set("chunk_y", result.chunk_y);
+
+                let mut tile_array = Array::new();
+                for (x, y, tile_index) in result.tile_data {
+                    let mut tile_dict = Dictionary::new();
+                    tile_dict.set("x", x);
+                    tile_dict.set("y", y);
+                    tile_dict.set("tile_index", tile_index);
+                    tile_array.push(&tile_dict);
+                }
+                dict.set("tile_data", tile_array);
+
+                dict.to_variant()
+            }
+            Err(_) => Variant::nil(),
+        }
+    }
+
+    /// Stop async worker thread
+    #[func]
+    pub fn stop_async_worker(&mut self) {
+        // Drop the sender to signal worker to stop
+        *self.request_tx.lock() = None;
+
+        // Wait for worker to finish
+        if let Some(handle) = self.worker_handle.take() {
+            let _ = handle.join();
+            godot_print!("WorldGenerator: Async worker stopped");
+        }
     }
 }

@@ -1,6 +1,67 @@
 #!/bin/bash
 set -e
 
+# Display usage information
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [-mac] [-wasm]
+
+  -mac   Build and sync macOS binaries only
+  -wasm  Build and sync WASM binaries only
+
+Running without flags executes both macOS and WASM workflows.
+EOF
+}
+
+# Parse flags
+BUILD_MAC=false
+BUILD_WASM=false
+
+if [ "$#" -eq 0 ]; then
+    BUILD_MAC=true
+    BUILD_WASM=true
+else
+    for arg in "$@"; do
+        case "$arg" in
+            -mac)
+                BUILD_MAC=true
+                ;;
+            -wasm)
+                BUILD_WASM=true
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $arg"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+fi
+
+if [ "$BUILD_MAC" = false ] && [ "$BUILD_WASM" = false ]; then
+    echo "No build targets selected."
+    usage
+    exit 1
+fi
+
+# Track progress steps dynamically
+TOTAL_STEPS=1
+if [ "$BUILD_MAC" = true ]; then
+    TOTAL_STEPS=$((TOTAL_STEPS + 2))
+fi
+if [ "$BUILD_WASM" = true ]; then
+    TOTAL_STEPS=$((TOTAL_STEPS + 1))
+fi
+CURRENT_STEP=1
+step() {
+    echo "[$CURRENT_STEP/$TOTAL_STEPS] $1"
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+}
+
 # Godo GDExtension Sync Script
 # Builds the extension for multiple platforms and copies to /afk/addons/godo/
 # This makes the extension self-contained as a Godot plugin (no ../ paths needed)
@@ -36,95 +97,99 @@ fi
 echo ""
 
 # Step 1: Create plugin directory structure
-echo "[1/4] Creating plugin directories..."
+step "Creating plugin directories..."
 mkdir -p "$PLUGIN_DIR/bin/debug"
 mkdir -p "$PLUGIN_DIR/bin/release"
 echo "✓ Created: $PLUGIN_DIR/bin/debug"
 echo "✓ Created: $PLUGIN_DIR/bin/release"
 echo ""
 
-# Step 2: Build for macOS (debug and release)
-echo "[2/4] Building for macOS..."
-echo "  → Building debug..."
-cargo build
-echo "  ✓ macOS debug build complete"
+if [ "$BUILD_MAC" = true ]; then
+    # Step 2: Build for macOS (debug and release)
+    step "Building for macOS..."
+    echo "  → Building debug..."
+    cargo build
+    echo "  ✓ macOS debug build complete"
 
-echo "  → Building release..."
-cargo build --release
-echo "  ✓ macOS release build complete"
-echo ""
+    echo "  → Building release..."
+    cargo build --release
+    echo "  ✓ macOS release build complete"
+    echo ""
 
-# Step 3: Copy macOS binaries to plugin folder (so you can test immediately)
-echo "[3/4] Copying macOS binaries to plugin..."
+    # Step 3: Copy macOS binaries to plugin folder (so you can test immediately)
+    step "Copying macOS binaries to plugin..."
 
-# macOS Debug
-if [ -f "$TARGET_DIR/debug/libgodo.dylib" ]; then
-    cp "$TARGET_DIR/debug/libgodo.dylib" "$PLUGIN_DIR/bin/debug/"
-    echo "  ✓ Copied: libgodo.dylib (debug)"
-    # Remove quarantine and re-sign for macOS
-    xattr -dr com.apple.quarantine "$PLUGIN_DIR/bin/debug/libgodo.dylib" 2>/dev/null || true
-    codesign --force --sign - "$PLUGIN_DIR/bin/debug/libgodo.dylib" 2>/dev/null || true
-    echo "  ✓ Signed: libgodo.dylib (debug)"
-else
-    echo "  ✗ Missing: libgodo.dylib (debug)"
-fi
+    # macOS Debug
+    if [ -f "$TARGET_DIR/debug/libgodo.dylib" ]; then
+        cp "$TARGET_DIR/debug/libgodo.dylib" "$PLUGIN_DIR/bin/debug/"
+        echo "  ✓ Copied: libgodo.dylib (debug)"
+        # Remove quarantine and re-sign for macOS
+        xattr -dr com.apple.quarantine "$PLUGIN_DIR/bin/debug/libgodo.dylib" 2>/dev/null || true
+        codesign --force --sign - "$PLUGIN_DIR/bin/debug/libgodo.dylib" 2>/dev/null || true
+        echo "  ✓ Signed: libgodo.dylib (debug)"
+    else
+        echo "  ✗ Missing: libgodo.dylib (debug)"
+    fi
 
-# macOS Release
-if [ -f "$TARGET_DIR/release/libgodo.dylib" ]; then
-    cp "$TARGET_DIR/release/libgodo.dylib" "$PLUGIN_DIR/bin/release/"
-    echo "  ✓ Copied: libgodo.dylib (release)"
-    # Remove quarantine and re-sign for macOS
-    xattr -dr com.apple.quarantine "$PLUGIN_DIR/bin/release/libgodo.dylib" 2>/dev/null || true
-    codesign --force --sign - "$PLUGIN_DIR/bin/release/libgodo.dylib" 2>/dev/null || true
-    echo "  ✓ Signed: libgodo.dylib (release)"
-else
-    echo "  ✗ Missing: libgodo.dylib (release)"
-fi
-
-echo ""
-echo "======================================"
-echo "✓ macOS binaries ready for testing!"
-echo "======================================"
-echo ""
-
-# Step 4: Build for WASM (if emsdk is available) - runs in background
-echo "[4/4] Building for WASM (this may take a while)..."
-if command -v emcc &> /dev/null; then
-    echo "  → Building WASM debug with nightly toolchain (size-optimized)..."
-    CARGO_PROFILE_DEV_DEBUG=false \
-    CARGO_PROFILE_DEV_OPT_LEVEL=s \
-    CARGO_PROFILE_DEV_STRIP=debuginfo \
-    CARGO_PROFILE_DEV_PANIC=abort \
-    CARGO_PROFILE_DEV_LTO=thin \
-    CARGO_PROFILE_DEV_CODEGEN_UNITS=1 \
-    CARGO_PROFILE_DEV_INCREMENTAL=false \
-        cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten
-    echo "  ✓ WASM debug build complete"
-
-    echo "  → Building WASM release with nightly toolchain..."
-    cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten --release
-    echo "  ✓ WASM release build complete"
+    # macOS Release
+    if [ -f "$TARGET_DIR/release/libgodo.dylib" ]; then
+        cp "$TARGET_DIR/release/libgodo.dylib" "$PLUGIN_DIR/bin/release/"
+        echo "  ✓ Copied: libgodo.dylib (release)"
+        # Remove quarantine and re-sign for macOS
+        xattr -dr com.apple.quarantine "$PLUGIN_DIR/bin/release/libgodo.dylib" 2>/dev/null || true
+        codesign --force --sign - "$PLUGIN_DIR/bin/release/libgodo.dylib" 2>/dev/null || true
+        echo "  ✓ Signed: libgodo.dylib (release)"
+    else
+        echo "  ✗ Missing: libgodo.dylib (release)"
+    fi
 
     echo ""
-    echo "  → Copying WASM binaries to plugin..."
+    echo "======================================"
+    echo "✓ macOS binaries ready for testing!"
+    echo "======================================"
+    echo ""
+fi
 
-    # WASM (Note: emscripten builds use godo.wasm, not libgodo.wasm)
-    WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/dev-wasm/godo.wasm"
-    if [ ! -f "$WASM_DEBUG_PATH" ]; then
-        WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/debug/godo.wasm"
-    fi
-    if [ -f "$WASM_DEBUG_PATH" ]; then
-        cp "$WASM_DEBUG_PATH" "$PLUGIN_DIR/bin/debug/"
-        echo "  ✓ Copied: godo.wasm (debug)"
-    fi
+if [ "$BUILD_WASM" = true ]; then
+    # Step 4: Build for WASM (if emsdk is available) - runs in background
+    step "Building for WASM (this may take a while)..."
+    if command -v emcc &> /dev/null; then
+        echo "  → Building WASM debug with nightly toolchain (size-optimized)..."
+        CARGO_PROFILE_DEV_DEBUG=false \
+        CARGO_PROFILE_DEV_OPT_LEVEL=s \
+        CARGO_PROFILE_DEV_STRIP=debuginfo \
+        CARGO_PROFILE_DEV_PANIC=abort \
+        CARGO_PROFILE_DEV_LTO=thin \
+        CARGO_PROFILE_DEV_CODEGEN_UNITS=1 \
+        CARGO_PROFILE_DEV_INCREMENTAL=false \
+            cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten
+        echo "  ✓ WASM debug build complete"
 
-    if [ -f "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" ]; then
-        cp "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" "$PLUGIN_DIR/bin/release/"
-        echo "  ✓ Copied: godo.wasm (release)"
+        echo "  → Building WASM release with nightly toolchain..."
+        cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten --release
+        echo "  ✓ WASM release build complete"
+
+        echo ""
+        echo "  → Copying WASM binaries to plugin..."
+
+        # WASM (Note: emscripten builds use godo.wasm, not libgodo.wasm)
+        WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/dev-wasm/godo.wasm"
+        if [ ! -f "$WASM_DEBUG_PATH" ]; then
+            WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/debug/godo.wasm"
+        fi
+        if [ -f "$WASM_DEBUG_PATH" ]; then
+            cp "$WASM_DEBUG_PATH" "$PLUGIN_DIR/bin/debug/"
+            echo "  ✓ Copied: godo.wasm (debug)"
+        fi
+
+        if [ -f "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" ]; then
+            cp "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" "$PLUGIN_DIR/bin/release/"
+            echo "  ✓ Copied: godo.wasm (release)"
+        fi
+    else
+        echo "  ⚠ WASM build skipped (emsdk not found)"
+        echo "  → To enable WASM builds, install emsdk first"
     fi
-else
-    echo "  ⚠ WASM build skipped (emsdk not found)"
-    echo "  → To enable WASM builds, install emsdk first"
 fi
 
 # Linux (if built)

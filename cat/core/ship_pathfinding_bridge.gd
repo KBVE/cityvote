@@ -120,20 +120,27 @@ func load_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
 	if not pathfinding_bridge:
 		return
 
+	# Calculate chunk's top-left tile coordinates
+	var chunk_start = MapConfig.chunk_to_tile(chunk_coords)
+
 	# Convert chunk tile data to pathfinding format
 	var tiles: Array[Dictionary] = []
 	for tile in tile_data:
 		var tile_dict = Dictionary()
-		# tile_data contains: {tile_index: int, x: int, y: int}
-		# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
-		tile_dict["q"] = tile["x"]
-		tile_dict["r"] = tile["y"]
+		# tile_data contains: {tile_index: int, x: int (local 0-31), y: int (local 0-31)}
+		# Convert local coordinates to absolute world coordinates
+		var world_x = chunk_start.x + tile["x"]
+		var world_y = chunk_start.y + tile["y"]
 
-		# Map tile_index to TileType (0=Water, 1=Land, 2=Obstacle)
+		tile_dict["q"] = world_x  # Absolute world tile X
+		tile_dict["r"] = world_y  # Absolute world tile Y
+
+		# Map tile_index to terrain type string (Rust expects "water" or "land")
+		# tile_index matches atlas: 0-3,5-6 = grassland variants, 4 = water
 		if tile["tile_index"] == 4:
-			tile_dict["type"] = 0  # Water
+			tile_dict["type"] = "water"  # Water (walkable for ships)
 		else:
-			tile_dict["type"] = 1  # Land (grasslands, etc.)
+			tile_dict["type"] = "land"  # Land (not walkable for ships)
 
 		tiles.append(tile_dict)
 
@@ -143,7 +150,8 @@ func load_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
 		print("ShipPathfindingBridge: Loaded chunk %v (%d tiles) into pathfinding cache" % [chunk_coords, tiles.size()])
 
 ## Mark tile as dirty (will sync on next interval)
-func mark_tile_dirty(coord: Vector2i, tile_type: int) -> void:
+## tile_type should be "water" or "land"
+func mark_tile_dirty(coord: Vector2i, tile_type: String) -> void:
 	var tile_dict = Dictionary()
 	tile_dict["q"] = coord.x
 	tile_dict["r"] = coord.y
@@ -164,6 +172,18 @@ func get_stats() -> Dictionary:
 	if pathfinding_bridge:
 		return pathfinding_bridge.get_stats()
 	return {}
+
+## Debug: Check terrain at specific coordinates
+func debug_check_terrain(tile_coords: Vector2i) -> String:
+	if pathfinding_bridge:
+		return pathfinding_bridge.get_terrain_type(tile_coords.x, tile_coords.y)
+	return "unknown"
+
+## Debug: Check if tile is walkable
+func debug_is_walkable(tile_coords: Vector2i) -> bool:
+	if pathfinding_bridge:
+		return pathfinding_bridge.is_tile_walkable(tile_coords.x, tile_coords.y)
+	return false
 
 func _exit_tree() -> void:
 	if pathfinding_bridge:
