@@ -120,8 +120,10 @@ impl WorldGenerator {
         let mut land_count = 0;
 
         for (idx, terrain_type) in terrain_data.iter().enumerate() {
-            let x = (idx % CHUNK_SIZE) as i32;
-            let y = (idx / CHUNK_SIZE) as i32;
+            // Terrain data is stored with outer loop Y, inner loop X
+            // So: idx = ty * CHUNK_SIZE + tx
+            let x = (idx % CHUNK_SIZE) as i32;  // tx = idx % CHUNK_SIZE
+            let y = (idx / CHUNK_SIZE) as i32;  // ty = idx / CHUNK_SIZE
             let tile_index = terrain_type.to_tile_index();
 
             // Count terrain types (atlas index 4 = water)

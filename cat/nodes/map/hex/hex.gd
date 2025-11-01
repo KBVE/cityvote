@@ -377,9 +377,12 @@ func _unrender_chunk_immediate(chunk_coords: Vector2i) -> void:
 
 ## Convert chunk coordinates to a unique hash for renderer indexing
 func _chunk_coords_to_hash(chunk_coords: Vector2i) -> int:
-	# Simple hash: combine x and y with bitwise operations
-	# This works for infinite coordinates (positive and negative)
-	return (chunk_coords.y << 16) | (chunk_coords.x & 0xFFFF)
+	# Use Godot's built-in hash for Vector2i which properly handles negative coordinates
+	# This avoids any potential collisions from manual bit operations
+	return hash(chunk_coords)
+
+	# Original bitwise approach (works but has 16-bit limit on X coordinate):
+	# return (chunk_coords.y << 16) | (chunk_coords.x & 0xFFFF)
 
 ## Helper function to convert terrain string to tile index
 # Query function to get tile at specific coordinates (queries chunk pool)

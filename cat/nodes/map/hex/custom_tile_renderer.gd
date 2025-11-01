@@ -150,7 +150,8 @@ func render_chunk(chunk_index: int, tile_data: Array) -> void:
 		mesh_instance.material = row_material
 
 		# Set z_index to tile Y coordinate for perfect cross-chunk layering
-		mesh_instance.z_index = tile_y
+		# Offset by 1000 to ensure even negative Y tiles render above water background (z=-100)
+		mesh_instance.z_index = tile_y + 1000
 		mesh_instance.name = "Chunk_%d_Row_%d" % [chunk_index, tile_y]
 
 		add_child(mesh_instance)

@@ -4,10 +4,11 @@ set -e
 # Display usage information
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [-mac] [-wasm]
+Usage: $(basename "$0") [-mac] [-wasm] [-cache]
 
   -mac   Build and sync macOS binaries only
   -wasm  Build and sync WASM binaries only
+  -cache Use sccache (if available) to cache Rust builds
 
 Running without flags executes both macOS and WASM workflows.
 EOF
@@ -16,30 +17,37 @@ EOF
 # Parse flags
 BUILD_MAC=false
 BUILD_WASM=false
+USE_CACHE=false
+EXPLICIT_TARGET=false
 
-if [ "$#" -eq 0 ]; then
+for arg in "$@"; do
+    case "$arg" in
+        -mac)
+            BUILD_MAC=true
+            EXPLICIT_TARGET=true
+            ;;
+        -wasm)
+            BUILD_WASM=true
+            EXPLICIT_TARGET=true
+            ;;
+        -cache)
+            USE_CACHE=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [ "$EXPLICIT_TARGET" = false ]; then
     BUILD_MAC=true
     BUILD_WASM=true
-else
-    for arg in "$@"; do
-        case "$arg" in
-            -mac)
-                BUILD_MAC=true
-                ;;
-            -wasm)
-                BUILD_WASM=true
-                ;;
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            *)
-                echo "Unknown option: $arg"
-                usage
-                exit 1
-                ;;
-        esac
-    done
 fi
 
 if [ "$BUILD_MAC" = false ] && [ "$BUILD_WASM" = false ]; then
@@ -61,6 +69,17 @@ step() {
     echo "[$CURRENT_STEP/$TOTAL_STEPS] $1"
     CURRENT_STEP=$((CURRENT_STEP + 1))
 }
+
+if [ "$USE_CACHE" = true ]; then
+    if command -v sccache >/dev/null 2>&1; then
+        RUSTC_WRAPPER="$(command -v sccache)"
+        export RUSTC_WRAPPER
+        echo "Caching enabled: using sccache via RUSTC_WRAPPER=$RUSTC_WRAPPER"
+        sccache --start-server >/dev/null 2>&1 || true
+    else
+        echo "⚠ -cache flag set but 'sccache' not found in PATH; skipping cache setup."
+    fi
+fi
 
 # Godo GDExtension Sync Script
 # Builds the extension for multiple platforms and copies to /afk/addons/godo/

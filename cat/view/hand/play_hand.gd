@@ -611,42 +611,26 @@ func _update_preview_ghost(delta: float) -> void:
 	# Convert to tile coordinates
 	var tile_coords = hex_map.tile_map.local_to_map(mouse_world_pos)
 
-	# Check if tile is valid (use MapConfig for correct bounds)
-	if tile_coords.x >= 0 and tile_coords.x < MapConfig.MAP_WIDTH and tile_coords.y >= 0 and tile_coords.y < MapConfig.MAP_HEIGHT:
-		# Valid tile - snap ghost to tile center with offset
-		var tile_world_pos = hex_map.tile_map.map_to_local(tile_coords)
-		preview_ghost.position = tile_world_pos + ghost_offset
-		preview_ghost_target_tile = tile_coords
+	# No bounds check - infinite world support
+	# Valid tile - snap ghost to tile center with offset
+	var tile_world_pos = hex_map.tile_map.map_to_local(tile_coords)
+	preview_ghost.position = tile_world_pos + ghost_offset
+	preview_ghost_target_tile = tile_coords
 
-		# Check if tile is occupied
-		var is_tile_occupied = hex_map.card_data.has(tile_coords)
+	# Check if tile is occupied
+	var is_tile_occupied = hex_map.card_data.has(tile_coords)
 
-		if not is_tile_occupied:
-			# Show hint for placing card on empty tile
-			GlobalHint.show_hint(I18n.translate("ui.hand.hint_place_card"))
+	if not is_tile_occupied:
+		# Show hint for placing card on empty tile
+		GlobalHint.show_hint(I18n.translate("ui.hand.hint_place_card"))
 
-		# Transition to PREVIEW state if hovering valid tile
-		if card_state == CardState.HELD:
-			card_state = CardState.PREVIEW
+	# Transition to PREVIEW state if hovering valid tile
+	if card_state == CardState.HELD:
+		card_state = CardState.PREVIEW
 
-		# Fade in ghost when snapped to valid tile (green tint)
-		var target_color = Color(0.8, 1, 0.8, ghost_alpha_snapped)
-		preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
-	else:
-		# Invalid tile - follow mouse freely with offset
-		preview_ghost.position = mouse_world_pos + ghost_offset
-		preview_ghost_target_tile = Vector2i(-1, -1)
-
-		# Hide hint when not over valid tile
-		GlobalHint.hide_hint()
-
-		# Transition back to HELD if not over valid tile
-		if card_state == CardState.PREVIEW:
-			card_state = CardState.HELD
-
-		# Fade out ghost when moving (super transparent)
-		var target_color = Color(1, 1, 1, ghost_alpha_moving)
-		preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
+	# Fade in ghost when snapped to valid tile (green tint)
+	var target_color = Color(0.8, 1, 0.8, ghost_alpha_snapped)
+	preview_ghost.modulate = preview_ghost.modulate.lerp(target_color, ghost_fade_speed * delta)
 
 func _destroy_preview_ghost() -> void:
 	# Don't destroy the ghost - it's the actual PooledCard that will be returned to hand or placed

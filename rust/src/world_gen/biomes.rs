@@ -72,16 +72,18 @@ impl BiomeGenerator {
         // Combine factors to create variety
         let biome_value = (elevation * 0.4 + temperature * 0.3 + humidity * 0.3).clamp(-1.0, 1.0);
 
-        // Map to grassland variants (6 types)
-        if biome_value < -0.6 {
+        // Map to grassland variants (6 types) with even distribution
+        // Each grassland type gets approximately 1/3 of the range (0.333...)
+        // Range: -1.0 to 1.0 (total width: 2.0)
+        if biome_value < -0.667 {
             TerrainType::Grassland0
-        } else if biome_value < -0.2 {
+        } else if biome_value < -0.333 {
             TerrainType::Grassland1
-        } else if biome_value < 0.2 {
+        } else if biome_value < 0.0 {
             TerrainType::Grassland2
-        } else if biome_value < 0.4 {
+        } else if biome_value < 0.333 {
             TerrainType::Grassland3
-        } else if biome_value < 0.7 {
+        } else if biome_value < 0.667 {
             TerrainType::Grassland4
         } else {
             TerrainType::Grassland5
@@ -99,7 +101,8 @@ impl BiomeGenerator {
         let mut y = map_config::HEX_OFFSET_Y + (tile_y as f32) * map_config::HEX_VERTICAL_SPACING;
 
         // Odd columns offset UP by HEX_ODD_COLUMN_OFFSET
-        if tile_x % 2 == 1 {
+        // Use abs() to handle negative coordinates correctly (matches GDScript)
+        if tile_x.abs() % 2 == 1 {
             y -= map_config::HEX_ODD_COLUMN_OFFSET;
         }
 

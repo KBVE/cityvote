@@ -800,11 +800,7 @@ func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int
 		for dy in range(-max_dist, max_dist + 1):
 			var test_tile = start + Vector2i(dx, dy)
 
-			# Check if within map bounds
-			if test_tile.x < 0 or test_tile.x >= MapConfig.MAP_WIDTH:
-				continue
-			if test_tile.y < 0 or test_tile.y >= MapConfig.MAP_HEIGHT:
-				continue
+			# No bounds check - infinite world support
 
 			# Check distance
 			var dist = abs(dx) + abs(dy)

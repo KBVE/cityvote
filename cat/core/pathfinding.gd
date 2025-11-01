@@ -43,9 +43,7 @@ func find_valid_adjacent_water_tiles(
 	var neighbors = get_hex_neighbors(start_tile)
 
 	for neighbor in neighbors:
-		# Check bounds
-		if neighbor.x < 0 or neighbor.x >= MapConfig.MAP_WIDTH or neighbor.y < 0 or neighbor.y >= MapConfig.MAP_HEIGHT:
-			continue
+		# No bounds check - infinite world support
 
 		# Check if water tile (atlas index 4 = water)
 		var tile_index = hex_map.get_tile_type_at_coords(neighbor)
@@ -147,9 +145,7 @@ func find_random_destination(
 # Private helper functions
 
 func _is_tile_valid(tile: Vector2i, hex_map, occupied_tiles: Dictionary, current_ship = null) -> bool:
-	# Check bounds
-	if tile.x < 0 or tile.x >= MapConfig.MAP_WIDTH or tile.y < 0 or tile.y >= MapConfig.MAP_HEIGHT:
-		return false
+	# No bounds check - infinite world support
 
 	# Check if water tile (atlas index 4 = water)
 	var tile_index = hex_map.get_tile_type_at_coords(tile)
