@@ -1,0 +1,25 @@
+{
+  "size": {
+    "width": 64,
+    "height": 32
+  },
+  "logo_size": 32,
+  "logos": [
+    {
+      "name": "discord",
+      "index": 0,
+      "x": 0,
+      "y": 0,
+      "width": 32,
+      "height": 32
+    },
+    {
+      "name": "twitch",
+      "index": 1,
+      "x": 32,
+      "y": 0,
+      "width": 32,
+      "height": 32
+    }
+  ]
+}

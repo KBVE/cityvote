@@ -23,6 +23,7 @@ mod stats;
 mod combat;
 mod world_gen;
 mod structures;
+mod loot;
 
 struct Godo;
 

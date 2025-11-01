@@ -11,7 +11,8 @@ enum Language {
 	JAPANESE,
 	CHINESE,
 	HINDI,
-	SPANISH
+	SPANISH,
+	FRENCH
 }
 
 # Current language
@@ -24,11 +25,12 @@ var language_flags: Dictionary = {
 	Language.JAPANESE: "japon",
 	Language.CHINESE: "china",
 	Language.HINDI: "India",
-	Language.SPANISH: "spain"
+	Language.SPANISH: "spain",
+	Language.FRENCH: "frenchflag"
 }
 
 # Which atlas to use for each flag
-# realcountries.png = british, japon, china, spain
+# realcountries.png = british, japon, china, spain, frenchflag
 # realcountries2.png = India
 var flag_atlas_mapping: Dictionary = {
 	"british": "realcountries",
@@ -36,6 +38,7 @@ var flag_atlas_mapping: Dictionary = {
 	"japon": "realcountries",
 	"china": "realcountries",
 	"spain": "realcountries",
+	"frenchflag": "realcountries",
 	"India": "realcountries2"
 }
 
@@ -47,6 +50,7 @@ var flag_frame_data: Dictionary = {
 	"japon": {"x": 73, "y": 69, "w": 16, "h": 32},
 	"china": {"x": 1, "y": 35, "w": 16, "h": 32},
 	"spain": {"x": 1, "y": 103, "w": 16, "h": 32},
+	"frenchflag": {"x": 1, "y": 69, "w": 16, "h": 32},
 	"India": {"x": 1, "y": 1, "w": 16, "h": 32}  # From realcountries2
 }
 
@@ -59,7 +63,8 @@ var translations: Dictionary = {
 		Language.JAPANESE: "閉じる",
 		Language.CHINESE: "关闭",
 		Language.HINDI: "बंद करें",
-		Language.SPANISH: "Cerrar"
+		Language.SPANISH: "Cerrar",
+		Language.FRENCH: "Fermer"
 	},
 
 	# UI - Stats
@@ -68,28 +73,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "HP",
 		Language.CHINESE: "HP",
 		Language.HINDI: "HP",
-		Language.SPANISH: "HP"
+		Language.SPANISH: "HP",
+		Language.FRENCH: "PV"
 	},
 	"ui.stats.ep": {
 		Language.ENGLISH: "EP",
 		Language.JAPANESE: "EP",
 		Language.CHINESE: "EP",
 		Language.HINDI: "EP",
-		Language.SPANISH: "EP"
+		Language.SPANISH: "EP",
+		Language.FRENCH: "PE"
 	},
 	"ui.stats.health": {
 		Language.ENGLISH: "Health",
 		Language.JAPANESE: "体力",
 		Language.CHINESE: "生命值",
 		Language.HINDI: "स्वास्थ्य",
-		Language.SPANISH: "Salud"
+		Language.SPANISH: "Salud",
+		Language.FRENCH: "Santé"
 	},
 	"ui.stats.energy": {
 		Language.ENGLISH: "Energy",
 		Language.JAPANESE: "エネルギー",
 		Language.CHINESE: "能量",
 		Language.HINDI: "ऊर्जा",
-		Language.SPANISH: "Energía"
+		Language.SPANISH: "Energía",
+		Language.FRENCH: "Énergie"
 	},
 
 	# UI - Hand/Cards
@@ -98,77 +107,88 @@ var translations: Dictionary = {
 		Language.JAPANESE: "交換",
 		Language.CHINESE: "交换",
 		Language.HINDI: "अदला-बदली",
-		Language.SPANISH: "Intercambiar"
+		Language.SPANISH: "Intercambiar",
+		Language.FRENCH: "Échanger"
 	},
 	"ui.hand.full": {
 		Language.ENGLISH: "Hand is full! Use a card to draw more.",
 		Language.JAPANESE: "手札が満杯です！カードを使用してください。",
 		Language.CHINESE: "手牌已满！使用一张牌来抽更多牌。",
 		Language.HINDI: "हाथ भरा है! अधिक कार्ड खींचने के लिए एक कार्ड का उपयोग करें।",
-		Language.SPANISH: "¡La mano está llena! Usa una carta para robar más."
+		Language.SPANISH: "¡La mano está llena! Usa una carta para robar más.",
+		Language.FRENCH: "La main est pleine ! Utilisez une carte pour en piocher d'autres."
 	},
 	"ui.hand.drew": {
 		Language.ENGLISH: "Drew: %s",
 		Language.JAPANESE: "引いた: %s",
 		Language.CHINESE: "抽取: %s",
 		Language.HINDI: "खींचा: %s",
-		Language.SPANISH: "Robó: %s"
+		Language.SPANISH: "Robó: %s",
+		Language.FRENCH: "Pioché : %s"
 	},
 	"ui.hand.deck_empty": {
 		Language.ENGLISH: "Deck is empty!",
 		Language.JAPANESE: "デッキが空です！",
 		Language.CHINESE: "牌组为空！",
 		Language.HINDI: "डेक खाली है!",
-		Language.SPANISH: "¡El mazo está vacío!"
+		Language.SPANISH: "¡El mazo está vacío!",
+		Language.FRENCH: "Le paquet est vide !"
 	},
 	"ui.hand.card_placed": {
 		Language.ENGLISH: "Placed: %s",
 		Language.JAPANESE: "配置: %s",
 		Language.CHINESE: "放置: %s",
 		Language.HINDI: "रखा: %s",
-		Language.SPANISH: "Colocó: %s"
+		Language.SPANISH: "Colocó: %s",
+		Language.FRENCH: "Placée : %s"
 	},
 	"ui.hand.tile_occupied": {
 		Language.ENGLISH: "Tile is occupied!",
 		Language.JAPANESE: "タイルは占有されています！",
 		Language.CHINESE: "格子已被占用！",
 		Language.HINDI: "टाइल पहले से भरी हुई है!",
-		Language.SPANISH: "¡La casilla está ocupada!"
+		Language.SPANISH: "¡La casilla está ocupada!",
+		Language.FRENCH: "La case est occupée !"
 	},
 	"ui.hand.joker_requires_water": {
 		Language.ENGLISH: "Viking joker must be placed on water!",
 		Language.JAPANESE: "バイキングジョーカーは水上に置く必要があります！",
 		Language.CHINESE: "维京牌必须放在水上！",
 		Language.HINDI: "वाइकिंग जोकर को पानी पर रखा जाना चाहिए!",
-		Language.SPANISH: "¡El comodín vikingo debe colocarse en agua!"
+		Language.SPANISH: "¡El comodín vikingo debe colocarse en agua!",
+		Language.FRENCH: "Le joker viking doit être placé sur l'eau !"
 	},
 	"ui.hand.joker_requires_land": {
 		Language.ENGLISH: "Dino joker must be placed on land!",
 		Language.JAPANESE: "ディノジョーカーは陸上に置く必要があります！",
 		Language.CHINESE: "恐龙牌必须放在陆地上！",
 		Language.HINDI: "डायनो जोकर को जमीन पर रखा जाना चाहिए!",
-		Language.SPANISH: "¡El comodín dino debe colocarse en tierra!"
+		Language.SPANISH: "¡El comodín dino debe colocarse en tierra!",
+		Language.FRENCH: "Le joker dino doit être placé sur terre !"
 	},
 	"ui.hand.hint_place_card": {
 		Language.ENGLISH: "Double click or tap to place",
 		Language.JAPANESE: "ダブルクリックまたはタップして配置",
 		Language.CHINESE: "双击或点击放置",
 		Language.HINDI: "रखने के लिए डबल क्लिक या टैप करें",
-		Language.SPANISH: "Doble clic o toca para colocar"
+		Language.SPANISH: "Doble clic o toca para colocar",
+		Language.FRENCH: "Double-cliquez ou touchez pour placer"
 	},
 	"ui.hand.mull_again": {
 		Language.ENGLISH: "Mull Again (1 Gold)",
 		Language.JAPANESE: "マリガン (1ゴールド)",
 		Language.CHINESE: "重抽 (1金币)",
 		Language.HINDI: "फिर से मिलाएं (1 सोना)",
-		Language.SPANISH: "Mulligan (1 Oro)"
+		Language.SPANISH: "Mulligan (1 Oro)",
+		Language.FRENCH: "Relancer (1 Or)"
 	},
 	"ui.hand.card_count": {
 		Language.ENGLISH: "Cards: %d / %d",
 		Language.JAPANESE: "カード: %d / %d",
 		Language.CHINESE: "卡牌: %d / %d",
 		Language.HINDI: "कार्ड: %d / %d",
-		Language.SPANISH: "Cartas: %d / %d"
+		Language.SPANISH: "Cartas: %d / %d",
+		Language.FRENCH: "Cartes : %d / %d"
 	},
 
 	# Loading Screen
@@ -177,42 +197,48 @@ var translations: Dictionary = {
 		Language.JAPANESE: "初期化中...",
 		Language.CHINESE: "初始化中...",
 		Language.HINDI: "शुरुआत हो रही है...",
-		Language.SPANISH: "Iniciando..."
+		Language.SPANISH: "Iniciando...",
+		Language.FRENCH: "Initialisation..."
 	},
 	"ui.loading.generating_map": {
 		Language.ENGLISH: "Generating world map...",
 		Language.JAPANESE: "ワールドマップを生成中...",
 		Language.CHINESE: "生成世界地图中...",
 		Language.HINDI: "विश्व मानचित्र बनाया जा रहा है...",
-		Language.SPANISH: "Generando mapa del mundo..."
+		Language.SPANISH: "Generando mapa del mundo...",
+		Language.FRENCH: "Génération de la carte du monde..."
 	},
 	"ui.loading.rendering_chunks": {
 		Language.ENGLISH: "Rendering terrain...",
 		Language.JAPANESE: "地形をレンダリング中...",
 		Language.CHINESE: "渲染地形中...",
 		Language.HINDI: "भूभाग प्रस्तुत किया जा रहा है...",
-		Language.SPANISH: "Renderizando terreno..."
+		Language.SPANISH: "Renderizando terreno...",
+		Language.FRENCH: "Rendu du terrain..."
 	},
 	"ui.loading.pathfinding": {
 		Language.ENGLISH: "Initializing pathfinding...",
 		Language.JAPANESE: "経路探索を初期化中...",
 		Language.CHINESE: "初始化寻路系统...",
 		Language.HINDI: "पथ खोज शुरू की जा रही है...",
-		Language.SPANISH: "Iniciando búsqueda de rutas..."
+		Language.SPANISH: "Iniciando búsqueda de rutas...",
+		Language.FRENCH: "Initialisation du calcul de chemin..."
 	},
 	"ui.loading.spawning_entities": {
 		Language.ENGLISH: "Spawning entities...",
 		Language.JAPANESE: "エンティティを配置中...",
 		Language.CHINESE: "生成实体中...",
 		Language.HINDI: "संस्थाएं बनाई जा रही हैं...",
-		Language.SPANISH: "Generando entidades..."
+		Language.SPANISH: "Generando entidades...",
+		Language.FRENCH: "Apparition des entités..."
 	},
 	"ui.loading.complete": {
 		Language.ENGLISH: "Ready!",
 		Language.JAPANESE: "準備完了！",
 		Language.CHINESE: "就绪！",
 		Language.HINDI: "तैयार!",
-		Language.SPANISH: "¡Listo!"
+		Language.SPANISH: "¡Listo!",
+		Language.FRENCH: "Prêt !"
 	},
 
 	# HUD - Timer and Turns
@@ -221,14 +247,16 @@ var translations: Dictionary = {
 		Language.JAPANESE: "タイマー: %d秒",
 		Language.CHINESE: "计时器: %d秒",
 		Language.HINDI: "समय: %dसे",
-		Language.SPANISH: "Tiempo: %ds"
+		Language.SPANISH: "Tiempo: %ds",
+		Language.FRENCH: "Temps : %ds"
 	},
 	"ui.hud.turn": {
 		Language.ENGLISH: "Turn: %d",
 		Language.JAPANESE: "ターン: %d",
 		Language.CHINESE: "回合: %d",
 		Language.HINDI: "मोड़: %d",
-		Language.SPANISH: "Turno: %d"
+		Language.SPANISH: "Turno: %d",
+		Language.FRENCH: "Tour : %d"
 	},
 
 	# Cards - Standard Suits
@@ -237,28 +265,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "クラブ",
 		Language.CHINESE: "梅花",
 		Language.HINDI: "चिड़ी",
-		Language.SPANISH: "Tréboles"
+		Language.SPANISH: "Tréboles",
+		Language.FRENCH: "Trèfles"
 	},
 	"card.suit.diamonds": {
 		Language.ENGLISH: "Diamonds",
 		Language.JAPANESE: "ダイヤ",
 		Language.CHINESE: "方块",
 		Language.HINDI: "ईंट",
-		Language.SPANISH: "Diamantes"
+		Language.SPANISH: "Diamantes",
+		Language.FRENCH: "Carreaux"
 	},
 	"card.suit.hearts": {
 		Language.ENGLISH: "Hearts",
 		Language.JAPANESE: "ハート",
 		Language.CHINESE: "红心",
 		Language.HINDI: "पान",
-		Language.SPANISH: "Corazones"
+		Language.SPANISH: "Corazones",
+		Language.FRENCH: "Cœurs"
 	},
 	"card.suit.spades": {
 		Language.ENGLISH: "Spades",
 		Language.JAPANESE: "スペード",
 		Language.CHINESE: "黑桃",
 		Language.HINDI: "हुकुम",
-		Language.SPANISH: "Picas"
+		Language.SPANISH: "Picas",
+		Language.FRENCH: "Piques"
 	},
 
 	# Cards - Values
@@ -267,28 +299,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "エース",
 		Language.CHINESE: "A",
 		Language.HINDI: "इक्का",
-		Language.SPANISH: "As"
+		Language.SPANISH: "As",
+		Language.FRENCH: "As"
 	},
 	"card.value.jack": {
 		Language.ENGLISH: "Jack",
 		Language.JAPANESE: "ジャック",
 		Language.CHINESE: "J",
 		Language.HINDI: "गुलाम",
-		Language.SPANISH: "Jota"
+		Language.SPANISH: "Jota",
+		Language.FRENCH: "Valet"
 	},
 	"card.value.queen": {
 		Language.ENGLISH: "Queen",
 		Language.JAPANESE: "クイーン",
 		Language.CHINESE: "Q",
 		Language.HINDI: "बेगम",
-		Language.SPANISH: "Reina"
+		Language.SPANISH: "Reina",
+		Language.FRENCH: "Dame"
 	},
 	"card.value.king": {
 		Language.ENGLISH: "King",
 		Language.JAPANESE: "キング",
 		Language.CHINESE: "K",
 		Language.HINDI: "बादशाह",
-		Language.SPANISH: "Rey"
+		Language.SPANISH: "Rey",
+		Language.FRENCH: "Roi"
 	},
 
 	# Cards - Custom
@@ -297,28 +333,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "バイキング特別",
 		Language.CHINESE: "维京特殊",
 		Language.HINDI: "वाइकिंग विशेष",
-		Language.SPANISH: "Vikingos Especial"
+		Language.SPANISH: "Vikingos Especial",
+		Language.FRENCH: "Spécial Viking"
 	},
 	"card.custom.dino": {
 		Language.ENGLISH: "Dino Special",
 		Language.JAPANESE: "恐竜特別",
 		Language.CHINESE: "恐龙特殊",
 		Language.HINDI: "डायनो विशेष",
-		Language.SPANISH: "Dino Especial"
+		Language.SPANISH: "Dino Especial",
+		Language.FRENCH: "Spécial Dino"
 	},
 	"card.custom.generic": {
 		Language.ENGLISH: "Custom Card",
 		Language.JAPANESE: "カスタムカード",
 		Language.CHINESE: "自定义卡牌",
 		Language.HINDI: "कस्टम कार्ड",
-		Language.SPANISH: "Carta Personalizada"
+		Language.SPANISH: "Carta Personalizada",
+		Language.FRENCH: "Carte Personnalisée"
 	},
 	"card.of": {
 		Language.ENGLISH: "of",
 		Language.JAPANESE: "の",
 		Language.CHINESE: "",
 		Language.HINDI: "का",
-		Language.SPANISH: "de"
+		Language.SPANISH: "de",
+		Language.FRENCH: "de"
 	},
 
 	# Entity Names
@@ -327,42 +367,48 @@ var translations: Dictionary = {
 		Language.JAPANESE: "バイキング船",
 		Language.CHINESE: "维京船",
 		Language.HINDI: "वाइकिंग जहाज",
-		Language.SPANISH: "Barco Vikingo"
+		Language.SPANISH: "Barco Vikingo",
+		Language.FRENCH: "Navire Viking"
 	},
 	"entity.jezza.name": {
 		Language.ENGLISH: "Jezza",
 		Language.JAPANESE: "ジェザ",
 		Language.CHINESE: "杰扎",
 		Language.HINDI: "जेज़ा",
-		Language.SPANISH: "Jezza"
+		Language.SPANISH: "Jezza",
+		Language.FRENCH: "Jezza"
 	},
 	"entity.raptor": {
 		Language.ENGLISH: "Raptor",
 		Language.JAPANESE: "ラプター",
 		Language.CHINESE: "迅猛龙",
 		Language.HINDI: "रैप्टर",
-		Language.SPANISH: "Raptor"
+		Language.SPANISH: "Raptor",
+		Language.FRENCH: "Raptor"
 	},
 	"entity.jezza_raptor": {
 		Language.ENGLISH: "Jezza Raptor",
 		Language.JAPANESE: "ジェザ・ラプター",
 		Language.CHINESE: "杰扎迅猛龙",
 		Language.HINDI: "जेज़ा रैप्टर",
-		Language.SPANISH: "Jezza Raptor"
+		Language.SPANISH: "Jezza Raptor",
+		Language.FRENCH: "Jezza Raptor"
 	},
 	"entity.fantasy_warrior.name": {
 		Language.ENGLISH: "Fantasy Warrior",
 		Language.JAPANESE: "ファンタジーウォリアー",
 		Language.CHINESE: "幻想战士",
 		Language.HINDI: "काल्पनिक योद्धा",
-		Language.SPANISH: "Guerrero Fantástico"
+		Language.SPANISH: "Guerrero Fantástico",
+		Language.FRENCH: "Guerrier Fantastique"
 	},
 	"entity.king.name": {
 		Language.ENGLISH: "King",
 		Language.JAPANESE: "王",
 		Language.CHINESE: "国王",
 		Language.HINDI: "राजा",
-		Language.SPANISH: "Rey"
+		Language.SPANISH: "Rey",
+		Language.FRENCH: "Roi"
 	},
 
 	# Tile Types
@@ -371,28 +417,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "草原",
 		Language.CHINESE: "草地",
 		Language.HINDI: "घास का मैदान",
-		Language.SPANISH: "Pradera"
+		Language.SPANISH: "Pradera",
+		Language.FRENCH: "Prairie"
 	},
 	"tile.water": {
 		Language.ENGLISH: "Water",
 		Language.JAPANESE: "水",
 		Language.CHINESE: "水",
 		Language.HINDI: "पानी",
-		Language.SPANISH: "Agua"
+		Language.SPANISH: "Agua",
+		Language.FRENCH: "Eau"
 	},
 	"tile.city": {
 		Language.ENGLISH: "City",
 		Language.JAPANESE: "都市",
 		Language.CHINESE: "城市",
 		Language.HINDI: "शहर",
-		Language.SPANISH: "Ciudad"
+		Language.SPANISH: "Ciudad",
+		Language.FRENCH: "Ville"
 	},
 	"tile.village": {
 		Language.ENGLISH: "Village",
 		Language.JAPANESE: "村",
 		Language.CHINESE: "村庄",
 		Language.HINDI: "गाँव",
-		Language.SPANISH: "Pueblo"
+		Language.SPANISH: "Pueblo",
+		Language.FRENCH: "Village"
 	},
 
 	# Tile Info UI Labels
@@ -401,42 +451,48 @@ var translations: Dictionary = {
 		Language.JAPANESE: "タイル情報",
 		Language.CHINESE: "地块信息",
 		Language.HINDI: "टाइल जानकारी",
-		Language.SPANISH: "Info del Mosaico"
+		Language.SPANISH: "Info del Mosaico",
+		Language.FRENCH: "Info de Case"
 	},
 	"tile_info.coords": {
 		Language.ENGLISH: "Coords",
 		Language.JAPANESE: "座標",
 		Language.CHINESE: "坐标",
 		Language.HINDI: "निर्देशांक",
-		Language.SPANISH: "Coords"
+		Language.SPANISH: "Coords",
+		Language.FRENCH: "Coords"
 	},
 	"tile_info.type": {
 		Language.ENGLISH: "Type",
 		Language.JAPANESE: "種類",
 		Language.CHINESE: "类型",
 		Language.HINDI: "प्रकार",
-		Language.SPANISH: "Tipo"
+		Language.SPANISH: "Tipo",
+		Language.FRENCH: "Type"
 	},
 	"tile_info.world": {
 		Language.ENGLISH: "World",
 		Language.JAPANESE: "ワールド",
 		Language.CHINESE: "世界",
 		Language.HINDI: "विश्व",
-		Language.SPANISH: "Mundo"
+		Language.SPANISH: "Mundo",
+		Language.FRENCH: "Monde"
 	},
 	"tile_info.card": {
 		Language.ENGLISH: "Card",
 		Language.JAPANESE: "カード",
 		Language.CHINESE: "卡牌",
 		Language.HINDI: "कार्ड",
-		Language.SPANISH: "Carta"
+		Language.SPANISH: "Carta",
+		Language.FRENCH: "Carte"
 	},
 	"tile_info.ulid": {
 		Language.ENGLISH: "ULID",
 		Language.JAPANESE: "ULID",
 		Language.CHINESE: "ULID",
 		Language.HINDI: "ULID",
-		Language.SPANISH: "ULID"
+		Language.SPANISH: "ULID",
+		Language.FRENCH: "ULID"
 	},
 
 	# Structures - General
@@ -445,63 +501,72 @@ var translations: Dictionary = {
 		Language.JAPANESE: "種類",
 		Language.CHINESE: "类型",
 		Language.HINDI: "प्रकार",
-		Language.SPANISH: "Tipo"
+		Language.SPANISH: "Tipo",
+		Language.FRENCH: "Type"
 	},
 	"structure.position": {
 		Language.ENGLISH: "Position",
 		Language.JAPANESE: "位置",
 		Language.CHINESE: "位置",
 		Language.HINDI: "स्थिति",
-		Language.SPANISH: "Posición"
+		Language.SPANISH: "Posición",
+		Language.FRENCH: "Position"
 	},
 	"structure.status": {
 		Language.ENGLISH: "Status",
 		Language.JAPANESE: "状態",
 		Language.CHINESE: "状态",
 		Language.HINDI: "स्थिति",
-		Language.SPANISH: "Estado"
+		Language.SPANISH: "Estado",
+		Language.FRENCH: "Statut"
 	},
 	"structure.active": {
 		Language.ENGLISH: "Active",
 		Language.JAPANESE: "活動中",
 		Language.CHINESE: "活跃",
 		Language.HINDI: "सक्रिय",
-		Language.SPANISH: "Activo"
+		Language.SPANISH: "Activo",
+		Language.FRENCH: "Actif"
 	},
 	"structure.inactive": {
 		Language.ENGLISH: "Inactive",
 		Language.JAPANESE: "非活動",
 		Language.CHINESE: "不活跃",
 		Language.HINDI: "निष्क्रिय",
-		Language.SPANISH: "Inactivo"
+		Language.SPANISH: "Inactivo",
+		Language.FRENCH: "Inactif"
 	},
 	"structure.population": {
 		Language.ENGLISH: "Population",
 		Language.JAPANESE: "人口",
 		Language.CHINESE: "人口",
 		Language.HINDI: "जनसंख्या",
-		Language.SPANISH: "Población"
+		Language.SPANISH: "Población",
+		Language.FRENCH: "Population"
 	},
 	"structure.wealth": {
 		Language.ENGLISH: "Wealth",
 		Language.JAPANESE: "富",
 		Language.CHINESE: "财富",
 		Language.HINDI: "धन",
-		Language.SPANISH: "Riqueza"
+		Language.SPANISH: "Riqueza",
+		Language.FRENCH: "Richesse"
 	},
 	"structure.reputation": {
 		Language.ENGLISH: "Reputation",
 		Language.JAPANESE: "評判",
 		Language.CHINESE: "声望",
 		Language.HINDI: "प्रतिष्ठा",
-		Language.SPANISH: "Reputación"
+		Language.SPANISH: "Reputación",
+		Language.FRENCH: "Réputation"
 	},
 	"structure.trade_modifier": {
 		Language.ENGLISH: "Trade Modifier",
 		Language.JAPANESE: "取引修正",
 		Language.CHINESE: "交易修正",
 		Language.HINDI: "व्यापार संशोधक",
-		Language.SPANISH: "Modificador Comercial"
+		Language.SPANISH: "Modificador Comercial",
+		Language.FRENCH: "Modificateur de Commerce"
 	},
 
 	# Structure Actions
@@ -510,35 +575,40 @@ var translations: Dictionary = {
 		Language.JAPANESE: "取引",
 		Language.CHINESE: "交易",
 		Language.HINDI: "व्यापार",
-		Language.SPANISH: "Comerciar"
+		Language.SPANISH: "Comerciar",
+		Language.FRENCH: "Commerce"
 	},
 	"structure.action.rest": {
 		Language.ENGLISH: "Rest",
 		Language.JAPANESE: "休憩",
 		Language.CHINESE: "休息",
 		Language.HINDI: "आराम",
-		Language.SPANISH: "Descansar"
+		Language.SPANISH: "Descansar",
+		Language.FRENCH: "Repos"
 	},
 	"structure.action.recruit": {
 		Language.ENGLISH: "Recruit",
 		Language.JAPANESE: "募集",
 		Language.CHINESE: "招募",
 		Language.HINDI: "भर्ती",
-		Language.SPANISH: "Reclutar"
+		Language.SPANISH: "Reclutar",
+		Language.FRENCH: "Recruter"
 	},
 	"structure.action.attack": {
 		Language.ENGLISH: "Attack",
 		Language.JAPANESE: "攻撃",
 		Language.CHINESE: "攻击",
 		Language.HINDI: "हमला",
-		Language.SPANISH: "Atacar"
+		Language.SPANISH: "Atacar",
+		Language.FRENCH: "Attaque"
 	},
 	"structure.action.defend": {
 		Language.ENGLISH: "Defend",
 		Language.JAPANESE: "防御",
 		Language.CHINESE: "防御",
 		Language.HINDI: "बचाव",
-		Language.SPANISH: "Defender"
+		Language.SPANISH: "Defender",
+		Language.FRENCH: "Défense"
 	},
 
 	# Entities - Flavor Text
@@ -547,28 +617,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "凍てつく北の地から来た恐れ知らずの略奪者。彼らの長船は、氷を切る斧のように波を切り裂く。彼らは栄光、略奪品、そしてヴァルハラでの居場所を求めている。",
 		Language.CHINESE: "来自冰冻北方的无畏掠夺者。他们的长船像斧头切冰一样劈开波浪。他们寻求荣耀、掠夺品和瓦尔哈拉的位置。",
 		Language.HINDI: "जमे हुए उत्तर से निडर हमलावर। उनकी लंबी नावें बर्फ के माध्यम से कुल्हाड़ी की तरह लहरों को काटती हैं। वे महिमा, लूट और वलहैला में एक स्थान की तलाश करते हैं।",
-		Language.SPANISH: "Intrépidos asaltantes del norte helado. Sus drakkars cortan las olas como hachas atraviesan el hielo. Buscan gloria, botín y un lugar en el Valhalla."
+		Language.SPANISH: "Intrépidos asaltantes del norte helado. Sus drakkars cortan las olas como hachas atraviesan el hielo. Buscan gloria, botín y un lugar en el Valhalla.",
+		Language.FRENCH: "Intrépides pillards du nord glacé. Leurs drakkars fendent les vagues comme des haches traversent la glace. Ils recherchent la gloire, le butin et une place au Valhalla."
 	},
 	"entity.jezza.flavor": {
 		Language.ENGLISH: "Ancient reptilian survivors from a forgotten age. Their roar echoes across time itself. Despite their fearsome appearance, they're surprisingly curious.",
 		Language.JAPANESE: "忘れられた時代から生き残った古代の爬虫類。彼らの咆哮は時間そのものに響き渡る。恐ろしい外見にもかかわらず、彼らは驚くほど好奇心旺盛だ。",
 		Language.CHINESE: "来自被遗忘时代的古老爬行动物幸存者。它们的咆哮穿越时间本身。尽管外表可怕，但它们出奇地好奇。",
 		Language.HINDI: "भुला दिए गए युग के प्राचीन सरीसृप जीवित बचे। उनकी दहाड़ समय के माध्यम से गूंजती है। उनके भयानक रूप के बावजूद, वे आश्चर्यजनक रूप से जिज्ञासु हैं।",
-		Language.SPANISH: "Antiguos sobrevivientes reptilianos de una era olvidada. Su rugido resuena a través del tiempo mismo. A pesar de su apariencia temible, son sorprendentemente curiosos."
+		Language.SPANISH: "Antiguos sobrevivientes reptilianos de una era olvidada. Su rugido resuena a través del tiempo mismo. A pesar de su apariencia temible, son sorprendentemente curiosos.",
+		Language.FRENCH: "Anciens survivants reptiliens d'une ère oubliée. Leur rugissement résonne à travers le temps lui-même. Malgré leur apparence redoutable, ils sont étonnamment curieux."
 	},
 	"entity.fantasy_warrior.flavor": {
 		Language.ENGLISH: "A legendary warrior from mystical realms. Master of blade and magic, they stride through battlefields with unmatched grace. Their courage inspires allies and strikes fear into enemies.",
 		Language.JAPANESE: "神秘的な領域から来た伝説の戦士。剣と魔法の達人であり、比類のない優雅さで戦場を闊歩する。彼らの勇気は味方を鼓舞し、敵に恐怖を与える。",
 		Language.CHINESE: "来自神秘领域的传奇战士。精通剑术和魔法，以无与伦比的优雅姿态穿越战场。他们的勇气激励盟友，令敌人恐惧。",
 		Language.HINDI: "रहस्यमय क्षेत्रों से आया एक पौराणिक योद्धा। तलवार और जादू के मास्टर, वे अद्वितीय सुंदरता के साथ युद्धक्षेत्र में चलते हैं। उनकी साहस सहयोगियों को प्रेरित करती है और दुश्मनों में डर पैदा करती है।",
-		Language.SPANISH: "Un guerrero legendario de reinos místicos. Maestro de la espada y la magia, atraviesa campos de batalla con gracia incomparable. Su valentía inspira a aliados y siembra terror en enemigos."
+		Language.SPANISH: "Un guerrero legendario de reinos místicos. Maestro de la espada y la magia, atraviesa campos de batalla con gracia incomparable. Su valentía inspira a aliados y siembra terror en enemigos.",
+		Language.FRENCH: "Un guerrier légendaire des royaumes mystiques. Maître de la lame et de la magie, ils traversent les champs de bataille avec une grâce incomparable. Leur courage inspire les alliés et sème la peur chez les ennemis."
 	},
 	"entity.king.flavor": {
 		Language.ENGLISH: "A noble ruler from a distant kingdom. Bearer of the crown and defender of the realm, he commands respect with wisdom and strength. His presence on the battlefield turns the tide of war.",
 		Language.JAPANESE: "遠い王国からの高貴な支配者。王冠の持ち主であり領域の守護者であり、知恵と力で尊敬を集める。戦場での彼の存在は戦争の流れを変える。",
 		Language.CHINESE: "来自遥远王国的尊贵统治者。王冠的承载者和领域的守护者，他以智慧和力量赢得尊重。他在战场上的出现扭转了战争的局势。",
 		Language.HINDI: "एक दूर के राज्य से एक महान शासक। मुकुट के धारक और क्षेत्र के रक्षक, वह ज्ञान और शक्ति से सम्मान प्राप्त करते हैं। युद्धक्षेत्र पर उनकी उपस्थिति युद्ध की दिशा बदल देती है।",
-		Language.SPANISH: "Un noble gobernante de un reino distante. Portador de la corona y defensor del reino, comanda respeto con sabiduría y fuerza. Su presencia en el campo de batalla cambia el curso de la guerra."
+		Language.SPANISH: "Un noble gobernante de un reino distante. Portador de la corona y defensor del reino, comanda respeto con sabiduría y fuerza. Su presencia en el campo de batalla cambia el curso de la guerra.",
+		Language.FRENCH: "Un noble souverain d'un royaume lointain. Porteur de la couronne et défenseur du royaume, il commande le respect par sa sagesse et sa force. Sa présence sur le champ de bataille renverse le cours de la guerre."
 	},
 
 	# Stats
@@ -577,70 +651,88 @@ var translations: Dictionary = {
 		Language.JAPANESE: "体力",
 		Language.CHINESE: "生命值",
 		Language.HINDI: "स्वास्थ्य",
-		Language.SPANISH: "Salud"
+		Language.SPANISH: "Salud",
+		Language.FRENCH: "Santé"
 	},
 	"stat.attack": {
 		Language.ENGLISH: "Attack",
 		Language.JAPANESE: "攻撃力",
 		Language.CHINESE: "攻击力",
 		Language.HINDI: "हमला",
-		Language.SPANISH: "Ataque"
+		Language.SPANISH: "Ataque",
+		Language.FRENCH: "Attaque"
 	},
 	"stat.defense": {
 		Language.ENGLISH: "Defense",
 		Language.JAPANESE: "防御力",
 		Language.CHINESE: "防御力",
 		Language.HINDI: "रक्षा",
-		Language.SPANISH: "Defensa"
+		Language.SPANISH: "Defensa",
+		Language.FRENCH: "Défense"
 	},
 	"stat.speed": {
 		Language.ENGLISH: "Speed",
 		Language.JAPANESE: "速度",
 		Language.CHINESE: "速度",
 		Language.HINDI: "गति",
-		Language.SPANISH: "Velocidad"
+		Language.SPANISH: "Velocidad",
+		Language.FRENCH: "Vitesse"
 	},
 	"stat.range": {
 		Language.ENGLISH: "Range",
 		Language.JAPANESE: "射程",
 		Language.CHINESE: "射程",
 		Language.HINDI: "सीमा",
-		Language.SPANISH: "Alcance"
+		Language.SPANISH: "Alcance",
+		Language.FRENCH: "Portée"
 	},
 	"stat.morale": {
 		Language.ENGLISH: "Morale",
 		Language.JAPANESE: "士気",
 		Language.CHINESE: "士气",
 		Language.HINDI: "मनोबल",
-		Language.SPANISH: "Moral"
+		Language.SPANISH: "Moral",
+		Language.FRENCH: "Moral"
 	},
 	"stat.level": {
 		Language.ENGLISH: "Level",
 		Language.JAPANESE: "レベル",
 		Language.CHINESE: "等级",
 		Language.HINDI: "स्तर",
-		Language.SPANISH: "Nivel"
+		Language.SPANISH: "Nivel",
+		Language.FRENCH: "Niveau"
 	},
 	"stat.experience": {
 		Language.ENGLISH: "Experience",
 		Language.JAPANESE: "経験値",
 		Language.CHINESE: "经验值",
 		Language.HINDI: "अनुभव",
-		Language.SPANISH: "Experiencia"
+		Language.SPANISH: "Experiencia",
+		Language.FRENCH: "Expérience"
+	},
+	"card.draw": {
+		Language.ENGLISH: "Draw",
+		Language.JAPANESE: "ドロー",
+		Language.CHINESE: "抽牌",
+		Language.HINDI: "कार्ड",
+		Language.SPANISH: "Robar",
+		Language.FRENCH: "Piocher"
 	},
 	"stat.production_rate": {
 		Language.ENGLISH: "Production Rate",
 		Language.JAPANESE: "生産速度",
 		Language.CHINESE: "生产速度",
 		Language.HINDI: "उत्पादन दर",
-		Language.SPANISH: "Tasa de Producción"
+		Language.SPANISH: "Tasa de Producción",
+		Language.FRENCH: "Taux de Production"
 	},
 	"stat.storage_capacity": {
 		Language.ENGLISH: "Storage Capacity",
 		Language.JAPANESE: "保管容量",
 		Language.CHINESE: "存储容量",
 		Language.HINDI: "भंडारण क्षमता",
-		Language.SPANISH: "Capacidad de Almacenamiento"
+		Language.SPANISH: "Capacidad de Almacenamiento",
+		Language.FRENCH: "Capacité de Stockage"
 	},
 
 	# Resources
@@ -649,49 +741,56 @@ var translations: Dictionary = {
 		Language.JAPANESE: "ゴールド",
 		Language.CHINESE: "金币",
 		Language.HINDI: "सोना",
-		Language.SPANISH: "Oro"
+		Language.SPANISH: "Oro",
+		Language.FRENCH: "Or"
 	},
 	"resource.labor": {
 		Language.ENGLISH: "Labor",
 		Language.JAPANESE: "労働",
 		Language.CHINESE: "劳工",
 		Language.HINDI: "श्रम",
-		Language.SPANISH: "Trabajo"
+		Language.SPANISH: "Trabajo",
+		Language.FRENCH: "Main-d'œuvre"
 	},
 	"resource.food": {
 		Language.ENGLISH: "Food",
 		Language.JAPANESE: "食料",
 		Language.CHINESE: "食物",
 		Language.HINDI: "भोजन",
-		Language.SPANISH: "Comida"
+		Language.SPANISH: "Comida",
+		Language.FRENCH: "Nourriture"
 	},
 	"resource.wood": {
 		Language.ENGLISH: "Wood",
 		Language.JAPANESE: "木材",
 		Language.CHINESE: "木材",
 		Language.HINDI: "लकड़ी",
-		Language.SPANISH: "Madera"
+		Language.SPANISH: "Madera",
+		Language.FRENCH: "Bois"
 	},
 	"resource.stone": {
 		Language.ENGLISH: "Stone",
 		Language.JAPANESE: "石",
 		Language.CHINESE: "石头",
 		Language.HINDI: "पत्थर",
-		Language.SPANISH: "Piedra"
+		Language.SPANISH: "Piedra",
+		Language.FRENCH: "Pierre"
 	},
 	"resource.iron": {
 		Language.ENGLISH: "Iron",
 		Language.JAPANESE: "鉄",
 		Language.CHINESE: "铁",
 		Language.HINDI: "लोहा",
-		Language.SPANISH: "Hierro"
+		Language.SPANISH: "Hierro",
+		Language.FRENCH: "Fer"
 	},
 	"resource.faith": {
 		Language.ENGLISH: "Faith",
 		Language.JAPANESE: "信仰",
 		Language.CHINESE: "信仰",
 		Language.HINDI: "विश्वास",
-		Language.SPANISH: "Fe"
+		Language.SPANISH: "Fe",
+		Language.FRENCH: "Foi"
 	},
 
 	# Game Messages
@@ -700,21 +799,32 @@ var translations: Dictionary = {
 		Language.JAPANESE: "Catへようこそ！",
 		Language.CHINESE: "欢迎来到Cat！",
 		Language.HINDI: "Cat में आपका स्वागत है!",
-		Language.SPANISH: "¡Bienvenido a Cat!"
+		Language.SPANISH: "¡Bienvenido a Cat!",
+		Language.FRENCH: "Bienvenue dans Cat !"
 	},
 	"game.entities_spawned": {
 		Language.ENGLISH: "Vikings and Jezza spawned!",
 		Language.JAPANESE: "バイキングとジェザが出現しました！",
 		Language.CHINESE: "维京人和杰扎已生成！",
 		Language.HINDI: "वाइकिंग और जेज़ा उत्पन्न हुए!",
-		Language.SPANISH: "¡Vikings y Jezza aparecieron!"
+		Language.SPANISH: "¡Vikings y Jezza aparecieron!",
+		Language.FRENCH: "Vikings et Jezza sont apparus !"
 	},
 	"game.timer.reset": {
 		Language.ENGLISH: "Timer reset!",
 		Language.JAPANESE: "タイマーリセット！",
 		Language.CHINESE: "计时器重置！",
 		Language.HINDI: "टाइमर रीसेट!",
-		Language.SPANISH: "¡Temporizador reiniciado!"
+		Language.SPANISH: "¡Temporizador reiniciado!",
+		Language.FRENCH: "Temps réinitialisé !"
+	},
+	"game.loot": {
+		Language.ENGLISH: "Loot",
+		Language.JAPANESE: "戦利品",
+		Language.CHINESE: "战利品",
+		Language.HINDI: "लूट",
+		Language.SPANISH: "Botín",
+		Language.FRENCH: "Butin"
 	},
 
 	# Errors
@@ -723,7 +833,8 @@ var translations: Dictionary = {
 		Language.JAPANESE: "カードの配置に失敗しました",
 		Language.CHINESE: "放置卡牌失败",
 		Language.HINDI: "कार्ड रखने में विफल",
-		Language.SPANISH: "Error al colocar carta"
+		Language.SPANISH: "Error al colocar carta",
+		Language.FRENCH: "Échec du placement de la carte"
 	},
 
 	# Rust-triggered messages
@@ -732,49 +843,56 @@ var translations: Dictionary = {
 		Language.JAPANESE: "経路を計算中...",
 		Language.CHINESE: "计算路径中...",
 		Language.HINDI: "मार्ग की गणना हो रही है...",
-		Language.SPANISH: "Calculando ruta..."
+		Language.SPANISH: "Calculando ruta...",
+		Language.FRENCH: "Calcul du chemin..."
 	},
 	"rust.pathfinding.completed": {
 		Language.ENGLISH: "Path found!",
 		Language.JAPANESE: "経路が見つかりました！",
 		Language.CHINESE: "找到路径！",
 		Language.HINDI: "मार्ग मिला!",
-		Language.SPANISH: "¡Ruta encontrada!"
+		Language.SPANISH: "¡Ruta encontrada!",
+		Language.FRENCH: "Chemin trouvé !"
 	},
 	"rust.pathfinding.failed": {
 		Language.ENGLISH: "No path available",
 		Language.JAPANESE: "経路が見つかりません",
 		Language.CHINESE: "无可用路径",
 		Language.HINDI: "कोई मार्ग उपलब्ध नहीं",
-		Language.SPANISH: "No hay ruta disponible"
+		Language.SPANISH: "No hay ruta disponible",
+		Language.FRENCH: "Aucun chemin disponible"
 	},
 	"rust.card.placed": {
 		Language.ENGLISH: "Card placed on board",
 		Language.JAPANESE: "カードがボードに配置されました",
 		Language.CHINESE: "卡牌已放置到棋盘上",
 		Language.HINDI: "कार्ड बोर्ड पर रखा गया",
-		Language.SPANISH: "Carta colocada en el tablero"
+		Language.SPANISH: "Carta colocada en el tablero",
+		Language.FRENCH: "Carte placée sur le plateau"
 	},
 	"rust.card.removed": {
 		Language.ENGLISH: "Card removed from board",
 		Language.JAPANESE: "カードがボードから削除されました",
 		Language.CHINESE: "卡牌已从棋盘上移除",
 		Language.HINDI: "कार्ड बोर्ड से हटाया गया",
-		Language.SPANISH: "Carta retirada del tablero"
+		Language.SPANISH: "Carta retirada del tablero",
+		Language.FRENCH: "Carte retirée du plateau"
 	},
 	"rust.resource.insufficient": {
 		Language.ENGLISH: "Insufficient resources",
 		Language.JAPANESE: "リソースが不足しています",
 		Language.CHINESE: "资源不足",
 		Language.HINDI: "अपर्याप्त संसाधन",
-		Language.SPANISH: "Recursos insuficientes"
+		Language.SPANISH: "Recursos insuficientes",
+		Language.FRENCH: "Ressources insuffisantes"
 	},
 	"rust.error.generic": {
 		Language.ENGLISH: "An error occurred",
 		Language.JAPANESE: "エラーが発生しました",
 		Language.CHINESE: "发生错误",
 		Language.HINDI: "एक त्रुटि हुई",
-		Language.SPANISH: "Ocurrió un error"
+		Language.SPANISH: "Ocurrió un error",
+		Language.FRENCH: "Une erreur s'est produite"
 	},
 
 	# Card Combos - Poker Hands
@@ -783,70 +901,80 @@ var translations: Dictionary = {
 		Language.JAPANESE: "ハイカード",
 		Language.CHINESE: "高牌",
 		Language.HINDI: "उच्च कार्ड",
-		Language.SPANISH: "Carta Alta"
+		Language.SPANISH: "Carta Alta",
+		Language.FRENCH: "Carte Haute"
 	},
 	"combo.one_pair": {
 		Language.ENGLISH: "One Pair",
 		Language.JAPANESE: "ワンペア",
 		Language.CHINESE: "一对",
 		Language.HINDI: "एक जोड़ी",
-		Language.SPANISH: "Par"
+		Language.SPANISH: "Par",
+		Language.FRENCH: "Paire"
 	},
 	"combo.two_pair": {
 		Language.ENGLISH: "Two Pair",
 		Language.JAPANESE: "ツーペア",
 		Language.CHINESE: "两对",
 		Language.HINDI: "दो जोड़े",
-		Language.SPANISH: "Doble Par"
+		Language.SPANISH: "Doble Par",
+		Language.FRENCH: "Deux Paires"
 	},
 	"combo.three_of_a_kind": {
 		Language.ENGLISH: "Three of a Kind",
 		Language.JAPANESE: "スリーカード",
 		Language.CHINESE: "三条",
 		Language.HINDI: "तीन समान",
-		Language.SPANISH: "Trío"
+		Language.SPANISH: "Trío",
+		Language.FRENCH: "Brelan"
 	},
 	"combo.straight": {
 		Language.ENGLISH: "Straight",
 		Language.JAPANESE: "ストレート",
 		Language.CHINESE: "顺子",
 		Language.HINDI: "सीधा",
-		Language.SPANISH: "Escalera"
+		Language.SPANISH: "Escalera",
+		Language.FRENCH: "Suite"
 	},
 	"combo.flush": {
 		Language.ENGLISH: "Flush",
 		Language.JAPANESE: "フラッシュ",
 		Language.CHINESE: "同花",
 		Language.HINDI: "फ्लश",
-		Language.SPANISH: "Color"
+		Language.SPANISH: "Color",
+		Language.FRENCH: "Couleur"
 	},
 	"combo.full_house": {
 		Language.ENGLISH: "Full House",
 		Language.JAPANESE: "フルハウス",
 		Language.CHINESE: "葫芦",
 		Language.HINDI: "फुल हाउस",
-		Language.SPANISH: "Full"
+		Language.SPANISH: "Full",
+		Language.FRENCH: "Full"
 	},
 	"combo.four_of_a_kind": {
 		Language.ENGLISH: "Four of a Kind",
 		Language.JAPANESE: "フォーカード",
 		Language.CHINESE: "四条",
 		Language.HINDI: "चार समान",
-		Language.SPANISH: "Póker"
+		Language.SPANISH: "Póker",
+		Language.FRENCH: "Carré"
 	},
 	"combo.straight_flush": {
 		Language.ENGLISH: "Straight Flush",
 		Language.JAPANESE: "ストレートフラッシュ",
 		Language.CHINESE: "同花顺",
 		Language.HINDI: "स्ट्रेट फ्लश",
-		Language.SPANISH: "Escalera de Color"
+		Language.SPANISH: "Escalera de Color",
+		Language.FRENCH: "Quinte Flush"
 	},
 	"combo.royal_flush": {
 		Language.ENGLISH: "Royal Flush",
 		Language.JAPANESE: "ロイヤルフラッシュ",
 		Language.CHINESE: "皇家同花顺",
 		Language.HINDI: "रॉयल फ्लश",
-		Language.SPANISH: "Escalera Real"
+		Language.SPANISH: "Escalera Real",
+		Language.FRENCH: "Quinte Flush Royale"
 	},
 
 	# Combo Messages
@@ -855,21 +983,24 @@ var translations: Dictionary = {
 		Language.JAPANESE: "コンボ発見！",
 		Language.CHINESE: "发现组合！",
 		Language.HINDI: "कॉम्बो मिला!",
-		Language.SPANISH: "¡Combo Encontrado!"
+		Language.SPANISH: "¡Combo Encontrado!",
+		Language.FRENCH: "Combo Trouvé !"
 	},
 	"combo.no_combo": {
 		Language.ENGLISH: "No combo detected",
 		Language.JAPANESE: "コンボが見つかりません",
 		Language.CHINESE: "未检测到组合",
 		Language.HINDI: "कोई कॉम्बो नहीं मिला",
-		Language.SPANISH: "No se detectó combo"
+		Language.SPANISH: "No se detectó combo",
+		Language.FRENCH: "Aucun combo détecté"
 	},
 	"combo.resources_gained": {
 		Language.ENGLISH: "Resources Gained:",
 		Language.JAPANESE: "獲得リソース:",
 		Language.CHINESE: "获得资源：",
 		Language.HINDI: "प्राप्त संसाधन:",
-		Language.SPANISH: "Recursos Obtenidos:"
+		Language.SPANISH: "Recursos Obtenidos:",
+		Language.FRENCH: "Ressources Obtenues :"
 	}
 }
 
@@ -928,6 +1059,7 @@ func _get_language_name(language: Language) -> String:
 		Language.CHINESE: return "中文"
 		Language.HINDI: return "हिन्दी"
 		Language.SPANISH: return "Español"
+		Language.FRENCH: return "Français"
 	return "Unknown"
 
 ## Get all available languages
@@ -937,7 +1069,8 @@ func get_available_languages() -> Array[Language]:
 		Language.JAPANESE,
 		Language.CHINESE,
 		Language.HINDI,
-		Language.SPANISH
+		Language.SPANISH,
+		Language.FRENCH
 	]
 
 ## Get language name for display in UI

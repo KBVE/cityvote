@@ -451,6 +451,11 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 		# Release health bar before dying
 		_release_health_bar()
 
+		# Clean up path visualizer (waypoints)
+		if path_visualizer:
+			path_visualizer.queue_free()
+			path_visualizer = null
+
 		# Set state to DEAD
 		add_state(State.DEAD)
 
@@ -458,6 +463,11 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 		# For now, just hide the NPC
 		visible = false
 
-# Override _exit_tree to ensure health bar is released
+# Override _exit_tree to ensure cleanup
 func _exit_tree() -> void:
 	_release_health_bar()
+
+	# Clean up path visualizer
+	if path_visualizer:
+		path_visualizer.queue_free()
+		path_visualizer = null

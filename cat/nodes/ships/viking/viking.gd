@@ -8,28 +8,25 @@ func _ready():
 
 	# Configure attack speed (slower = more visible projectiles)
 	attack_interval = 2.5  # Attack every 2.5 seconds
-	# Use shader-based directional sprites with atlas
+	# Use Sprite2D region mode with wave shader
 	# Load the atlas image
 	var atlas_image = preload("res://nodes/ships/viking/viking_atlas.png")
+	sprite.texture = atlas_image
 
-	# Create an AtlasTexture to show only the first cell initially (64x64 from 256x256)
-	var atlas_tex = AtlasTexture.new()
-	atlas_tex.atlas = atlas_image
-	atlas_tex.region = Rect2(0, 0, 64, 64)  # Start with first cell
-	sprite.texture = atlas_tex
+	# Enable region mode and set initial region (direction 0)
+	sprite.region_enabled = true
+	sprite.region_rect = Rect2(0, 0, 64, 64)  # Start with first cell
 
-	# Create shader material with directional shader
-	var directional_shader = preload("res://nodes/ships/viking/viking_directional.gdshader")
+	# Create shader material for wave motion
+	var wave_shader = preload("res://nodes/ships/viking/viking_wave.gdshader")
 	var shader_material = ShaderMaterial.new()
-	shader_material.shader = directional_shader
+	shader_material.shader = wave_shader
 
 	# Set wave parameters
 	shader_material.set_shader_parameter("wave_speed", 0.6)
 	shader_material.set_shader_parameter("wave_amplitude", 1.5)
 	shader_material.set_shader_parameter("sway_amplitude", 1.0)
 	shader_material.set_shader_parameter("wave_frequency", 1.2)
-	shader_material.set_shader_parameter("rotation_amount", 0.8)
-	shader_material.set_shader_parameter("direction", 0)  # Initial direction
 
 	sprite.material = shader_material
 

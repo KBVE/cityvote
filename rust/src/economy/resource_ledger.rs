@@ -67,10 +67,10 @@ static RESOURCE_LEDGER: Lazy<Arc<DashMap<ResourceType, ResourceData>>> = Lazy::n
 
     // Initialize with default values
     // All resources use f32::MAX for effectively unlimited caps
-    ledger.insert(ResourceType::Gold, ResourceData::new(100.0, f32::MAX));
-    ledger.insert(ResourceType::Food, ResourceData::new(50.0, f32::MAX));
-    ledger.insert(ResourceType::Labor, ResourceData::new(10.0, f32::MAX));
-    ledger.insert(ResourceType::Faith, ResourceData::new(0.0, f32::MAX));
+    ledger.insert(ResourceType::Gold, ResourceData::new(1000.0, f32::MAX));
+    ledger.insert(ResourceType::Food, ResourceData::new(1000.0, f32::MAX));
+    ledger.insert(ResourceType::Labor, ResourceData::new(1000.0, f32::MAX));
+    ledger.insert(ResourceType::Faith, ResourceData::new(1000.0, f32::MAX));
 
     Arc::new(ledger)
 });

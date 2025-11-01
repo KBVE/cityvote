@@ -35,13 +35,17 @@ func _ready() -> void:
 
 # Public API to show a toast message
 func show_toast(message: String, duration: float = 3.0) -> void:
+	# Translate i18n placeholders in message
+	# Replaces {resource.gold}, {card.draw}, etc. with translated text
+	var translated_message = _translate_message(message)
+
 	# If at max capacity, queue it
 	if active_toasts.size() >= MAX_VISIBLE_TOASTS:
-		toast_queue.append({"message": message, "duration": duration})
+		toast_queue.append({"message": translated_message, "duration": duration})
 		return
 
 	# Create and display toast
-	_create_toast(message, duration)
+	_create_toast(translated_message, duration)
 
 func _create_toast(message: String, duration: float) -> void:
 	var toast = TOAST_ITEM_SCENE.instantiate() as ToastItem
@@ -63,3 +67,28 @@ func _on_toast_dismissed(toast: ToastItem) -> void:
 	if toast_queue.size() > 0:
 		var next_toast = toast_queue.pop_front()
 		_create_toast(next_toast["message"], next_toast["duration"])
+
+# Translate i18n placeholders in message text
+# Replaces {resource.gold} -> "Gold" (or translated equivalent)
+func _translate_message(message: String) -> String:
+	if not I18n:
+		return message
+
+	var translated = message
+
+	# Use regex to find all {i18n.key} patterns
+	var regex = RegEx.new()
+	regex.compile("\\{([^}]+)\\}")
+
+	var matches = regex.search_all(translated)
+	for match_obj in matches:
+		var full_match = match_obj.get_string(0)  # Full match including braces: "{resource.gold}"
+		var i18n_key = match_obj.get_string(1)     # Just the key: "resource.gold"
+
+		# Get translation from I18n system
+		var translated_text = I18n.tr(i18n_key)
+
+		# Replace placeholder with translated text
+		translated = translated.replace(full_match, translated_text)
+
+	return translated

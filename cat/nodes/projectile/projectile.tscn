@@ -11,6 +11,7 @@ shader_parameter/total_projectiles = 2
 shader_parameter/atlas_texture = ExtResource("2")
 
 [node name="Projectile" type="Node2D"]
+visible = false
 script = ExtResource("1")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]

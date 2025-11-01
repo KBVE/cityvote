@@ -60,6 +60,51 @@ theme_override_font_sizes/font_size = 24
 text = "Select Your Language"
 horizontal_alignment = 1
 
+[node name="InputSection" type="VBoxContainer" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SeedContainer" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer/InputSection"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="SeedLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/InputSection/SeedContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "World Seed:"
+horizontal_alignment = 2
+
+[node name="SeedInput" type="LineEdit" parent="Panel/MarginContainer/VBoxContainer/InputSection/SeedContainer"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+placeholder_text = "12345 (or leave empty for random)"
+alignment = 1
+
+[node name="NameContainer" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer/InputSection"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="NameLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/InputSection/NameContainer"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.3, 1)
+theme_override_font_sizes/font_size = 14
+text = "Player Name:"
+horizontal_alignment = 2
+
+[node name="NameInput" type="LineEdit" parent="Panel/MarginContainer/VBoxContainer/InputSection/NameContainer"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+placeholder_text = "Enter your name"
+max_length = 20
+alignment = 1
+
 [node name="FlagContainer" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 4

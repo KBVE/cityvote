@@ -227,10 +227,9 @@ func _fire_projectile(attacker: Node2D, defender: Node2D) -> void:
 
 	parent.add_child(projectile)
 
-	# Set z-index high enough to render above tiles and ships
-	# Water is at -100, tiles are at Y+1000, ships are typically around 0-100
-	# Set projectiles to 2000 to ensure they're always visible
-	projectile.z_index = 2000
+	# Set z-index high enough to render above tiles and ships (using Cache constants)
+	# Projectiles should be above entities (500) but below UI overlays
+	projectile.z_index = Cache.Z_INDEX_WAYPOINTS  # 3000
 
 	print("[Combat] Projectile added to scene at parent: %s with z_index: %d" % [parent.name, projectile.z_index])
 

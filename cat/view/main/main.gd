@@ -220,8 +220,17 @@ func _show_language_selector_overlay() -> void:
 	print("Main: Language selector (with loading progress) displayed")
 
 ## Handle language selection - start the game timer
-func _on_language_selected(language: int) -> void:
-	print("Main: Language selected (%d), starting game timer..." % language)
+func _on_language_selected(language: int, world_seed: int, player_name: String) -> void:
+	print("Main: Language selected (%d), World Seed: %d, Player: %s" % [language, world_seed, player_name])
+
+	# Apply world seed to MapConfig
+	if MapConfig:
+		MapConfig.world_seed = world_seed
+		print("Main: World seed set to %d" % world_seed)
+
+	# TODO: Store player_name (could be saved to a PlayerData singleton or used in UI)
+	# For now, just log it
+	print("Main: Player name set to '%s'" % player_name)
 
 	# Start the game timer now that player is ready
 	if GameTimer:

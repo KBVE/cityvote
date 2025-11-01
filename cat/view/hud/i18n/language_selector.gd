@@ -6,15 +6,20 @@ extends CanvasLayer
 @onready var panel: PanelContainer = $Panel
 @onready var dimmer: ColorRect = $Dimmer
 @onready var title_label: Label = $Panel/MarginContainer/VBoxContainer/TitleLabel
+@onready var input_section: VBoxContainer = $Panel/MarginContainer/VBoxContainer/InputSection
+@onready var seed_input: LineEdit = $Panel/MarginContainer/VBoxContainer/InputSection/SeedContainer/SeedInput
+@onready var name_input: LineEdit = $Panel/MarginContainer/VBoxContainer/InputSection/NameContainer/NameInput
 @onready var flag_container: HBoxContainer = $Panel/MarginContainer/VBoxContainer/FlagContainer
 @onready var spinner: ColorRect = $Panel/MarginContainer/VBoxContainer/LoadingSection/SpinnerContainer/Spinner
 @onready var progress_bar: ProgressBar = $Panel/MarginContainer/VBoxContainer/LoadingSection/ProgressBar
 @onready var status_label: Label = $Panel/MarginContainer/VBoxContainer/LoadingSection/StatusLabel
 
-signal language_selected(language: int)
+signal language_selected(language: int, world_seed: int, player_name: String)
 
 var flag_buttons: Array[TextureButton] = []
 var selected_language: int = -1
+var world_seed: int = 12345
+var player_name: String = "Player"
 
 # Loading progress tracking
 var total_steps: int = 5
@@ -34,8 +39,12 @@ func _ready() -> void:
 	if font:
 		title_label.add_theme_font_override("font", font)
 
-	# Start with flags at low opacity
+	# Initialize input fields
+	_initialize_inputs()
+
+	# Start with flags and inputs at low opacity
 	flag_container.modulate.a = 0.3
+	input_section.modulate.a = 0.3
 
 	# Center on screen
 	_center_panel()
@@ -147,6 +156,34 @@ func _on_flag_hover(button: TextureButton, is_hovered: bool) -> void:
 		button.modulate = Color.WHITE
 		button.scale = Vector2.ONE
 
+func _initialize_inputs() -> void:
+	# Set default values
+	seed_input.text = str(world_seed)
+	name_input.text = player_name
+
+	# Connect text changed signals
+	seed_input.text_changed.connect(_on_seed_changed)
+	name_input.text_changed.connect(_on_name_changed)
+
+	# Apply font
+	var font = Cache.get_font("alagard")
+	if font:
+		seed_input.add_theme_font_override("font", font)
+		name_input.add_theme_font_override("font", font)
+
+func _on_seed_changed(new_text: String) -> void:
+	# Parse seed (allow empty or invalid = random seed)
+	if new_text.is_empty():
+		world_seed = randi()  # Random seed if empty
+	elif new_text.is_valid_int():
+		world_seed = new_text.to_int()
+	else:
+		# Keep previous value if invalid
+		pass
+
+func _on_name_changed(new_text: String) -> void:
+	player_name = new_text if not new_text.is_empty() else "Player"
+
 func _on_flag_pressed(language: int) -> void:
 	# Set language
 	I18n.set_language(language)
@@ -163,8 +200,8 @@ func _fade_out_and_close() -> void:
 	tween.tween_property(dimmer, "modulate:a", 0.0, 0.5)
 	await tween.finished
 
-	# Emit signal and hide
-	language_selected.emit(selected_language)
+	# Emit signal with all values
+	language_selected.emit(selected_language, world_seed, player_name)
 	queue_free()
 
 ## Update loading progress
@@ -192,10 +229,11 @@ func set_spawning_entities() -> void:
 func set_complete() -> void:
 	_update_progress(5, "ui.loading.complete")
 
-	# Fade in the language flags
+	# Fade in the language flags and input fields
 	var tween = create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(flag_container, "modulate:a", 1.0, 0.5)
+	tween.tween_property(input_section, "modulate:a", 1.0, 0.5)
 	tween.tween_property(spinner, "modulate:a", 0.0, 0.3)  # Fade out spinner
 	await tween.finished
 
@@ -212,10 +250,10 @@ func _center_panel() -> void:
 	if panel:
 		panel.position = (get_viewport().get_visible_rect().size - panel.size) / 2
 
-## Skip language selection (use saved preference)
+## Skip language selection (use saved preference and defaults)
 func skip_selection() -> void:
 	selected_language = I18n.get_current_language()
-	language_selected.emit(selected_language)
+	language_selected.emit(selected_language, world_seed, player_name)
 	queue_free()
 
 ## Get font for a specific language (used for language selector labels)
@@ -228,5 +266,5 @@ func _get_font_for_language(lang: int) -> Font:
 		I18n.Language.HINDI:
 			return Cache.get_font("hindi")
 		_:
-			# English and Spanish use Latin characters
+			# English, Spanish, and French use Latin characters
 			return Cache.get_font("alagard")

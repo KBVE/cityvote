@@ -126,19 +126,25 @@ func set_direction(new_direction: int):
 # Update sprite based on current direction
 func _update_sprite():
 	if direction >= 0 and direction < 16:
-		# Check if using AtlasTexture (for shader-based atlas)
-		if sprite.texture and sprite.texture is AtlasTexture:
+		# Check if using Sprite2D region mode (for atlas with shader)
+		if sprite.region_enabled:
+			# Calculate which cell in the 4x4 atlas (each cell is 64x64)
+			var col = direction % 4
+			var row = direction >> 2  # Bit shift for integer division by 4
+			sprite.region_rect = Rect2(col * 64, row * 64, 64, 64)
+		# Check if using shader-based direction (for shader UV remapping)
+		elif sprite.material and sprite.material is ShaderMaterial:
+			var shader_mat = sprite.material as ShaderMaterial
+			shader_mat.set_shader_parameter("direction", direction)
+		# Check if using AtlasTexture (for non-shader atlas approach)
+		elif sprite.texture and sprite.texture is AtlasTexture:
 			var atlas_tex = sprite.texture as AtlasTexture
 			# Calculate which cell in the 4x4 atlas (each cell is 64x64)
 			var col = direction % 4
 			var row = direction >> 2  # Bit shift for integer division by 4
 			atlas_tex.region = Rect2(col * 64, row * 64, 64, 64)
-		elif sprite.material and sprite.material is ShaderMaterial:
-			# Fallback: shader-based direction (not used with AtlasTexture approach)
-			var shader_mat = sprite.material as ShaderMaterial
-			shader_mat.set_shader_parameter("direction", direction)
 		elif direction < ship_sprites.size():
-			# Fallback to texture swapping if no shader
+			# Fallback to texture swapping if no shader or atlas
 			sprite.texture = ship_sprites[direction]
 
 # Apply residual pivot for smooth rotation between sprite frames
@@ -479,6 +485,11 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 		# Release health bar before dying
 		_release_health_bar()
 
+		# Clean up path visualizer (waypoints)
+		if path_visualizer:
+			path_visualizer.queue_free()
+			path_visualizer = null
+
 		# Unregister from combat system
 		if CombatManager and CombatManager.combat_bridge:
 			CombatManager.combat_bridge.unregister_combatant(ulid)
@@ -504,9 +515,14 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 			print("[Ship] Despawning ship (not pooled)")
 			queue_free()
 
-# Override _exit_tree to ensure health bar is released
+# Override _exit_tree to ensure cleanup
 func _exit_tree() -> void:
 	_release_health_bar()
+
+	# Clean up path visualizer
+	if path_visualizer:
+		path_visualizer.queue_free()
+		path_visualizer = null
 
 	# Unregister from combat system
 	if CombatManager and CombatManager.combat_bridge and not ulid.is_empty():

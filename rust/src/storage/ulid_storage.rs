@@ -114,10 +114,12 @@ impl UlidStorage {
             entity_type,
             godot_instance_id: instance_id,
             created_at,
-            metadata,
+            metadata: metadata.clone(),
         };
 
-        self.storage.insert(ulid_bytes, entity_data);
+        // Store in both instance storage and global class name storage
+        self.storage.insert(ulid_bytes.clone(), entity_data.clone());
+        store_entity_class(ulid_bytes, &metadata);
         true
     }
 
@@ -146,6 +148,8 @@ impl UlidStorage {
     #[func]
     pub fn remove(&mut self, ulid: PackedByteArray) -> bool {
         let ulid_bytes: Vec<u8> = ulid.to_vec();
+        // Remove from both storages
+        remove_entity_class(&ulid_bytes);
         self.storage.remove(&ulid_bytes).is_some()
     }
 
@@ -269,4 +273,47 @@ impl UlidStorage {
             godot_print!("  {}: {}", entity_type, count);
         }
     }
+
+    /// Get the internal storage reference (for Rust-side access)
+    pub fn get_storage(&self) -> &Arc<DashMap<Vec<u8>, EntityData>> {
+        &self.storage
+    }
+}
+
+// Global storage for entity class names (thread-safe)
+use once_cell::sync::Lazy;
+
+static GLOBAL_CLASS_NAMES: Lazy<Arc<DashMap<Vec<u8>, String>>> =
+    Lazy::new(|| Arc::new(DashMap::new()));
+
+/// Get entity class name from ULID (for drop tables)
+/// Returns the class name, or "default" if not found
+pub fn get_entity_class(ulid: &[u8]) -> String {
+    GLOBAL_CLASS_NAMES
+        .get(ulid)
+        .map(|entry| entry.value().clone())
+        .unwrap_or_else(|| "default".to_string())
+}
+
+/// Store entity class name (called from UlidStorage.store)
+pub fn store_entity_class(ulid: Vec<u8>, metadata: &Dictionary) {
+    // Extract class name from metadata
+    let class_name = if let Some(ship_type) = metadata.get("ship_type") {
+        ship_type.try_to::<godot::builtin::GString>()
+            .map(|s| s.to_string().to_lowercase())
+            .unwrap_or_else(|_| "default".to_string())
+    } else if let Some(npc_type) = metadata.get("npc_type") {
+        npc_type.try_to::<godot::builtin::GString>()
+            .map(|s| s.to_string().to_lowercase())
+            .unwrap_or_else(|_| "default".to_string())
+    } else {
+        "default".to_string()
+    };
+
+    GLOBAL_CLASS_NAMES.insert(ulid, class_name);
+}
+
+/// Remove entity class name (called from UlidStorage.remove)
+pub fn remove_entity_class(ulid: &[u8]) {
+    GLOBAL_CLASS_NAMES.remove(ulid);
 }
