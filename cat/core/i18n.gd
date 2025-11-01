@@ -62,6 +62,36 @@ var translations: Dictionary = {
 		Language.SPANISH: "Cerrar"
 	},
 
+	# UI - Stats
+	"ui.stats.hp": {
+		Language.ENGLISH: "HP",
+		Language.JAPANESE: "HP",
+		Language.CHINESE: "HP",
+		Language.HINDI: "HP",
+		Language.SPANISH: "HP"
+	},
+	"ui.stats.ep": {
+		Language.ENGLISH: "EP",
+		Language.JAPANESE: "EP",
+		Language.CHINESE: "EP",
+		Language.HINDI: "EP",
+		Language.SPANISH: "EP"
+	},
+	"ui.stats.health": {
+		Language.ENGLISH: "Health",
+		Language.JAPANESE: "体力",
+		Language.CHINESE: "生命值",
+		Language.HINDI: "स्वास्थ्य",
+		Language.SPANISH: "Salud"
+	},
+	"ui.stats.energy": {
+		Language.ENGLISH: "Energy",
+		Language.JAPANESE: "エネルギー",
+		Language.CHINESE: "能量",
+		Language.HINDI: "ऊर्जा",
+		Language.SPANISH: "Energía"
+	},
+
 	# UI - Hand/Cards
 	"ui.hand.swap": {
 		Language.ENGLISH: "Swap",
@@ -407,6 +437,108 @@ var translations: Dictionary = {
 		Language.CHINESE: "ULID",
 		Language.HINDI: "ULID",
 		Language.SPANISH: "ULID"
+	},
+
+	# Structures - General
+	"structure.type": {
+		Language.ENGLISH: "Type",
+		Language.JAPANESE: "種類",
+		Language.CHINESE: "类型",
+		Language.HINDI: "प्रकार",
+		Language.SPANISH: "Tipo"
+	},
+	"structure.position": {
+		Language.ENGLISH: "Position",
+		Language.JAPANESE: "位置",
+		Language.CHINESE: "位置",
+		Language.HINDI: "स्थिति",
+		Language.SPANISH: "Posición"
+	},
+	"structure.status": {
+		Language.ENGLISH: "Status",
+		Language.JAPANESE: "状態",
+		Language.CHINESE: "状态",
+		Language.HINDI: "स्थिति",
+		Language.SPANISH: "Estado"
+	},
+	"structure.active": {
+		Language.ENGLISH: "Active",
+		Language.JAPANESE: "活動中",
+		Language.CHINESE: "活跃",
+		Language.HINDI: "सक्रिय",
+		Language.SPANISH: "Activo"
+	},
+	"structure.inactive": {
+		Language.ENGLISH: "Inactive",
+		Language.JAPANESE: "非活動",
+		Language.CHINESE: "不活跃",
+		Language.HINDI: "निष्क्रिय",
+		Language.SPANISH: "Inactivo"
+	},
+	"structure.population": {
+		Language.ENGLISH: "Population",
+		Language.JAPANESE: "人口",
+		Language.CHINESE: "人口",
+		Language.HINDI: "जनसंख्या",
+		Language.SPANISH: "Población"
+	},
+	"structure.wealth": {
+		Language.ENGLISH: "Wealth",
+		Language.JAPANESE: "富",
+		Language.CHINESE: "财富",
+		Language.HINDI: "धन",
+		Language.SPANISH: "Riqueza"
+	},
+	"structure.reputation": {
+		Language.ENGLISH: "Reputation",
+		Language.JAPANESE: "評判",
+		Language.CHINESE: "声望",
+		Language.HINDI: "प्रतिष्ठा",
+		Language.SPANISH: "Reputación"
+	},
+	"structure.trade_modifier": {
+		Language.ENGLISH: "Trade Modifier",
+		Language.JAPANESE: "取引修正",
+		Language.CHINESE: "交易修正",
+		Language.HINDI: "व्यापार संशोधक",
+		Language.SPANISH: "Modificador Comercial"
+	},
+
+	# Structure Actions
+	"structure.action.trade": {
+		Language.ENGLISH: "Trade",
+		Language.JAPANESE: "取引",
+		Language.CHINESE: "交易",
+		Language.HINDI: "व्यापार",
+		Language.SPANISH: "Comerciar"
+	},
+	"structure.action.rest": {
+		Language.ENGLISH: "Rest",
+		Language.JAPANESE: "休憩",
+		Language.CHINESE: "休息",
+		Language.HINDI: "आराम",
+		Language.SPANISH: "Descansar"
+	},
+	"structure.action.recruit": {
+		Language.ENGLISH: "Recruit",
+		Language.JAPANESE: "募集",
+		Language.CHINESE: "招募",
+		Language.HINDI: "भर्ती",
+		Language.SPANISH: "Reclutar"
+	},
+	"structure.action.attack": {
+		Language.ENGLISH: "Attack",
+		Language.JAPANESE: "攻撃",
+		Language.CHINESE: "攻击",
+		Language.HINDI: "हमला",
+		Language.SPANISH: "Atacar"
+	},
+	"structure.action.defend": {
+		Language.ENGLISH: "Defend",
+		Language.JAPANESE: "防御",
+		Language.CHINESE: "防御",
+		Language.HINDI: "बचाव",
+		Language.SPANISH: "Defender"
 	},
 
 	# Entities - Flavor Text

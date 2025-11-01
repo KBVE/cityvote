@@ -22,6 +22,7 @@ mod economy;
 mod stats;
 mod combat;
 mod world_gen;
+mod structures;
 
 struct Godo;
 

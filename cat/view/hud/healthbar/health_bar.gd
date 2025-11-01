@@ -19,9 +19,15 @@ class_name HealthBar
 var current_health: float = 100.0
 var max_health: float = 100.0
 
+# Energy values
+var current_energy: float = 100.0
+var max_energy: float = 100.0
+var show_energy: bool = true  # Whether to display energy bar
+
 # Visual settings
 var bar_width: float = 40.0
 var bar_height: float = 6.0
+var bar_spacing: float = 2.0  # Space between health and energy bars
 var bar_offset: Vector2 = Vector2(0, -30)  # Offset above entity
 
 # Colors
@@ -29,8 +35,11 @@ var bg_color: Color = Color(0.2, 0.2, 0.2, 0.8)  # Dark background
 var health_color: Color = Color(0.2, 0.8, 0.2, 1.0)  # Green
 var low_health_color: Color = Color(0.9, 0.2, 0.2, 1.0)  # Red
 var mid_health_color: Color = Color(0.9, 0.7, 0.2, 1.0)  # Yellow
+var energy_color: Color = Color(0.2, 0.6, 0.9, 1.0)  # Blue
+var low_energy_color: Color = Color(0.5, 0.3, 0.8, 1.0)  # Purple
 var low_health_threshold: float = 0.3  # Below 30% = red
 var mid_health_threshold: float = 0.6  # Below 60% = yellow
+var low_energy_threshold: float = 0.3  # Below 30% = purple
 
 # Performance settings
 var auto_hide_when_full: bool = false  # Hide when at max health (disabled by default for testing)
@@ -62,11 +71,15 @@ func _ready() -> void:
 	# Set up initial dimensions
 	_setup_dimensions()
 
-	# Cache the health fill style for color updates
+	# CRITICAL: Duplicate the health fill style to avoid sharing between instances
+	# Without this, all pooled healthbars will share the same StyleBoxFlat resource
+	# and changing one healthbar's color will affect ALL healthbars!
 	if health_fill:
 		var style = health_fill.get_theme_stylebox("panel")
 		if style and style is StyleBoxFlat:
-			health_fill_style = style
+			# Duplicate the style so each healthbar has its own instance
+			health_fill_style = style.duplicate() as StyleBoxFlat
+			health_fill.add_theme_stylebox_override("panel", health_fill_style)
 
 	# Initial update
 	_update_visual()
@@ -93,9 +106,11 @@ func _setup_dimensions() -> void:
 
 ## Initialize health bar with values
 ## Call this when acquiring from pool
-func initialize(current_hp: float, max_hp: float) -> void:
+func initialize(current_hp: float, max_hp: float, current_ep: float = 100.0, max_ep: float = 100.0) -> void:
 	max_health = max_hp
 	current_health = clampf(current_hp, 0.0, max_health)
+	max_energy = max_ep
+	current_energy = clampf(current_ep, 0.0, max_energy)
 	_target_health = current_health
 	_dirty = true
 	_update_visual()
@@ -133,6 +148,34 @@ func set_health_values(current_hp: float, max_hp: float) -> void:
 	max_health = max_hp
 	current_health = clampf(current_hp, 0.0, max_health)
 	_target_health = current_health
+	_dirty = true
+	_update_visual()
+
+## Update current energy value
+func set_energy(new_energy: float) -> void:
+	new_energy = clampf(new_energy, 0.0, max_energy)
+
+	if new_energy == current_energy:
+		return  # No change, skip update
+
+	current_energy = new_energy
+	_dirty = true
+	_update_visual()
+
+## Update max energy (resizes bar capacity)
+func set_max_energy(new_max_energy: float) -> void:
+	if new_max_energy == max_energy:
+		return
+
+	max_energy = new_max_energy
+	current_energy = clampf(current_energy, 0.0, max_energy)
+	_dirty = true
+	_update_visual()
+
+## Set both energy values at once (more efficient)
+func set_energy_values(current_ep: float, max_ep: float) -> void:
+	max_energy = max_ep
+	current_energy = clampf(current_ep, 0.0, max_energy)
 	_dirty = true
 	_update_visual()
 
@@ -180,11 +223,21 @@ func _update_visual() -> void:
 	# Update fill using anchor_right to scale from left edge
 	# This keeps the fill flush with no gaps and curved at edges
 	if health_fill:
+		# Disable grow mode to allow anchor changes to work properly
+		health_fill.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+
 		# Set anchor_right to health percentage (0.0 to 1.0)
 		health_fill.anchor_right = health_pct
 
+		# Keep anchors locked to left edge
+		health_fill.anchor_left = 0.0
+
+		# Update offsets to match anchors (required for anchor changes to take effect)
+		health_fill.offset_left = 0.0
+		health_fill.offset_right = 0.0
+
 		# Force layout update to apply anchor changes immediately
-		health_fill.reset_size()
+		health_fill.queue_redraw()
 
 		# Update color based on health percentage (using StyleBoxFlat)
 		if health_fill_style:

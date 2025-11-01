@@ -164,13 +164,17 @@ impl CombatSystem {
             if let Some(mut combat) = active_combats.get_mut(&attacker_ulid) {
                 // Combat exists - check if can attack
                 if combat.can_attack() {
-                    // Verify defender still valid
+                    // Verify defender still valid and alive
                     let defender_alive = combatants
                         .get(&combat.defender_ulid)
                         .map(|d| d.is_alive)
                         .unwrap_or(false);
 
-                    if defender_alive {
+                    // Also check HP in case GDScript killed them via StatsManager
+                    let defender_hp = entity_stats::get_stat(&combat.defender_ulid, StatType::HP)
+                        .unwrap_or(0.0);
+
+                    if defender_alive && defender_hp > 0.0 {
                         // Execute attack
                         Self::execute_attack(
                             &attacker_ulid,
@@ -223,6 +227,8 @@ impl CombatSystem {
     }
 
     /// Execute an attack between two entities
+    /// NOTE: This only calculates damage and queues events
+    /// Actual damage application happens in GDScript via StatsManager (for signal emission)
     fn execute_attack(
         attacker_ulid: &[u8],
         defender_ulid: &[u8],
@@ -232,26 +238,23 @@ impl CombatSystem {
         let attack = entity_stats::get_stat(attacker_ulid, StatType::Attack)
             .unwrap_or(5.0);
 
-        // Apply damage
-        if let Some(actual_damage) = entity_stats::take_damage(defender_ulid, attack) {
-            let new_hp = entity_stats::get_stat(defender_ulid, StatType::HP)
-                .unwrap_or(0.0);
+        // Get defender's current HP for the event
+        let current_hp = entity_stats::get_stat(defender_ulid, StatType::HP)
+            .unwrap_or(0.0);
 
-            // Queue damage event
-            event_queue.push(CombatEvent::DamageDealt {
-                attacker_ulid: attacker_ulid.to_vec(),
-                defender_ulid: defender_ulid.to_vec(),
-                damage: actual_damage,
-                new_hp,
-            });
+        // Calculate what new HP would be (but don't apply yet)
+        // GDScript will apply via StatsManager.take_damage() which triggers signals
+        let new_hp = (current_hp - attack).max(0.0);
 
-            // Check if defender died
-            if new_hp <= 0.0 {
-                event_queue.push(CombatEvent::EntityDied {
-                    ulid: defender_ulid.to_vec(),
-                });
-            }
-        }
+        // Queue damage event with calculated damage
+        event_queue.push(CombatEvent::DamageDealt {
+            attacker_ulid: attacker_ulid.to_vec(),
+            defender_ulid: defender_ulid.to_vec(),
+            damage: attack,  // Raw attack value (defense calculation in GDScript)
+            new_hp: current_hp,  // Current HP (GDScript will update)
+        });
+
+        // Note: entity_died event will be triggered by StatsManager when HP reaches 0
     }
 }
 
@@ -259,7 +262,7 @@ impl CombatSystem {
 use once_cell::sync::Lazy;
 
 static COMBAT_SYSTEM: Lazy<CombatSystem> = Lazy::new(|| {
-    CombatSystem::new(0.1) // 10 ticks per second
+    CombatSystem::new(0.5) // 2 ticks per second (reduced CPU usage)
 });
 
 /// Get global combat system instance

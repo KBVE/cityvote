@@ -149,9 +149,8 @@ func render_chunk(chunk_index: int, tile_data: Array) -> void:
 		row_material.set_shader_parameter("total_tiles", atlas_metadata["total_tiles"])
 		mesh_instance.material = row_material
 
-		# Set z_index to tile Y coordinate for perfect cross-chunk layering
-		# Offset by 1000 to ensure even negative Y tiles render above water background (z=-100)
-		mesh_instance.z_index = tile_y + 1000
+		# Set z_index to fixed value (tiles don't need depth sorting)
+		mesh_instance.z_index = 200
 		mesh_instance.name = "Chunk_%d_Row_%d" % [chunk_index, tile_y]
 
 		add_child(mesh_instance)

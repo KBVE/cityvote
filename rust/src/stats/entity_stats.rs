@@ -13,19 +13,23 @@ pub enum StatType {
     Defense = 3,      // Defense/armor
     Speed = 4,        // Movement/action speed
 
+    // Resource stats
+    Energy = 5,       // Current energy points
+    MaxEnergy = 6,    // Maximum energy points
+
     // Secondary stats
-    Range = 5,        // Attack/vision range
-    Morale = 6,       // Unit morale (affects combat)
-    Experience = 7,   // XP for leveling
-    Level = 8,        // Current level
+    Range = 7,        // Attack/vision range
+    Morale = 8,       // Unit morale (affects combat)
+    Experience = 9,   // XP for leveling
+    Level = 10,       // Current level
 
     // Resource production (for structures)
-    ProductionRate = 9,   // Production efficiency
-    StorageCapacity = 10, // Resource storage
+    ProductionRate = 11,   // Production efficiency
+    StorageCapacity = 12, // Resource storage
 
     // Special stats
-    Luck = 11,        // Critical hit chance modifier
-    Evasion = 12,     // Dodge chance
+    Luck = 13,        // Critical hit chance modifier
+    Evasion = 14,     // Dodge chance
 }
 
 impl StatType {
@@ -36,14 +40,16 @@ impl StatType {
             2 => Some(StatType::Attack),
             3 => Some(StatType::Defense),
             4 => Some(StatType::Speed),
-            5 => Some(StatType::Range),
-            6 => Some(StatType::Morale),
-            7 => Some(StatType::Experience),
-            8 => Some(StatType::Level),
-            9 => Some(StatType::ProductionRate),
-            10 => Some(StatType::StorageCapacity),
-            11 => Some(StatType::Luck),
-            12 => Some(StatType::Evasion),
+            5 => Some(StatType::Energy),
+            6 => Some(StatType::MaxEnergy),
+            7 => Some(StatType::Range),
+            8 => Some(StatType::Morale),
+            9 => Some(StatType::Experience),
+            10 => Some(StatType::Level),
+            11 => Some(StatType::ProductionRate),
+            12 => Some(StatType::StorageCapacity),
+            13 => Some(StatType::Luck),
+            14 => Some(StatType::Evasion),
             _ => None,
         }
     }
@@ -67,6 +73,8 @@ impl EntityStats {
         let mut stats = Self::new();
         stats.set(StatType::HP, 100.0);
         stats.set(StatType::MaxHP, 100.0);
+        stats.set(StatType::Energy, 100.0);
+        stats.set(StatType::MaxEnergy, 100.0);
         stats.set(StatType::Attack, 10.0);
         stats.set(StatType::Defense, 5.0);
         stats.set(StatType::Speed, 1.0);
@@ -81,6 +89,8 @@ impl EntityStats {
         let mut stats = Self::new();
         stats.set(StatType::HP, 50.0);
         stats.set(StatType::MaxHP, 50.0);
+        stats.set(StatType::Energy, 100.0);
+        stats.set(StatType::MaxEnergy, 100.0);
         stats.set(StatType::Attack, 5.0);
         stats.set(StatType::Defense, 2.0);
         stats.set(StatType::Speed, 1.5);

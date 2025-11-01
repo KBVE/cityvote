@@ -24,6 +24,10 @@ enum State {
 # Current state
 var current_state: int = State.IDLE
 
+# Pool management (set by child classes if pooled)
+var pool_name: String = ""  # Name of the pool this ship belongs to (e.g., "viking")
+var attack_interval: float = 3.0  # Attack interval in seconds (can be overridden by child classes)
+
 # Direction (0-15, where 0 is north, going counter-clockwise)
 var direction: int = 0
 var _last_sector: int = 0  # For hysteresis
@@ -71,6 +75,10 @@ var player_ulid: PackedByteArray = PackedByteArray()
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
+# Energy system for movement
+var energy: int = 100
+var max_energy: int = 100
+
 func _ready():
 	# Set initial z-index based on spawn position
 	_update_z_index()
@@ -86,6 +94,10 @@ func _ready():
 	# Register with stats system (deferred to ensure StatsManager is ready)
 	if StatsManager:
 		call_deferred("_register_stats")
+
+	# Register with combat system (deferred to ensure CombatManager is ready)
+	if CombatManager:
+		call_deferred("_register_combat")
 
 	# Initialize current angle based on initial direction
 	current_angle = direction_to_godot_angle(direction)
@@ -265,9 +277,8 @@ func _advance_to_next_waypoint():
 
 ## Update z-index based on current tile position for proper isometric layering
 func _update_z_index() -> void:
-	if Cache.tile_map:
-		var tile_coords = Cache.tile_map.local_to_map(position)
-		z_index = Cache.Z_INDEX_ENTITY_BASE + tile_coords.y + Cache.Z_INDEX_SHIP_OFFSET
+	# Use fixed z-index for ships (above tiles, no tile_y sorting)
+	z_index = Cache.Z_INDEX_SHIPS
 
 func _process(delta):
 	# Update z-index for proper layering as ship moves
@@ -294,6 +305,9 @@ func _process(delta):
 			position = move_target_pos
 			is_moving = false
 			move_progress = 1.0
+
+			# Update combat system with new position
+			_update_combat_position()
 
 			# Remove waypoint marker (visual feedback)
 			if path_visualizer and path_visualizer.has_method("remove_first_waypoint"):
@@ -348,6 +362,46 @@ func _register_stats() -> void:
 		StatsManager.stat_changed.connect(_on_stat_changed)
 		StatsManager.entity_died.connect(_on_entity_died)
 
+# Helper function to register with combat system (called deferred to ensure CombatManager is ready)
+func _register_combat() -> void:
+	if not CombatManager or not CombatManager.combat_bridge:
+		push_warning("Ship: CombatManager not ready for combat registration")
+		return
+
+	if ulid.is_empty():
+		push_error("Ship: Cannot register for combat without ULID")
+		return
+
+	# Get current hex position from global position
+	var hex_pos: Vector2i = Vector2i(0, 0)
+	if Cache.tile_map:
+		hex_pos = Cache.tile_map.local_to_map(global_position)
+
+	# Register as combatant with configured attack interval
+	CombatManager.combat_bridge.register_combatant(
+		ulid,
+		player_ulid,  # Team affiliation
+		hex_pos,
+		attack_interval  # Attack interval (set by child class, default 2.5 seconds)
+	)
+
+	print("Ship: Registered with combat system (ULID: %s)" % UlidManager.to_hex(ulid))
+
+# Update combat system with current position (called when ship moves)
+func _update_combat_position() -> void:
+	if not CombatManager or not CombatManager.combat_bridge:
+		return
+
+	if ulid.is_empty():
+		return
+
+	# Get current hex position from global position
+	if not Cache.tile_map:
+		return
+
+	var hex_coords = Cache.tile_map.local_to_map(global_position)
+	CombatManager.combat_bridge.update_position(ulid, hex_coords)
+
 # Set up health bar (called deferred to ensure Cluster is ready)
 func _setup_health_bar() -> void:
 	if not Cluster:
@@ -376,7 +430,8 @@ func _setup_health_bar() -> void:
 	else:
 		print("Ship: Using default health values: %d/%d" % [current_hp, max_hp])
 
-	health_bar.initialize(current_hp, max_hp)
+	# Initialize with both health and energy
+	health_bar.initialize(current_hp, max_hp, energy, max_energy)
 
 	# Configure appearance (optional - adjust as needed)
 	health_bar.set_bar_offset(Vector2(0, -30))  # Position above ship
@@ -403,26 +458,146 @@ func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: f
 		return
 
 	if not health_bar:
+		print("[Ship] Stat changed but health_bar is null for ULID: %s" % UlidManager.to_hex(ulid))
 		return
 
 	# Update health bar based on stat type
 	if stat_type == StatsManager.STAT.HP:
 		var max_hp = StatsManager.get_stat(ulid, StatsManager.STAT.MAX_HP)
+		print("[Ship] HP changed to %.1f/%.1f for ULID: %s" % [new_value, max_hp, UlidManager.to_hex(ulid)])
 		health_bar.set_health_values(new_value, max_hp)
 	elif stat_type == StatsManager.STAT.MAX_HP:
 		var current_hp = StatsManager.get_stat(ulid, StatsManager.STAT.HP)
+		print("[Ship] MAX_HP changed to %.1f/%.1f for ULID: %s" % [current_hp, new_value, UlidManager.to_hex(ulid)])
 		health_bar.set_health_values(current_hp, new_value)
 
 # Handle entity death
 func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 	if entity_ulid == ulid:
+		print("[Ship] Entity died: %s - despawning" % UlidManager.to_hex(ulid))
+
 		# Release health bar before dying
 		_release_health_bar()
 
-		# Additional death logic can go here
-		# For now, just hide the ship
-		visible = false
+		# Unregister from combat system
+		if CombatManager and CombatManager.combat_bridge:
+			CombatManager.combat_bridge.unregister_combatant(ulid)
+			print("[Ship] Unregistered from combat system")
+
+		# Unregister from stats system
+		if StatsManager:
+			StatsManager.unregister_entity(ulid)
+			print("[Ship] Unregistered from stats system")
+
+		# Unregister from ULID manager
+		UlidManager.unregister_entity(ulid)
+
+		# Return ship to pool or despawn
+		if Cluster and pool_name != "":
+			# Ship came from pool - return it
+			print("[Ship] Returning to pool: %s" % pool_name)
+			if is_inside_tree():
+				get_parent().remove_child(self)
+			Cluster.release(pool_name, self)
+		else:
+			# Ship not pooled - queue free
+			print("[Ship] Despawning ship (not pooled)")
+			queue_free()
 
 # Override _exit_tree to ensure health bar is released
 func _exit_tree() -> void:
 	_release_health_bar()
+
+	# Unregister from combat system
+	if CombatManager and CombatManager.combat_bridge and not ulid.is_empty():
+		CombatManager.combat_bridge.unregister_combatant(ulid)
+
+# ============================================================================
+# COMBAT SYSTEM
+# ============================================================================
+# NOTE: Combat is handled automatically by the Rust combat system (CombatBridge)
+# Ships register with CombatManager on spawn, which handles:
+# - Automatic target finding (closest enemy within range)
+# - Attack timing (based on attack_interval)
+# - Damage calculation (based on ATK/DEF stats)
+# - Projectile spawning (visual feedback for attacks)
+#
+# The Rust system runs in a worker thread and emits signals when:
+# - Combat starts (combat_started)
+# - Damage is dealt (damage_dealt) - triggers projectile spawn
+# - Combat ends (combat_ended)
+# - Entity dies (entity_died)
+#
+# Manual attacks can still be triggered using ranged_attack() for special abilities/cards
+
+## Manual ranged attack (for special abilities, not used by automatic combat)
+## The automatic Rust combat system handles regular attacks
+func ranged_attack(target: Node2D, projectile_type: int = Projectile.Type.SPEAR) -> void:
+	if not Cluster:
+		push_error("Ship: Cannot perform ranged attack - Cluster not available")
+		return
+
+	if not target:
+		push_error("Ship: Cannot perform ranged attack - target is null")
+		return
+
+	# Get attack stats from StatsManager
+	var attack_power: float = 10.0
+	var attack_range: float = 3.0
+
+	if StatsManager and not ulid.is_empty():
+		attack_power = StatsManager.get_stat(ulid, StatsManager.STAT.ATTACK)
+		attack_range = StatsManager.get_stat(ulid, StatsManager.STAT.RANGE)
+
+	# Check if target is in range
+	var distance_to_target = global_position.distance_to(target.global_position)
+	var tile_distance = distance_to_target / 64.0  # Approximate tiles (assuming ~64px per tile)
+
+	if tile_distance > attack_range:
+		push_warning("Ship: Target out of range (%.1f tiles, max %.1f)" % [tile_distance, attack_range])
+		return
+
+	# Acquire projectile from pool
+	var projectile: Projectile = Cluster.acquire("projectile") as Projectile
+	if not projectile:
+		push_error("Ship: Failed to acquire projectile from pool")
+		return
+
+	# Add projectile to scene (as child of parent to avoid following ship)
+	if get_parent():
+		get_parent().add_child(projectile)
+
+	# Calculate projectile arc based on distance (farther = higher arc)
+	var arc_height = min(distance_to_target * 0.15, 50.0)  # Max 50px arc
+
+	# Set up hit callback to deal damage
+	var target_ulid: PackedByteArray
+	if "ulid" in target and target.ulid is PackedByteArray:
+		target_ulid = target.ulid
+
+	projectile.on_hit = func():
+		# Deal damage through StatsManager
+		if StatsManager and not target_ulid.is_empty():
+			var damage_dealt = StatsManager.take_damage(target_ulid, attack_power)
+			print("Ship: Manual ranged attack hit! Dealt %.1f damage" % damage_dealt)
+
+	# Set up pool return callback
+	projectile.on_return_to_pool = func(proj: Projectile):
+		if proj.get_parent():
+			proj.get_parent().remove_child(proj)
+		if Cluster:
+			Cluster.release("projectile", proj)
+
+	# Fire projectile
+	projectile.fire(
+		global_position,
+		target.global_position,
+		projectile_type,
+		400.0,  # Speed in pixels/sec
+		arc_height
+	)
+
+	print("Ship: Fired manual %s projectile at target (distance: %.1f tiles)" % [
+		Projectile.PROJECTILE_DATA[projectile_type]["name"],
+		tile_distance
+	])

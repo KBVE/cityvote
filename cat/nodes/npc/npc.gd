@@ -67,6 +67,10 @@ var player_ulid: PackedByteArray = PackedByteArray()
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
 
+# Energy system for movement
+var energy: int = 100
+var max_energy: int = 100
+
 func _ready():
 	# Set initial z-index based on spawn position
 	_update_z_index()
@@ -289,9 +293,8 @@ func _advance_to_next_waypoint():
 
 ## Update z-index based on current tile position for proper isometric layering
 func _update_z_index() -> void:
-	if Cache.tile_map:
-		var tile_coords = Cache.tile_map.local_to_map(position)
-		z_index = Cache.Z_INDEX_ENTITY_BASE + tile_coords.y + Cache.Z_INDEX_NPC_OFFSET
+	# Use fixed z-index for NPCs (above tiles, no tile_y sorting)
+	z_index = Cache.Z_INDEX_NPCS
 
 func _process(delta):
 	# Update z-index for proper layering as NPC moves
@@ -404,10 +407,10 @@ func _setup_health_bar() -> void:
 	if StatsManager and not ulid.is_empty():
 		var current_hp = StatsManager.get_stat(ulid, StatsManager.STAT.HP)
 		var max_hp = StatsManager.get_stat(ulid, StatsManager.STAT.MAX_HP)
-		health_bar.initialize(current_hp, max_hp)
+		health_bar.initialize(current_hp, max_hp, energy, max_energy)
 	else:
 		# Default values if no stats available yet
-		health_bar.initialize(100.0, 100.0)
+		health_bar.initialize(100.0, 100.0, energy, max_energy)
 
 	# Configure appearance (optional - adjust as needed)
 	health_bar.set_bar_offset(Vector2(0, -30))  # Position above NPC

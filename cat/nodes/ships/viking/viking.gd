@@ -3,6 +3,11 @@ extends Ship
 # Viking ship - extends the Ship base class
 
 func _ready():
+	# Set pool name for proper cleanup
+	pool_name = "viking"
+
+	# Configure attack speed (slower = more visible projectiles)
+	attack_interval = 2.5  # Attack every 2.5 seconds
 	# Use shader-based directional sprites with atlas
 	# Load the atlas image
 	var atlas_image = preload("res://nodes/ships/viking/viking_atlas.png")

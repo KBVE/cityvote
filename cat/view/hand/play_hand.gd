@@ -702,8 +702,8 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	card_sprite.scale = Vector2(0.15, 0.15)  # Downscale to fit tile
 	card_sprite.modulate = Color.WHITE
 
-	# Set z-index to render above tiles and other entities
-	card_sprite.z_index = Cache.Z_INDEX_ENTITY_BASE + tile_coords.y + Cache.Z_INDEX_CARD_OFFSET
+	# Set z-index for placed cards (fixed, above tiles)
+	card_sprite.z_index = Cache.Z_INDEX_CARDS
 
 	# Note: Wave shader disabled for cards because it would override the card atlas material
 	# and lose the card_id instance parameter. Cards keep their atlas material so they

@@ -29,23 +29,24 @@ var tile_map = null  # TileMapCompat wrapper for coordinate conversion
 
 # ===== Z-INDEX CONSTANTS =====
 # Centralized z-index values for proper rendering order
-# Tiles: 0-500 (based on Y coordinate)
-const Z_INDEX_TILE_BASE: int = 0           # Tiles start at 0
-const Z_INDEX_TILE_MAX: int = 500          # Maximum expected tile Y coordinate
+# All game objects use fixed z-index values (no tile_y based sorting)
 
-# Overlays above tiles
-const Z_INDEX_HEX_HIGHLIGHT_OFFSET: int = 500  # Hex selection outline (tile_y + 500)
+# Background and static elements
+const Z_INDEX_WATER_BG: int = -100         # Water background shader (below everything)
+const Z_INDEX_TILES: int = 200             # Terrain tiles (fixed)
+const Z_INDEX_HEX_HIGHLIGHT: int = 250     # Hex selection outline (above tiles)
 
-# Entities (isometric depth sorting)
-const Z_INDEX_ENTITY_BASE: int = 1000      # Base for all entities (above all tiles)
-const Z_INDEX_NPC_OFFSET: int = 1          # NPCs at base + tile_y + 1
-const Z_INDEX_SHIP_OFFSET: int = 2         # Ships at base + tile_y + 2
-const Z_INDEX_CARD_OFFSET: int = 3         # Placed cards at base + tile_y + 3
+# Game entities (fixed z-index, above tiles)
+const Z_INDEX_ENTITIES: int = 500          # Base z-index for all entities
+const Z_INDEX_NPCS: int = 501              # NPCs
+const Z_INDEX_SHIPS: int = 502             # Ships
+const Z_INDEX_CARDS: int = 503             # Placed cards
 
-# UI and visual effects (above all entities)
-const Z_INDEX_WAYPOINTS: int = 2000        # Path visualizers and waypoint markers
-const Z_INDEX_GHOST_CARD: int = 2500       # Ghost card preview while dragging
-const Z_INDEX_UI: int = 3000               # UI elements (TileInfo, etc.)
+# UI and overlays (fixed high values, above all game objects)
+# Note: Godot's max z_index is RenderingServer::CANVAS_ITEM_Z_MAX (4096)
+const Z_INDEX_WAYPOINTS: int = 3000        # Path visualizers and waypoint markers
+const Z_INDEX_GHOST_CARD: int = 3500       # Ghost card preview while dragging
+const Z_INDEX_UI: int = 4000               # UI elements (TileInfo, etc.)
 
 func _ready():
 	_load_fonts()

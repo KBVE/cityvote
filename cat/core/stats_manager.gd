@@ -18,19 +18,23 @@ enum STAT {
 	DEFENSE = 3,
 	SPEED = 4,
 
+	# Resource stats
+	ENERGY = 5,
+	MAX_ENERGY = 6,
+
 	# Secondary stats
-	RANGE = 5,
-	MORALE = 6,
-	EXPERIENCE = 7,
-	LEVEL = 8,
+	RANGE = 7,
+	MORALE = 8,
+	EXPERIENCE = 9,
+	LEVEL = 10,
 
 	# Resource production (for structures)
-	PRODUCTION_RATE = 9,
-	STORAGE_CAPACITY = 10,
+	PRODUCTION_RATE = 11,
+	STORAGE_CAPACITY = 12,
 
 	# Special stats
-	LUCK = 11,
-	EVASION = 12,
+	LUCK = 13,
+	EVASION = 14,
 }
 
 # Rust bridge

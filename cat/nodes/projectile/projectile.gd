@@ -11,6 +11,18 @@ enum Type {
 	GLAIVE = 1,
 }
 
+# Projectile metadata (hardcoded from projectile_atlas_metadata.json for performance)
+# Atlas: 64x32 pixels (2 projectiles side by side)
+const TILE_SIZE: int = 32
+const ATLAS_WIDTH: int = 64
+const ATLAS_HEIGHT: int = 32
+
+# Projectile data: name, atlas_x, atlas_y, width, height
+const PROJECTILE_DATA: Dictionary = {
+	Type.SPEAR: {"name": "spear", "x": 0, "y": 0, "width": 32, "height": 32},
+	Type.GLAIVE: {"name": "glaive", "x": 32, "y": 0, "width": 32, "height": 32},
+}
+
 # Reference to sprite with shader material
 @onready var sprite: Sprite2D = $Sprite2D
 
@@ -18,14 +30,17 @@ enum Type {
 var projectile_type: Type = Type.SPEAR
 var source_pos: Vector2 = Vector2.ZERO
 var target_pos: Vector2 = Vector2.ZERO
+var direction: Vector2 = Vector2.ZERO  # Normalized direction vector
 var speed: float = 400.0  # Pixels per second
 var arc_height: float = 0.0  # Pixels (0 = straight line)
 var rotate_to_direction: bool = true
+var max_range: float = 0.0  # Maximum travel distance (in pixels)
 
 # Travel state
 var is_active: bool = false
 var travel_progress: float = 0.0  # 0.0 to 1.0
 var travel_distance: float = 0.0
+var distance_traveled: float = 0.0  # Actual distance traveled
 
 # Callbacks
 var on_hit: Callable  # Called when projectile reaches target
@@ -35,23 +50,48 @@ func _ready() -> void:
 	set_process(false)  # Disabled until fired
 
 ## Fire the projectile from source to target
+## If max_range_tiles is > 0, projectile will travel that many tiles max (1 tile = 64px)
+## Otherwise it travels directly to target
 func fire(
 	from: Vector2,
 	to: Vector2,
 	type: Type = Type.SPEAR,
 	projectile_speed: float = 400.0,
-	arc: float = 0.0
+	arc: float = 0.0,
+	max_range_tiles: int = 8  # Default: 8 tiles max range
 ) -> void:
 	# Set configuration
 	source_pos = from
-	target_pos = to
 	projectile_type = type
 	speed = projectile_speed
 	arc_height = arc
 
+	# Calculate direction and max range
+	direction = (to - from).normalized()
+
+	# If max_range_tiles is specified, use it; otherwise go to target
+	if max_range_tiles > 0:
+		const TILE_SIZE = 64  # Hex tile size in pixels
+		max_range = max_range_tiles * TILE_SIZE
+
+		# Target is either the intended target OR max range, whichever is closer
+		var distance_to_target = from.distance_to(to)
+		if distance_to_target <= max_range:
+			target_pos = to
+			travel_distance = distance_to_target
+		else:
+			# Projectile will travel max_range in the direction of target
+			target_pos = from + (direction * max_range)
+			travel_distance = max_range
+	else:
+		# No max range - go directly to target
+		target_pos = to
+		travel_distance = from.distance_to(to)
+		max_range = travel_distance
+
 	# Reset state
 	travel_progress = 0.0
-	travel_distance = source_pos.distance_to(target_pos)
+	distance_traveled = 0.0
 	position = source_pos
 	is_active = true
 
@@ -60,7 +100,7 @@ func fire(
 
 	# Calculate initial rotation
 	if rotate_to_direction:
-		var angle = source_pos.angle_to_point(target_pos)
+		var angle = direction.angle()
 		rotation = angle
 
 	# Enable processing
@@ -79,17 +119,19 @@ func _process(delta: float) -> void:
 	if not is_active:
 		return
 
-	# Update travel progress
-	if travel_distance > 0:
-		travel_progress += (speed * delta) / travel_distance
-	else:
-		travel_progress = 1.0
+	# Move in direction
+	var movement = speed * delta
+	distance_traveled += movement
 
-	# Clamp to 1.0
-	if travel_progress >= 1.0:
-		travel_progress = 1.0
+	# Check if reached max range or target
+	if distance_traveled >= travel_distance:
+		# Reached end of travel (hit target or max range)
+		position = target_pos
 		_on_reach_target()
 		return
+
+	# Update travel progress based on distance traveled
+	travel_progress = distance_traveled / travel_distance
 
 	# Calculate position along path with optional arc
 	var linear_pos = source_pos.lerp(target_pos, travel_progress)
@@ -102,7 +144,7 @@ func _process(delta: float) -> void:
 		position = linear_pos
 
 	# Update rotation to face direction of travel
-	if rotate_to_direction and travel_progress < 1.0:
+	if rotate_to_direction:
 		var next_progress = min(travel_progress + 0.01, 1.0)
 		var next_pos = source_pos.lerp(target_pos, next_progress)
 
@@ -110,8 +152,9 @@ func _process(delta: float) -> void:
 			var next_arc_offset = 4.0 * arc_height * next_progress * (1.0 - next_progress)
 			next_pos += Vector2(0, -next_arc_offset)
 
-		var direction = position.direction_to(next_pos)
-		rotation = direction.angle()
+		var travel_direction = position.direction_to(next_pos)
+		if travel_direction.length_squared() > 0.001:  # Avoid zero vector
+			rotation = travel_direction.angle()
 
 ## Called when projectile reaches target
 func _on_reach_target() -> void:
@@ -134,9 +177,12 @@ func _on_reach_target() -> void:
 func reset() -> void:
 	is_active = false
 	travel_progress = 0.0
+	distance_traveled = 0.0
 	position = Vector2.ZERO
 	rotation = 0.0
 	visible = false
+	direction = Vector2.ZERO
+	max_range = 0.0
 	set_process(false)
 	on_hit = Callable()
 	on_return_to_pool = Callable()

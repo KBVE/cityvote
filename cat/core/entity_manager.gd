@@ -577,7 +577,7 @@ func _register_combat(entity: Node, tile: Vector2i) -> void:
 
 	var ulid: PackedByteArray = entity.ulid
 	var player_ulid: PackedByteArray = entity.player_ulid if "player_ulid" in entity else PackedByteArray()
-	var attack_interval: float = 1.5  # Default attack interval
+	var attack_interval: float = 2.5  # Default attack interval
 
 	# Register with Rust combat system
 	CombatManager.combat_bridge.register_combatant(ulid, player_ulid, tile, attack_interval)

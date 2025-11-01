@@ -151,6 +151,137 @@ impl BiomeGenerator {
 
         terrain
     }
+
+    /// Find a good location for the origin city near spawn (0, 0)
+    /// Looks for a grassland tile adjacent to water (coastline)
+    ///
+    /// # Arguments
+    /// * `noise` - Noise generator
+    /// * `search_radius` - How many chunks to search (typically 2-3)
+    ///
+    /// # Returns
+    /// (tile_x, tile_y) coordinates for the optimal city location
+    pub fn find_coastal_city_location(noise: &NoiseGenerator, search_radius: i32) -> (i32, i32) {
+        // Search in a spiral pattern from origin
+        for radius in 0..search_radius {
+            let chunk_size = map_config::CHUNK_SIZE as i32;
+
+            // Check chunks around origin
+            for chunk_y in -radius..=radius {
+                for chunk_x in -radius..=radius {
+                    // Only check the outer ring
+                    if radius > 0 && chunk_x.abs() < radius && chunk_y.abs() < radius {
+                        continue;
+                    }
+
+                    // Generate this chunk
+                    let chunk_terrain = Self::generate_chunk(
+                        noise,
+                        chunk_x,
+                        chunk_y,
+                        chunk_size as usize,
+                        0.0,
+                        0.0,
+                    );
+
+                    let chunk_tile_x = chunk_x * chunk_size;
+                    let chunk_tile_y = chunk_y * chunk_size;
+
+                    // Check each tile in the chunk
+                    for ty in 0..chunk_size {
+                        for tx in 0..chunk_size {
+                            let tile_x = chunk_tile_x + tx;
+                            let tile_y = chunk_tile_y + ty;
+
+                            let idx = (ty * chunk_size + tx) as usize;
+                            let terrain = chunk_terrain[idx];
+
+                            // Must be grassland
+                            if !matches!(
+                                terrain,
+                                TerrainType::Grassland0
+                                    | TerrainType::Grassland1
+                                    | TerrainType::Grassland2
+                                    | TerrainType::Grassland3
+                                    | TerrainType::Grassland4
+                                    | TerrainType::Grassland5
+                            ) {
+                                continue;
+                            }
+
+                            // Check if adjacent to water
+                            if Self::is_adjacent_to_water(noise, tile_x, tile_y) {
+                                return (tile_x, tile_y);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: just find any grassland near origin
+        for radius in 0..search_radius {
+            let chunk_size = map_config::CHUNK_SIZE as i32;
+
+            for chunk_y in -radius..=radius {
+                for chunk_x in -radius..=radius {
+                    if radius > 0 && chunk_x.abs() < radius && chunk_y.abs() < radius {
+                        continue;
+                    }
+
+                    let chunk_terrain = Self::generate_chunk(
+                        noise,
+                        chunk_x,
+                        chunk_y,
+                        chunk_size as usize,
+                        0.0,
+                        0.0,
+                    );
+
+                    let chunk_tile_x = chunk_x * chunk_size;
+                    let chunk_tile_y = chunk_y * chunk_size;
+
+                    for ty in 0..chunk_size {
+                        for tx in 0..chunk_size {
+                            let tile_x = chunk_tile_x + tx;
+                            let tile_y = chunk_tile_y + ty;
+
+                            let idx = (ty * chunk_size + tx) as usize;
+                            if !matches!(chunk_terrain[idx], TerrainType::Water) {
+                                return (tile_x, tile_y);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Ultimate fallback: origin
+        (0, 0)
+    }
+
+    /// Check if a tile is adjacent to water
+    fn is_adjacent_to_water(noise: &NoiseGenerator, tile_x: i32, tile_y: i32) -> bool {
+        // Check 6 adjacent hexes (hex grid has 6 neighbors)
+        let neighbors = [
+            (tile_x - 1, tile_y),     // West
+            (tile_x + 1, tile_y),     // East
+            (tile_x, tile_y - 1),     // North
+            (tile_x, tile_y + 1),     // South
+            (tile_x - 1, tile_y - 1), // Northwest
+            (tile_x + 1, tile_y + 1), // Southeast
+        ];
+
+        for (nx, ny) in neighbors.iter() {
+            let (world_x, world_y) = Self::tile_to_hex_world_pos(*nx, *ny);
+            let terrain = Self::get_terrain_type(noise, world_x, world_y);
+            if matches!(terrain, TerrainType::Water) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[cfg(test)]

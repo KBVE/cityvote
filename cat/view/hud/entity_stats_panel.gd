@@ -124,6 +124,7 @@ func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
 
 	# Update stat displays (creates labels on first call, reuses thereafter)
 	_update_stat(I18n.translate("stat.health") + " (HP)", all_stats.get(StatsManager.STAT.HP, 0), all_stats.get(StatsManager.STAT.MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
+	_update_stat(I18n.translate("ui.stats.energy") + " (EP)", all_stats.get(StatsManager.STAT.ENERGY, 0), all_stats.get(StatsManager.STAT.MAX_ENERGY, 0), Color(0.2, 0.6, 0.9))  # Blue
 	_update_stat(I18n.translate("stat.attack") + " (ATK)", all_stats.get(StatsManager.STAT.ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
 	_update_stat(I18n.translate("stat.defense") + " (DEF)", all_stats.get(StatsManager.STAT.DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Blue
 	_update_stat(I18n.translate("stat.speed") + " (SPD)", all_stats.get(StatsManager.STAT.SPEED, 0), -1, Color(0.5, 1.0, 0.5))  # Green

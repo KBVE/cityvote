@@ -1,4 +1,7 @@
 pub mod pathfinding;
+pub mod ship_entity;
+
+pub use ship_entity::{ShipData, ShipState};
 
 use godot::prelude::*;
 use crate::npc::ship::pathfinding::*;
