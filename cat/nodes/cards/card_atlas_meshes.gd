@@ -8,7 +8,7 @@ extends Node
 # Atlas configuration
 const ATLAS_COLS: int = 13  # Cards per row (Ace through King)
 const ATLAS_ROWS: int = 5   # Rows (4 suits + custom cards)
-const TOTAL_CARDS: int = 54 # 52 standard + 2 custom
+const TOTAL_CARDS: int = 55 # 52 standard + 3 custom
 
 # Mesh cache - populated at _ready()
 var card_meshes: Dictionary = {}  # card_id -> QuadMesh

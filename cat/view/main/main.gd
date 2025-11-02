@@ -63,16 +63,20 @@ var king_move_interval: float = 2.0  # Move every 2 seconds
 var culling_stats_timer: float = 0.0
 var culling_stats_interval: float = 5.0  # Print stats every 5 seconds
 
-var language_selector = null  # Reference to language selector (includes loading progress)
-
 func _ready():
+	# Set Cache references for efficient access
+	Cache.set_main_scene(self)
+	Cache.set_ui_reference("topbar", topbar_uiux)
+	Cache.set_ui_reference("tile_info", tile_info)
+	Cache.set_ui_reference("entity_stats_panel", entity_stats_panel)
+
 	# Generate player ULID (represents the current player)
 	if UlidManager:
 		player_ulid = UlidManager.generate()
 		print("Main: Player ULID generated: %s" % UlidManager.to_hex(player_ulid))
 
-	# Show language selector (includes loading progress bar)
-	_show_language_selector_overlay()
+	# Note: Language/seed selection now happens in title.tscn
+	# World seed already set in MapConfig by title.gd
 
 	# Get viewport texture
 	var viewport_texture = subviewport.get_texture()
@@ -95,10 +99,9 @@ func _ready():
 	call_deferred("_initialize_game")
 
 func _initialize_game() -> void:
-	# Step 1: Map generation (already done in hex_map._ready, update progress)
-	if language_selector:
-		language_selector.set_map_generation()
-		await get_tree().process_frame
+	# Step 1: Map generation (already done in hex_map._ready)
+	print("Main: Generating map...")
+	await get_tree().process_frame
 
 	# NOTE: Camera bounds not needed for infinite world
 	# Chunks are generated on-demand based on camera position
@@ -145,8 +148,7 @@ func _initialize_game() -> void:
 	#; TEST
 
 	# Step 2: Wait for initial chunks to render
-	if language_selector:
-		language_selector.set_chunk_rendering()
+	print("Main: Rendering initial chunks...")
 
 	# IMPORTANT: Wait for initial chunks to render before spawning entities
 	# This prevents race condition where entities spawn before terrain is ready
@@ -155,9 +157,8 @@ func _initialize_game() -> void:
 	print("Main: Initial chunks ready! Proceeding with entity spawning...")
 
 	# Step 3: Initialize pathfinding
-	if language_selector:
-		language_selector.set_pathfinding_init()
-		await get_tree().process_frame
+	print("Main: Initializing pathfinding...")
+	await get_tree().process_frame
 
 	#### TEST ####
 	# Initialize Rust pathfinding map cache
@@ -168,9 +169,8 @@ func _initialize_game() -> void:
 	get_node("/root/NpcPathfindingBridge").init_map(hex_map)
 
 	# Step 4: Spawn entities
-	if language_selector:
-		language_selector.set_spawning_entities()
-		await get_tree().process_frame
+	print("Main: Spawning entities...")
+	await get_tree().process_frame
 
 	# Spawn a few test viking ships on water tiles
 	_spawn_test_vikings()
@@ -193,49 +193,16 @@ func _initialize_game() -> void:
 		CardComboBridge.joker_consumed.connect(_on_joker_consumed)
 		print("Main: Connected to joker_consumed signal")
 
-	# Step 5: Complete
-	if language_selector:
-		language_selector.set_complete()
+	# Step 5: Complete - Start game timer
+	print("Main: Initialization complete!")
+	if GameTimer:
+		GameTimer.start_timer()
+		print("Main: Game timer started!")
 
 	# Test toast notification
 	Toast.show_toast(I18n.translate("game.welcome"), 5.0)
 	await get_tree().create_timer(2.0).timeout
 	Toast.show_toast(I18n.translate("game.entities_spawned"), 3.0)
-
-## Show language selector overlay (includes loading progress bar)
-func _show_language_selector_overlay() -> void:
-	# Load language selector scene (now includes loading progress)
-	var selector_scene = load("res://view/hud/i18n/language_selector.tscn")
-	if not selector_scene:
-		push_error("Main: Failed to load language selector scene!")
-		return
-
-	language_selector = selector_scene.instantiate()
-	add_child(language_selector)
-
-	# Connect to language_selected signal to start timer
-	if language_selector.has_signal("language_selected"):
-		language_selector.language_selected.connect(_on_language_selected)
-
-	print("Main: Language selector (with loading progress) displayed")
-
-## Handle language selection - start the game timer
-func _on_language_selected(language: int, world_seed: int, player_name: String) -> void:
-	print("Main: Language selected (%d), World Seed: %d, Player: %s" % [language, world_seed, player_name])
-
-	# Apply world seed to MapConfig
-	if MapConfig:
-		MapConfig.world_seed = world_seed
-		print("Main: World seed set to %d" % world_seed)
-
-	# TODO: Store player_name (could be saved to a PlayerData singleton or used in UI)
-	# For now, just log it
-	print("Main: Player name set to '%s'" % player_name)
-
-	# Start the game timer now that player is ready
-	if GameTimer:
-		GameTimer.start_timer()
-		print("Main: Game timer started!")
 
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:

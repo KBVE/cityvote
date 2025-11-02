@@ -38,8 +38,7 @@ var camera_edge_threshold: float = 250.0  # Distance from center before camera s
 var hand: Array[PooledCard] = []
 var deck_id: int = -1  # Deck ID from CardDeck
 
-# Hand size limit
-var MAX_HAND: int = 12  # Maximum cards in hand (can be upgraded later)
+# Hand size limit (now defined in Cache.MAX_HAND_SIZE = 15)
 
 # Last placed card position (for combo detection optimization)
 var last_placed_card_pos: Vector2i = Vector2i(-1, -1)
@@ -165,7 +164,7 @@ func draw_initial_hand() -> void:
 # Update card count label
 func _update_card_count() -> void:
 	if card_count_label:
-		card_count_label.text = I18n.translate("ui.hand.card_count") % [hand.size(), MAX_HAND]
+		card_count_label.text = I18n.translate("ui.hand.card_count") % [hand.size(), Cache.MAX_HAND_SIZE]
 
 # Add a card to the hand (for manual testing/debugging)
 func add_card_to_hand(suit: int, value: int) -> void:
@@ -812,7 +811,7 @@ func _is_mouse_over_hand_ui() -> bool:
 # Auto-draw card when timer resets (every 60 seconds)
 func _on_timer_reset() -> void:
 	# Check if hand is at max capacity
-	if hand.size() >= MAX_HAND:
+	if hand.size() >= Cache.MAX_HAND_SIZE:
 		# Send toast: Hand is full
 		Toast.show_toast(I18n.translate("ui.hand.full"), 3.0)
 		return
@@ -845,6 +844,9 @@ func _on_timer_reset() -> void:
 
 		# Add to container at END
 		card_container.add_child(card_wrapper)
+
+		# Set z-index to be highest (on top of all other cards) immediately
+		card_wrapper.z_index = hand.size() - 1
 
 		_update_card_count()
 

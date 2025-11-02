@@ -55,26 +55,39 @@ func _ready() -> void:
 	print("HintPanel: Ready - Docked under CityVote logo")
 
 func _position_under_city_vote() -> void:
-	# Wait one frame for UI to initialize
-	await get_tree().process_frame
+	# Wait for scene tree to be fully loaded (multiple frames)
+	for i in range(10):
+		await get_tree().process_frame
 
-	# Find the Main scene and topbar
-	var main_scene = get_tree().root.get_node_or_null("Main")
+	# Use Cache to get Main scene reference (faster than tree search)
+	var main_scene = Cache.get_main_scene()
 	if not main_scene:
-		push_warning("HintPanel: Could not find Main scene")
+		# Cache not set yet, wait and retry
+		push_warning("HintPanel: Main scene not in Cache yet, will retry")
+		await get_tree().create_timer(0.5).timeout
+		_position_under_city_vote()
 		return
 
-	# Get the topbar directly from Main scene
-	var topbar = main_scene.get_node_or_null("TopbarUIUX")
+	# Get the topbar from Cache (no expensive node path lookup!)
+	var topbar = Cache.get_ui_reference("topbar")
 	if not topbar:
-		push_warning("HintPanel: Could not find TopbarUIUX in Main scene")
+		push_warning("HintPanel: Topbar not in Cache yet, will retry")
+		# Retry after a delay
+		await get_tree().create_timer(0.5).timeout
+		_position_under_city_vote()
 		return
 
 	# Get the CityVote button
 	var city_vote_button = topbar.get_node_or_null("MarginContainer/HBoxContainer/CenterSection/CityVoteButton")
 	if not city_vote_button:
-		push_warning("HintPanel: Could not find CityVote button")
+		push_warning("HintPanel: Could not find CityVote button, will retry")
+		# Retry after a delay
+		await get_tree().create_timer(0.5).timeout
+		_position_under_city_vote()
 		return
+
+	# Wait one more frame for layout to finalize
+	await get_tree().process_frame
 
 	# Position directly under the CityVote button
 	var button_global_pos = city_vote_button.global_position

@@ -10,25 +10,29 @@ extends CanvasLayer
 @onready var seed_input: LineEdit = $Panel/MarginContainer/VBoxContainer/InputSection/SeedContainer/SeedInput
 @onready var name_input: LineEdit = $Panel/MarginContainer/VBoxContainer/InputSection/NameContainer/NameInput
 @onready var flag_container: HBoxContainer = $Panel/MarginContainer/VBoxContainer/FlagContainer
-@onready var spinner: ColorRect = $Panel/MarginContainer/VBoxContainer/LoadingSection/SpinnerContainer/Spinner
+@onready var spinner = $Panel/MarginContainer/VBoxContainer/LoadingSection/SpinnerContainer/Spinner
 @onready var progress_bar: ProgressBar = $Panel/MarginContainer/VBoxContainer/LoadingSection/ProgressBar
 @onready var status_label: Label = $Panel/MarginContainer/VBoxContainer/LoadingSection/StatusLabel
 
-signal language_selected(language: int, world_seed: int, player_name: String)
+signal language_selected(language: int, world_seed: int, player_name: String)  # Old signal (for main.gd loading progress)
+signal start_game(language: int, world_seed: int, player_name: String)  # New signal (for title.gd)
 
 var flag_buttons: Array[TextureButton] = []
 var selected_language: int = -1
 var world_seed: int = 12345
 var player_name: String = "Player"
+var start_button: Button = null
 
-# Loading progress tracking
+# Mode: "title" = show Start button, "loading" = show loading progress
+var mode: String = "title"
+
+# Loading progress tracking (for loading mode)
 var total_steps: int = 5
 var current_step: int = 0
 var current_status_key: String = "ui.loading.initializing"
 var language_rotation_timer: float = 0.0
 var language_rotation_interval: float = 1.5
 var current_language_index: int = 0
-var spinner_rotation: float = 0.0
 
 func _ready() -> void:
 	# Create flag buttons for each language
@@ -42,24 +46,37 @@ func _ready() -> void:
 	# Initialize input fields
 	_initialize_inputs()
 
-	# Start with flags and inputs at low opacity
-	flag_container.modulate.a = 0.3
-	input_section.modulate.a = 0.3
+	# Create Start button
+	_create_start_button()
+
+	# Title mode: show inputs and Start button, hide loading
+	if mode == "title":
+		flag_container.modulate.a = 1.0
+		input_section.modulate.a = 1.0
+		$Panel/MarginContainer/VBoxContainer/LoadingSection.visible = false
+		if start_button:
+			start_button.visible = true
+			start_button.disabled = true  # Disabled until language selected
+		if spinner:
+			spinner.hide_spinner()  # Hide and stop spinner
+		set_process(false)  # Don't need loading animation
+	else:
+		# Loading mode: start with flags and inputs at low opacity
+		flag_container.modulate.a = 0.3
+		input_section.modulate.a = 0.3
+		if start_button:
+			start_button.visible = false
+		if spinner:
+			spinner.show_spinner()  # Show and start spinner
+		# Start rotating status messages
+		set_process(true)
+		_update_progress(0, "ui.loading.initializing")
 
 	# Center on screen
 	_center_panel()
 
-	# Start rotating status messages and spinner
-	set_process(true)
-	_update_progress(0, "ui.loading.initializing")
-
 func _process(delta: float) -> void:
-	# Rotate spinner (only if visible)
-	if spinner.visible:
-		spinner_rotation += delta * 5.0  # 5 radians per second (faster rotation)
-		spinner.rotation = spinner_rotation
-
-	# Rotate through languages for status text
+	# Rotate through languages for status text (spinner rotation is automatic)
 	language_rotation_timer += delta
 	if language_rotation_timer >= language_rotation_interval:
 		language_rotation_timer = 0.0
@@ -171,15 +188,71 @@ func _initialize_inputs() -> void:
 		seed_input.add_theme_font_override("font", font)
 		name_input.add_theme_font_override("font", font)
 
+func _create_start_button() -> void:
+	# Create Start button
+	start_button = Button.new()
+	start_button.text = "Start Game"
+	start_button.custom_minimum_size = Vector2(200, 40)
+
+	# Apply font
+	var font = Cache.get_font("alagard")
+	if font:
+		start_button.add_theme_font_override("font", font)
+		start_button.add_theme_font_size_override("font_size", 18)
+
+	# Style the button
+	var style_normal = StyleBoxFlat.new()
+	style_normal.bg_color = Color(0.2, 0.15, 0.1, 1.0)
+	style_normal.border_color = Color(0.9, 0.7, 0.3, 1.0)
+	style_normal.border_width_left = 2
+	style_normal.border_width_top = 2
+	style_normal.border_width_right = 2
+	style_normal.border_width_bottom = 2
+	style_normal.corner_radius_top_left = 8
+	style_normal.corner_radius_top_right = 8
+	style_normal.corner_radius_bottom_left = 8
+	style_normal.corner_radius_bottom_right = 8
+
+	var style_hover = style_normal.duplicate()
+	style_hover.bg_color = Color(0.3, 0.2, 0.15, 1.0)
+
+	var style_disabled = style_normal.duplicate()
+	style_disabled.bg_color = Color(0.15, 0.12, 0.1, 1.0)
+	style_disabled.border_color = Color(0.5, 0.4, 0.2, 1.0)
+
+	start_button.add_theme_stylebox_override("normal", style_normal)
+	start_button.add_theme_stylebox_override("hover", style_hover)
+	start_button.add_theme_stylebox_override("pressed", style_hover)
+	start_button.add_theme_stylebox_override("disabled", style_disabled)
+
+	# Connect button press
+	start_button.pressed.connect(_on_start_button_pressed)
+
+	# Add to VBoxContainer (after FlagContainer)
+	$Panel/MarginContainer/VBoxContainer.add_child(start_button)
+	$Panel/MarginContainer/VBoxContainer.move_child(start_button, $Panel/MarginContainer/VBoxContainer.get_child_count() - 1)
+
+func _on_start_button_pressed() -> void:
+	print("LanguageSelector: Start button pressed!")
+
+	# Emit start_game signal
+	start_game.emit(selected_language, world_seed, player_name)
+
+	# Close the selector
+	queue_free()
+
 func _on_seed_changed(new_text: String) -> void:
-	# Parse seed (allow empty or invalid = random seed)
+	# Parse seed (allow empty, int, or string)
 	if new_text.is_empty():
-		world_seed = randi()  # Random seed if empty
+		# Generate random seed within i32 bounds
+		world_seed = randi() % 2147483647
 	elif new_text.is_valid_int():
-		world_seed = new_text.to_int()
+		# Use integer value, clamped to i32 range
+		var parsed = new_text.to_int()
+		world_seed = clampi(parsed, -2147483648, 2147483647)
 	else:
-		# Keep previous value if invalid
-		pass
+		# Convert string to deterministic seed via hash
+		world_seed = _string_to_seed(new_text)
 
 func _on_name_changed(new_text: String) -> void:
 	player_name = new_text if not new_text.is_empty() else "Player"
@@ -189,8 +262,13 @@ func _on_flag_pressed(language: int) -> void:
 	I18n.set_language(language)
 	selected_language = language
 
-	# Fade out and close
-	_fade_out_and_close()
+	# Enable Start button now that language is selected
+	if start_button and mode == "title":
+		start_button.disabled = false
+
+	# In loading mode, fade out and close immediately
+	if mode == "loading":
+		_fade_out_and_close()
 
 func _fade_out_and_close() -> void:
 	# Fade out animation
@@ -237,8 +315,9 @@ func set_complete() -> void:
 	tween.tween_property(spinner, "modulate:a", 0.0, 0.3)  # Fade out spinner
 	await tween.finished
 
-	# Hide spinner completely
-	spinner.visible = false
+	# Hide spinner completely using universal spinner method
+	if spinner:
+		spinner.hide_spinner()
 
 	# Wait for language selection
 	if selected_language >= 0:
@@ -255,6 +334,21 @@ func skip_selection() -> void:
 	selected_language = I18n.get_current_language()
 	language_selected.emit(selected_language, world_seed, player_name)
 	queue_free()
+
+## Convert string to deterministic i32 seed (for text inputs like "home")
+func _string_to_seed(text: String) -> int:
+	# Simple hash function that generates deterministic i32 value from string
+	var hash: int = 0
+	for i in range(text.length()):
+		var char_code = text.unicode_at(i)
+		# Mix bits using prime multiplier and XOR
+		hash = ((hash * 31) + char_code) & 0x7FFFFFFF  # Keep within positive i32 range
+
+	# Allow negative seeds too, so map to full i32 range
+	if hash > 1073741824:  # If in upper half of positive range
+		hash = hash - 2147483648  # Map to negative range
+
+	return hash
 
 ## Get font for a specific language (used for language selector labels)
 func _get_font_for_language(lang: int) -> Font:

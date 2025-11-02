@@ -23,9 +23,16 @@ var fonts: Dictionary = {}
 # Preloaded shaders for effects
 var shaders: Dictionary = {}
 
+# ===== GAME CONSTANTS =====
+# Centralized game configuration values
+const MAX_HAND_SIZE: int = 15  # Maximum cards in hand
+
 # ===== GAME REFERENCES =====
 # Central references to key game systems (set by main.gd)
 var tile_map = null  # TileMapCompat wrapper for coordinate conversion
+var main_scene = null  # Reference to Main scene (set once on load)
+var spinner_scene = null  # Cached spinner scene for reuse
+var ui_references: Dictionary = {}  # Cache for UI references (topbar, etc.)
 
 # ===== Z-INDEX CONSTANTS =====
 # Centralized z-index values for proper rendering order
@@ -52,6 +59,51 @@ func _ready():
 	_load_fonts()
 	_load_shaders()
 	_load_strings()
+	_load_spinner_scene()
+
+# ===== SCENE REFERENCES MANAGEMENT =====
+
+## Set main scene reference (called once when Main scene loads)
+func set_main_scene(scene: Node) -> void:
+	if scene == null:
+		push_error("Cache: Attempted to set null main_scene reference")
+		return
+	main_scene = scene
+	print("Cache: Main scene reference set")
+
+## Get main scene reference
+func get_main_scene() -> Node:
+	if main_scene == null:
+		push_warning("Cache: main_scene not initialized yet")
+	return main_scene
+
+## Cache a UI reference by name
+func set_ui_reference(name: String, node: Node) -> void:
+	if node == null:
+		push_error("Cache: Attempted to cache null UI reference for '%s'" % name)
+		return
+	ui_references[name] = node
+	print("Cache: UI reference '%s' cached" % name)
+
+## Get a cached UI reference
+func get_ui_reference(name: String) -> Node:
+	if not ui_references.has(name):
+		push_warning("Cache: UI reference '%s' not found" % name)
+		return null
+	return ui_references[name]
+
+## Load spinner scene for reuse
+func _load_spinner_scene() -> void:
+	var spinner_path = "res://view/hud/spinner/spinner.tscn"
+	if ResourceLoader.exists(spinner_path):
+		spinner_scene = load(spinner_path)
+		print("Cache: Spinner scene loaded")
+	else:
+		push_warning("Cache: Could not find spinner scene at " + spinner_path)
+
+## Get spinner scene (already loaded)
+func get_spinner_scene() -> PackedScene:
+	return spinner_scene
 
 # Set tile_map reference (called by main.gd after hex_map initializes)
 func set_tile_map(tmap) -> void:

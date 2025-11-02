@@ -35,8 +35,9 @@ const KING = 13
 # Custom card IDs (start at 52)
 const CARD_VIKINGS = 52  # Custom row, position 0
 const CARD_DINO = 53     # Custom row, position 1
-const CUSTOM_CARD_COUNT = 2  # Total number of custom cards
-const TOTAL_CARD_COUNT = STANDARD_CARD_COUNT + CUSTOM_CARD_COUNT  # 54
+const CARD_BARON = 54    # Custom row, position 2
+const CUSTOM_CARD_COUNT = 3  # Total number of custom cards
+const TOTAL_CARD_COUNT = STANDARD_CARD_COUNT + CUSTOM_CARD_COUNT  # 55
 
 ## Convert suit and value to card_id for standard cards
 ## suit: 0-3 (CLUBS, DIAMONDS, HEARTS, SPADES)
@@ -101,6 +102,8 @@ static func get_card_name_from_id(card_id: int) -> String:
 		return I18n.translate("card.custom.viking")
 	elif card_id == CARD_DINO:
 		return I18n.translate("card.custom.dino")
+	elif card_id == CARD_BARON:
+		return I18n.translate("card.custom.baron")
 	elif card_id >= 0 and card_id < STANDARD_CARD_COUNT:
 		var suit = card_id / CARDS_PER_SUIT
 		var value = (card_id % CARDS_PER_SUIT) + 1
