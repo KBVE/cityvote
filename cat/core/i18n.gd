@@ -29,29 +29,25 @@ var language_flags: Dictionary = {
 	Language.FRENCH: "frenchflag"
 }
 
-# Which atlas to use for each flag
-# realcountries.png = british, japon, china, spain, frenchflag
-# realcountries2.png = India
-var flag_atlas_mapping: Dictionary = {
-	"british": "realcountries",
-	"americaflag": "realcountries",
-	"japon": "realcountries",
-	"china": "realcountries",
-	"spain": "realcountries",
-	"frenchflag": "realcountries",
-	"India": "realcountries2"
-}
+# Combined atlas info
+const COMBINED_ATLAS_PATH = "res://view/hud/i18n/flags_combined.png"
+const COMBINED_ATLAS_WIDTH = 270
+const COMBINED_ATLAS_HEIGHT = 136
 
-# Hardcoded flag frame data (from realcountriesjson.json and realcountries2json.json)
+# Hardcoded flag frame data (from flags_combined.json)
 # This avoids the need to load JSON files at runtime (fixes web build issues)
-# Each flag has: x, y, w (width), h (height) in the atlas texture
+# Each flag has: x, y, w (width), h (height) in the combined atlas texture
 var flag_frame_data: Dictionary = {
+	# Player language flags
 	"british": {"x": 91, "y": 1, "w": 16, "h": 32},
+	"americaflag": {"x": 37, "y": 1, "w": 16, "h": 32},
 	"japon": {"x": 73, "y": 69, "w": 16, "h": 32},
 	"china": {"x": 1, "y": 35, "w": 16, "h": 32},
 	"spain": {"x": 1, "y": 103, "w": 16, "h": 32},
 	"frenchflag": {"x": 1, "y": 69, "w": 16, "h": 32},
-	"India": {"x": 1, "y": 1, "w": 16, "h": 32}  # From realcountries2
+	"India": {"x": 127, "y": 1, "w": 16, "h": 32},
+	# AI flag
+	"bavaria": {"x": 73, "y": 1, "w": 16, "h": 32}
 }
 
 # Translation dictionary
@@ -1010,8 +1006,6 @@ func _ready() -> void:
 	if saved_language != -1:
 		current_language = saved_language as Language
 
-	print("I18n: Initialized with language: %s" % _get_language_name(current_language))
-
 ## Get translated string by key
 ## Returns the English version if key or language not found
 func translate(key: String, format_args: Array = []) -> String:
@@ -1043,7 +1037,6 @@ func get_translation_for_language(key: String, language: int, format_args: Array
 func set_language(language: Language) -> void:
 	current_language = language
 	# Don't save preference - language selector shows every time
-	print("I18n: Language changed to: %s" % _get_language_name(language))
 	# Emit signal to notify UI components to refresh
 	language_changed.emit(language)
 
@@ -1092,16 +1085,11 @@ func get_language_flag(language: Language) -> String:
 	return language_flags.get(language, "british")
 
 ## Get atlas name for a flag
-func get_flag_atlas(flag_name: String) -> String:
-	return flag_atlas_mapping.get(flag_name, "realcountries")
-
-## Get flag info for language selector (returns {flag: String, atlas: String})
+## Get flag info for language selector (returns {flag: String})
 func get_flag_info(language: Language) -> Dictionary:
 	var flag_name = get_language_flag(language)
-	var atlas_name = get_flag_atlas(flag_name)
 	return {
-		"flag": flag_name,
-		"atlas": atlas_name
+		"flag": flag_name
 	}
 
 ## Get hardcoded flag frame data (returns Rect2 or null if not found)

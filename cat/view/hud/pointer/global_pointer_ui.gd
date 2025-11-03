@@ -62,8 +62,6 @@ func _ready() -> void:
 	if arrow:
 		arrow.color = arrow_color
 
-	print("GlobalPointerUI: Ready")
-
 func _process(delta: float) -> void:
 	if not is_visible:
 		return

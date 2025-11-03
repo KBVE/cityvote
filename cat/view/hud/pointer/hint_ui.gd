@@ -36,8 +36,6 @@ func _ready() -> void:
 	hint_container.modulate.a = 0.0
 	is_visible = false
 
-	print("HintUI: Ready")
-
 func _process(delta: float) -> void:
 	if not is_visible:
 		return

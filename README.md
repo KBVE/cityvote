@@ -20,10 +20,13 @@ https://andelrodis.itch.io/pixel-banner-pack-andel
 Fantasy Warrior
 https://luizmelo.itch.io/fantasy-warrior
 
----
-
-TODO:
-
 Medieval King
 https://luizmelo.itch.io/medieval-king-pack-2
 
+Evil Wizard
+https://luizmelo.itch.io/evil-wizard-3/
+
+Fire Worm
+https://luizmelo.itch.io/fire-worm
+
+---

@@ -54,6 +54,10 @@ var animation_loop: bool = true
 var shader_material: ShaderMaterial = null
 
 func _ready():
+	# Configure terrain type for land pathfinding
+	terrain_type = TerrainType.LAND
+	print("King._ready(): Setting terrain_type to LAND (%d), class=%s" % [terrain_type, get_class()])
+
 	super._ready()  # Call parent NPC _ready
 
 	# Setup shader material
@@ -61,6 +65,8 @@ func _ready():
 
 	# Start with idle animation
 	play_animation(AnimType.IDLE, true)
+
+	print("King._ready(): COMPLETE - terrain_type = %d" % terrain_type)
 
 ## Override parent's _update_sprite since we use animation-based sprites, not direction-based
 func _update_sprite():
@@ -110,8 +116,6 @@ func _setup_shader():
 		# Scale down the sprite to fit better on the tile map
 		# King is 160x111 pixels, scale to approximately 0.35 to match Fantasy Warrior size
 		sprite.scale = Vector2(0.35, 0.35)
-
-		print("King: Shader setup complete - 160x111 sprite scaled to 0.35")
 
 func _process(delta):
 	super._process(delta)

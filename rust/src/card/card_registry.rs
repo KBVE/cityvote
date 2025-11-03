@@ -190,7 +190,6 @@ pub struct CardRegistryBridge {
 #[godot_api]
 impl INode for CardRegistryBridge {
     fn init(base: Base<Node>) -> Self {
-        godot_print!("CardRegistryBridge initialized");
         Self {
             base,
             registry: CardRegistry::new(),

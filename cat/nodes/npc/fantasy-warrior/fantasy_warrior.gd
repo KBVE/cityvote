@@ -54,6 +54,9 @@ var animation_loop: bool = true
 var shader_material: ShaderMaterial = null
 
 func _ready():
+	# Configure terrain type for land pathfinding
+	terrain_type = TerrainType.LAND
+
 	super._ready()  # Call parent NPC _ready
 
 	# Setup shader material

@@ -3,10 +3,10 @@ shader_type canvas_item;
 // Card atlas shader
 // Displays a single card from a 13x5 grid atlas (1248x720)
 // Rows 0-3: Standard suits (clubs, diamonds, hearts, spades)
-// Row 4: Custom cards (vikings-53, dino-54)
+// Row 4: Custom cards (vikings-52, dino-53, baron-54, skull-wizard-55, warrior-56, fireworm-57)
 
 // Card selection parameters (each card has duplicated material, so regular uniform works)
-uniform int card_id = 0;  // 0-51 for standard, 52-53 for custom
+uniform int card_id = 0;  // 0-51 for standard, 52-57 for custom
 
 // Atlas dimensions
 const float COLS = 13.0;

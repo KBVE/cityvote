@@ -94,22 +94,14 @@ func _ready() -> void:
 	else:
 		push_error("CardComboBridge: CardComboDetector missing 'start_worker' method!")
 
-	print("CardComboBridge: Initialized with worker thread")
-
 func _exit_tree() -> void:
 	if combo_detector:
 		combo_detector.stop_worker()
 
 ## Callback when Rust thread finishes combo detection
 func _on_combo_found(request_id: int, result: Dictionary) -> void:
-	print("CardComboBridge._on_combo_found called:")
-	print("  request_id: ", request_id)
-	print("  result keys before adding request_id: ", result.keys())
-
 	# Add request_id to result for tracking (needed for accept/decline)
 	result["request_id"] = request_id
-	print("  result keys after adding request_id: ", result.keys())
-	print("  result['request_id']: ", result["request_id"])
 
 	# Call callback if registered
 	if pending_requests.has(request_id):
@@ -118,7 +110,6 @@ func _on_combo_found(request_id: int, result: Dictionary) -> void:
 		callback.call(result)
 
 	# Emit signal
-	print("  Emitting combo_detected signal with request_id=", request_id)
 	combo_detected.emit(request_id, result)
 
 ## Request combo detection (ASYNC - result via callback or signal)
@@ -263,7 +254,5 @@ func decline_combo(request_id: int) -> bool:
 
 ## Callback when joker is consumed in combo
 func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spawn_x: int, spawn_y: int) -> void:
-	print("CardComboBridge: Joker consumed - Type: %s, ID: %d, Count: %d at position (%d, %d)" % [joker_type, joker_card_id, count, spawn_x, spawn_y])
-
 	# Re-emit signal for other systems to listen to
 	joker_consumed.emit(joker_type, joker_card_id, count, spawn_x, spawn_y)

@@ -33,6 +33,7 @@ var tile_map = null  # TileMapCompat wrapper for coordinate conversion
 var main_scene = null  # Reference to Main scene (set once on load)
 var spinner_scene = null  # Cached spinner scene for reuse
 var ui_references: Dictionary = {}  # Cache for UI references (topbar, etc.)
+var entity_spawn_bridge = null  # Reference to EntitySpawnBridge singleton (Rust-authoritative spawning)
 
 # ===== Z-INDEX CONSTANTS =====
 # Centralized z-index values for proper rendering order
@@ -60,6 +61,7 @@ func _ready():
 	_load_shaders()
 	_load_strings()
 	_load_spinner_scene()
+	_init_entity_spawn_bridge()
 
 # ===== SCENE REFERENCES MANAGEMENT =====
 
@@ -69,7 +71,6 @@ func set_main_scene(scene: Node) -> void:
 		push_error("Cache: Attempted to set null main_scene reference")
 		return
 	main_scene = scene
-	print("Cache: Main scene reference set")
 
 ## Get main scene reference
 func get_main_scene() -> Node:
@@ -83,7 +84,6 @@ func set_ui_reference(name: String, node: Node) -> void:
 		push_error("Cache: Attempted to cache null UI reference for '%s'" % name)
 		return
 	ui_references[name] = node
-	print("Cache: UI reference '%s' cached" % name)
 
 ## Get a cached UI reference
 func get_ui_reference(name: String) -> Node:
@@ -97,13 +97,26 @@ func _load_spinner_scene() -> void:
 	var spinner_path = "res://view/hud/spinner/spinner.tscn"
 	if ResourceLoader.exists(spinner_path):
 		spinner_scene = load(spinner_path)
-		print("Cache: Spinner scene loaded")
 	else:
 		push_warning("Cache: Could not find spinner scene at " + spinner_path)
 
 ## Get spinner scene (already loaded)
 func get_spinner_scene() -> PackedScene:
 	return spinner_scene
+
+## Initialize EntitySpawnBridge reference (called in _ready)
+func _init_entity_spawn_bridge() -> void:
+	entity_spawn_bridge = get_node("/root/EntitySpawnBridge")
+	if entity_spawn_bridge == null:
+		push_error("Cache: Failed to get EntitySpawnBridge autoload reference")
+	else:
+		print("Cache: EntitySpawnBridge reference initialized")
+
+## Get EntitySpawnBridge reference
+func get_entity_spawn_bridge() -> Node:
+	if entity_spawn_bridge == null:
+		push_error("Cache: entity_spawn_bridge not initialized")
+	return entity_spawn_bridge
 
 # Set tile_map reference (called by main.gd after hex_map initializes)
 func set_tile_map(tmap) -> void:
@@ -245,3 +258,29 @@ func create_shader_material(shader_name: String, params: Dictionary = {}) -> Sha
 		material.set_shader_parameter(param_name, params[param_name])
 
 	return material
+
+# ===== URL OPENING =====
+
+## Universal URL opening function
+## Opens both web URLs (http/https) and native URLs (steam://, discord://, etc.)
+## @param url: The URL to open
+## @return: Error code from OS.shell_open() (0 = OK)
+func open_url(url: String) -> int:
+	if url.is_empty():
+		push_warning("Cache: Attempted to open empty URL")
+		return ERR_INVALID_PARAMETER
+
+	# Validate URL format (basic check)
+	if not (url.begins_with("http://") or url.begins_with("https://") or
+			url.begins_with("steam://") or url.begins_with("discord://") or
+			url.begins_with("twitch://") or url.contains("://")):
+		push_warning("Cache: Invalid URL format: %s" % url)
+		return ERR_INVALID_PARAMETER
+
+	# Open URL using OS shell
+	var result = OS.shell_open(url)
+
+	if result != OK:
+		push_error("Cache: Failed to open URL: %s (Error code: %d)" % [url, result])
+
+	return result

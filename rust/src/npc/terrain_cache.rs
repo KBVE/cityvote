@@ -5,9 +5,11 @@
 /// efficient data structures for fast lookups during pathfinding.
 
 use std::sync::{Arc, Mutex};
-use std::collections::{HashMap, VecDeque};
-use parking_lot::RwLock;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::collections::VecDeque;
+use dashmap::DashMap;
 use serde::{Serialize, Deserialize};
+use godot::prelude::*;
 use crate::config::map as map_config;
 use crate::db::TerrainDb;
 
@@ -36,6 +38,18 @@ impl TerrainType {
         match tile_type {
             "water" => TerrainType::Water,
             _ => TerrainType::Land, // Everything else is land
+        }
+    }
+
+    /// Convert from biome TerrainType (world_gen module) to cache TerrainType
+    pub fn from_biome_terrain(biome_terrain: &crate::world_gen::biomes::TerrainType) -> Self {
+        use crate::world_gen::biomes::TerrainType as BiomeTerrain;
+        match biome_terrain {
+            BiomeTerrain::Water => TerrainType::Water,
+            // All grassland variants are land
+            BiomeTerrain::Grassland0 | BiomeTerrain::Grassland1 |
+            BiomeTerrain::Grassland2 | BiomeTerrain::Grassland3 |
+            BiomeTerrain::Grassland4 | BiomeTerrain::Grassland5 => TerrainType::Land,
         }
     }
 }
@@ -71,39 +85,76 @@ impl TerrainChunk {
     /// Get terrain at local chunk coordinates (0-31)
     #[inline]
     pub fn get(&self, local_x: usize, local_y: usize) -> TerrainType {
+        // Bounds check to prevent panic
+        if local_x >= map_config::CHUNK_SIZE || local_y >= map_config::CHUNK_SIZE {
+            godot_print!(
+                "ERROR: TerrainChunk::get - Invalid coordinates: local_x={}, local_y={}, CHUNK_SIZE={}",
+                local_x, local_y, map_config::CHUNK_SIZE
+            );
+            return TerrainType::Obstacle;
+        }
+
         let index = local_y * map_config::CHUNK_SIZE + local_x;
+
+        // Extra paranoid check - should never happen after bounds check above
+        if index >= self.data.len() {
+            godot_print!(
+                "CRITICAL: TerrainChunk::get - Index {} out of bounds (data.len={}), local_x={}, local_y={}",
+                index, self.data.len(), local_x, local_y
+            );
+            return TerrainType::Obstacle;
+        }
+
         self.data[index]
     }
 
     /// Set terrain at local chunk coordinates (0-31)
     #[inline]
     pub fn set(&mut self, local_x: usize, local_y: usize, terrain_type: TerrainType) {
+        // Bounds check to prevent panic
+        if local_x >= map_config::CHUNK_SIZE || local_y >= map_config::CHUNK_SIZE {
+            godot_print!(
+                "ERROR: TerrainChunk::set - Invalid coordinates: local_x={}, local_y={}, CHUNK_SIZE={}",
+                local_x, local_y, map_config::CHUNK_SIZE
+            );
+            return;
+        }
+
         let index = local_y * map_config::CHUNK_SIZE + local_x;
         self.data[index] = terrain_type;
     }
 }
 
 /// Thread-safe terrain cache using LRU + SQLite for infinite worlds
+/// Uses DashMap for lock-free concurrent reads - no blocking between worker threads
 pub struct TerrainCache {
-    /// Hot cache: Recent chunks in memory (LRU)
-    hot_cache: HashMap<ChunkCoord, TerrainChunk>,
-    /// LRU order tracking (most recent at back)
-    lru_order: VecDeque<ChunkCoord>,
+    /// Hot cache: Recent chunks in memory (DashMap for concurrent access)
+    hot_cache: Arc<DashMap<ChunkCoord, TerrainChunk>>,
+    /// LRU order tracking (most recent at back) - protected by mutex for writes
+    lru_order: Arc<Mutex<VecDeque<ChunkCoord>>>,
     /// Max chunks to keep in memory before evicting to SQLite
     max_hot_chunks: usize,
     /// SQLite connection for cold storage (platform-specific implementation)
     db: Option<Arc<Mutex<TerrainDb>>>,
+    /// Current world seed (for procedural generation of missing chunks)
+    current_seed: AtomicI32,
 }
 
 impl TerrainCache {
     /// Create a new terrain cache with SQLite backing (both native and WASM)
     pub fn new() -> Self {
         Self {
-            hot_cache: HashMap::new(),
-            lru_order: VecDeque::new(),
+            hot_cache: Arc::new(DashMap::new()),
+            lru_order: Arc::new(Mutex::new(VecDeque::new())),
             max_hot_chunks: 100, // Keep 100 chunks in memory (100KB total)
             db: Self::init_db(),
+            current_seed: AtomicI32::new(0), // Default seed, will be set by set_seed()
         }
+    }
+
+    /// Set the current world seed (for procedural generation)
+    pub fn set_seed(&self, seed: i32) {
+        self.current_seed.store(seed, Ordering::Relaxed);
     }
 
     /// Initialize SQLite database for terrain storage (platform-agnostic)
@@ -179,10 +230,65 @@ impl TerrainCache {
         }
     }
 
+    /// Generate a chunk procedurally using the world generator
+    /// This is called when a chunk is not found in cache or database
+    fn generate_chunk_procedurally(&self, chunk_x: i32, chunk_y: i32) -> Option<TerrainChunk> {
+        // Access the world generator's noise cache
+        use crate::world_gen::{BiomeGenerator, NoiseGenerator};
+
+        // Get noise generator for current seed
+        // NOISE_CACHE is defined in world_gen::chunk_generator
+        use crate::world_gen::chunk_generator::NOISE_CACHE;
+
+        let cache = match NOISE_CACHE.try_read() {
+            Some(c) => c,
+            None => {
+                godot::prelude::godot_error!("TerrainCache: Failed to read NOISE_CACHE for procedural generation");
+                return None;
+            }
+        };
+
+        let current_seed = self.current_seed.load(Ordering::Relaxed);
+        let noise = match cache.get(&current_seed) {
+            Some(n) => n.clone(),
+            None => {
+                // Noise generator not initialized yet - this is expected during early initialization
+                // Return None and let caller handle it (will return Obstacle)
+                return None;
+            }
+        };
+        drop(cache);
+
+        // Generate terrain data for this chunk
+        // tile_width and tile_height are unused in the hex layout
+        let terrain_data = BiomeGenerator::generate_chunk(
+            &noise,
+            chunk_x,
+            chunk_y,
+            map_config::CHUNK_SIZE,
+            32.0,  // tile_width (unused)
+            28.0   // tile_height (unused)
+        );
+
+        // Convert to TerrainCache TerrainType
+        let cache_terrain: Vec<TerrainType> = terrain_data
+            .into_iter()
+            .map(|biome_terrain| TerrainType::from_biome_terrain(&biome_terrain))
+            .collect();
+
+        godot::prelude::godot_print!(
+            "TerrainCache: Generated chunk ({}, {}) procedurally (seed={})",
+            chunk_x, chunk_y, current_seed
+        );
+
+        Some(TerrainChunk::from_data(cache_terrain))
+    }
+
     /// Evict least recently used chunk from hot cache to SQLite
-    fn evict_lru(&mut self) {
-        if let Some(lru_coord) = self.lru_order.pop_front() {
-            if let Some(chunk) = self.hot_cache.remove(&lru_coord) {
+    fn evict_lru(&self) {
+        let mut lru = self.lru_order.lock().unwrap();
+        if let Some(lru_coord) = lru.pop_front() {
+            if let Some((_key, chunk)) = self.hot_cache.remove(&lru_coord) {
                 // Save to SQLite (works on both native and WASM)
                 self.save_to_db(lru_coord, &chunk);
                 #[cfg(feature = "debug_logs")]
@@ -192,13 +298,14 @@ impl TerrainCache {
     }
 
     /// Mark chunk as recently used (move to back of LRU queue)
-    fn touch_chunk(&mut self, chunk_coord: ChunkCoord) {
+    fn touch_chunk(&self, chunk_coord: ChunkCoord) {
+        let mut lru = self.lru_order.lock().unwrap();
         // Remove from current position in LRU
-        if let Some(pos) = self.lru_order.iter().position(|&c| c == chunk_coord) {
-            self.lru_order.remove(pos);
+        if let Some(pos) = lru.iter().position(|&c| c == chunk_coord) {
+            lru.remove(pos);
         }
         // Add to back (most recent)
-        self.lru_order.push_back(chunk_coord);
+        lru.push_back(chunk_coord);
     }
 
     /// Convert tile coordinates to chunk coordinates
@@ -212,7 +319,7 @@ impl TerrainCache {
     }
 
     /// Load a chunk into the hot cache (with LRU eviction if needed)
-    pub fn load_chunk(&mut self, chunk_x: i32, chunk_y: i32, chunk_data: TerrainChunk) {
+    pub fn load_chunk(&self, chunk_x: i32, chunk_y: i32, chunk_data: TerrainChunk) {
         let chunk_coord = (chunk_x, chunk_y);
 
         // Evict LRU chunk if hot cache is full
@@ -226,16 +333,19 @@ impl TerrainCache {
     }
 
     /// Unload a chunk from hot cache (saves to SQLite/IndexedDB)
-    pub fn unload_chunk(&mut self, chunk_x: i32, chunk_y: i32) -> Option<TerrainChunk> {
+    pub fn unload_chunk(&self, chunk_x: i32, chunk_y: i32) -> Option<TerrainChunk> {
         let chunk_coord = (chunk_x, chunk_y);
 
         // Remove from LRU tracking
-        if let Some(pos) = self.lru_order.iter().position(|&c| c == chunk_coord) {
-            self.lru_order.remove(pos);
+        {
+            let mut lru = self.lru_order.lock().unwrap();
+            if let Some(pos) = lru.iter().position(|&c| c == chunk_coord) {
+                lru.remove(pos);
+            }
         }
 
         // Remove from hot cache and save to SQLite/IndexedDB
-        if let Some(chunk) = self.hot_cache.remove(&chunk_coord) {
+        if let Some((_key, chunk)) = self.hot_cache.remove(&chunk_coord) {
             self.save_to_db(chunk_coord, &chunk);
             Some(chunk)
         } else {
@@ -255,14 +365,15 @@ impl TerrainCache {
 
     /// Set terrain at tile coordinates (with LRU management)
     #[inline]
-    pub fn set(&mut self, tile_x: i32, tile_y: i32, terrain_type: TerrainType) {
+    pub fn set(&self, tile_x: i32, tile_y: i32, terrain_type: TerrainType) {
         let ((chunk_x, chunk_y), local_x, local_y) = Self::tile_to_chunk(tile_x, tile_y);
         let chunk_coord = (chunk_x, chunk_y);
 
-        // Check if chunk is in hot cache
-        if let Some(chunk) = self.hot_cache.get_mut(&chunk_coord) {
-            chunk.set(local_x, local_y, terrain_type);
-            self.touch_chunk(chunk_coord);
+        // Check if chunk is in hot cache (DashMap allows concurrent modification)
+        if let Some(mut chunk_ref) = self.hot_cache.get_mut(&chunk_coord) {
+            chunk_ref.set(local_x, local_y, terrain_type);
+            drop(chunk_ref); // Release lock
+            // NOTE: Don't touch LRU on every write - causes lock contention
             return;
         }
 
@@ -276,7 +387,7 @@ impl TerrainCache {
             }
 
             self.hot_cache.insert(chunk_coord, chunk);
-            self.touch_chunk(chunk_coord);
+            // NOTE: Don't touch LRU - only touch on explicit load_chunk calls
             return;
         }
 
@@ -290,55 +401,42 @@ impl TerrainCache {
         }
 
         self.hot_cache.insert(chunk_coord, chunk);
-        self.touch_chunk(chunk_coord);
+        // NOTE: Don't touch LRU - only touch on explicit load_chunk calls
     }
 
     /// Get terrain at tile coordinates (checks hot cache + SQLite/IndexedDB, returns Obstacle if not found)
     /// Unloaded chunks should block pathfinding to prevent entities from pathing through ungenerated terrain
     #[inline]
-    pub fn get(&mut self, tile_x: i32, tile_y: i32) -> TerrainType {
+    pub fn get(&self, tile_x: i32, tile_y: i32) -> TerrainType {
         let ((chunk_x, chunk_y), local_x, local_y) = Self::tile_to_chunk(tile_x, tile_y);
         let chunk_coord = (chunk_x, chunk_y);
 
-        // Check hot cache first (fast path)
-        if self.hot_cache.contains_key(&chunk_coord) {
-            // Get terrain value before touching (to avoid borrow checker issues)
-            let terrain = self.hot_cache.get(&chunk_coord).unwrap().get(local_x, local_y);
-            self.touch_chunk(chunk_coord);
+        // Check hot cache first (fast path) - DashMap allows concurrent reads!
+        if let Some(chunk_ref) = self.hot_cache.get(&chunk_coord) {
+            let terrain = chunk_ref.get(local_x, local_y);
+            drop(chunk_ref); // Release read lock
+            // NOTE: Don't touch LRU on every read - causes lock contention during pathfinding
+            // LRU is only updated on chunk loads/writes
             return terrain;
         }
 
-        // Not in hot cache - try loading from SQLite/IndexedDB (cold path)
-        if let Some(chunk) = self.load_from_db(chunk_coord) {
-            let terrain = chunk.get(local_x, local_y);
-
-            // Evict LRU if hot cache is full
-            if self.hot_cache.len() >= self.max_hot_chunks {
-                self.evict_lru();
-            }
-
-            // Load chunk into hot cache
-            self.hot_cache.insert(chunk_coord, chunk);
-            self.touch_chunk(chunk_coord);
-
-            return terrain;
-        }
-
-        // Chunk not found anywhere - return Obstacle to block pathfinding
+        // Not in hot cache - chunk needs to be loaded
+        // For now, return Obstacle to block pathfinding through unloaded chunks
+        // In the future, could load from DB here, but that would require &mut self
         TerrainType::Obstacle
     }
 
     /// Batch update terrain from flat array (for initialization)
-    pub fn init_from_flat_array(&mut self, tiles: &[(i32, i32, TerrainType)]) {
+    pub fn init_from_flat_array(&self, tiles: &[(i32, i32, TerrainType)]) {
         for &(x, y, terrain_type) in tiles {
             self.set(x, y, terrain_type);
         }
     }
 
     /// Clear all terrain (hot cache + SQLite)
-    pub fn clear(&mut self) {
+    pub fn clear(&self) {
         self.hot_cache.clear();
-        self.lru_order.clear();
+        self.lru_order.lock().unwrap().clear();
 
         // Clear SQLite database
         if let Some(db_arc) = self.db.as_ref() {
@@ -358,8 +456,8 @@ impl TerrainCache {
         let mut land_count = 0;
         let mut obstacle_count = 0;
 
-        for chunk in self.hot_cache.values() {
-            for terrain in &chunk.data {
+        for chunk_ref in self.hot_cache.iter() {
+            for terrain in &chunk_ref.value().data {
                 match terrain {
                     TerrainType::Water => water_count += 1,
                     TerrainType::Land => land_count += 1,
@@ -388,18 +486,19 @@ pub struct TerrainStats {
     pub total_tiles: usize,
 }
 
-/// Global terrain cache (thread-safe with Arc + RwLock)
-static TERRAIN_CACHE: once_cell::sync::Lazy<Arc<RwLock<TerrainCache>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(TerrainCache::new())));
+/// Global terrain cache (thread-safe with Arc + DashMap for lock-free reads)
+static TERRAIN_CACHE: once_cell::sync::Lazy<Arc<TerrainCache>> =
+    once_cell::sync::Lazy::new(|| Arc::new(TerrainCache::new()));
 
-/// Get read-only access to the terrain cache
-pub fn get_terrain_cache() -> Arc<RwLock<TerrainCache>> {
+/// Get reference to the terrain cache
+/// Note: DashMap inside allows concurrent reads without blocking
+pub fn get_terrain_cache() -> Arc<TerrainCache> {
     Arc::clone(&TERRAIN_CACHE)
 }
 
 /// Initialize terrain cache from GDScript map data
 pub fn init_terrain_cache(tiles: Vec<(i32, i32, String)>) {
-    let mut cache = TERRAIN_CACHE.write();
+    let cache = TERRAIN_CACHE.as_ref();
 
     // Only clear cache if we're initializing with actual data
     // For infinite worlds (0 tiles), preserve existing chunk data
@@ -426,10 +525,15 @@ pub fn init_terrain_cache(tiles: Vec<(i32, i32, String)>) {
     );
 }
 
-/// Get terrain at coordinates (thread-safe, uses write lock for LRU updates)
+/// Set the world seed for procedural generation
+/// This must be called before pathfinding to ensure consistent terrain generation
+pub fn set_terrain_seed(seed: i32) {
+    TERRAIN_CACHE.set_seed(seed);
+}
+
+/// Get terrain at coordinates (thread-safe, lock-free reads with DashMap)
 pub fn get_terrain(x: i32, y: i32) -> TerrainType {
-    let mut cache = TERRAIN_CACHE.write();
-    cache.get(x, y)
+    TERRAIN_CACHE.get(x, y)
 }
 
 /// Check if coordinate is walkable for ships
@@ -444,9 +548,8 @@ pub fn is_walkable_for_npc(x: i32, y: i32) -> bool {
 
 /// Load a chunk into the terrain cache (thread-safe)
 pub fn load_terrain_chunk(chunk_x: i32, chunk_y: i32, terrain_data: Vec<TerrainType>) {
-    let mut cache = TERRAIN_CACHE.write();
     let chunk = TerrainChunk::from_data(terrain_data);
-    cache.load_chunk(chunk_x, chunk_y, chunk);
+    TERRAIN_CACHE.load_chunk(chunk_x, chunk_y, chunk);
 
     #[cfg(feature = "debug_logs")]
     godot::prelude::godot_print!("TerrainCache: Loaded chunk ({}, {})", chunk_x, chunk_y);
@@ -454,8 +557,7 @@ pub fn load_terrain_chunk(chunk_x: i32, chunk_y: i32, terrain_data: Vec<TerrainT
 
 /// Unload a chunk from the terrain cache (thread-safe)
 pub fn unload_terrain_chunk(chunk_x: i32, chunk_y: i32) -> bool {
-    let mut cache = TERRAIN_CACHE.write();
-    let unloaded = cache.unload_chunk(chunk_x, chunk_y).is_some();
+    let unloaded = TERRAIN_CACHE.unload_chunk(chunk_x, chunk_y).is_some();
 
     #[cfg(feature = "debug_logs")]
     if unloaded {
@@ -467,12 +569,10 @@ pub fn unload_terrain_chunk(chunk_x: i32, chunk_y: i32) -> bool {
 
 /// Check if a chunk is loaded (thread-safe)
 pub fn is_terrain_chunk_loaded(chunk_x: i32, chunk_y: i32) -> bool {
-    let cache = TERRAIN_CACHE.read();
-    cache.is_chunk_loaded(chunk_x, chunk_y)
+    TERRAIN_CACHE.is_chunk_loaded(chunk_x, chunk_y)
 }
 
 /// Get number of loaded chunks (thread-safe)
 pub fn get_loaded_chunk_count() -> usize {
-    let cache = TERRAIN_CACHE.read();
-    cache.loaded_chunk_count()
+    TERRAIN_CACHE.loaded_chunk_count()
 }

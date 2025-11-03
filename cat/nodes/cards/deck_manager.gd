@@ -47,6 +47,18 @@ func create_deck_with_custom() -> Array[CardData]:
 	# Add Dino card data
 	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_DINO))
 
+	# Add Baron card data
+	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_BARON))
+
+	# Add Skull Wizard card data
+	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_SKULL_WIZARD))
+
+	# Add Warrior card data
+	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_WARRIOR))
+
+	# Add Fireworm card data
+	deck.append(CardData.new(-1, -1, true, CardAtlas.CARD_FIREWORM))
+
 	return deck
 
 ## Shuffle a deck in-place

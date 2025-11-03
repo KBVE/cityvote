@@ -39,20 +39,22 @@ func show_path(path: Array[Vector2i], tile_map_ref, ship_ref: Node2D) -> void:
 		entity_ulid = ship.ulid
 
 		# Determine entity name
-		if ship is Ship:
-			entity_name = "Viking Ship"
-		elif ship is Jezza:
+		if ship is Jezza:
 			entity_name = "Jezza Raptor"
 		elif ship is NPC:
-			var script = ship.get_script()
-			if script:
-				var class_name_val = script.get_global_name()
-				if not class_name_val.is_empty():
-					entity_name = class_name_val
+			# Check for water entities (vikings/ships)
+			if "terrain_type" in ship and ship.terrain_type == NPC.TerrainType.WATER:
+				entity_name = "Viking Ship"
+			else:
+				var script = ship.get_script()
+				if script:
+					var class_name_val = script.get_global_name()
+					if not class_name_val.is_empty():
+						entity_name = class_name_val
+					else:
+						entity_name = "NPC"
 				else:
 					entity_name = "NPC"
-			else:
-				entity_name = "NPC"
 
 	# Skip first waypoint (ship's current position)
 	for i in range(1, path.size()):

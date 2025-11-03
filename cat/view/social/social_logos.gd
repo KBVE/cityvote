@@ -1,4 +1,4 @@
-extends Node2D
+extends Control
 class_name SocialLogo
 
 ## SocialLogo - Displays social media logos using sprite atlas
@@ -22,17 +22,17 @@ const ATLAS_TEXTURE = preload("res://view/social/sprite_social_logos_atlas.png")
 # Current logo being displayed
 var current_logo: LogoType = LogoType.DISCORD
 
-# Sprite and material references
-@onready var sprite: Sprite2D = $Sprite2D
+# TextureRect and material references
+@onready var texture_rect: TextureRect = $TextureRect
 
 func _ready() -> void:
-	if not sprite:
-		push_error("SocialLogo: Sprite2D node not found")
+	if not texture_rect:
+		push_error("SocialLogo: TextureRect node not found")
 		return
 
-	# Set up sprite with atlas texture
-	sprite.texture = ATLAS_TEXTURE
-	sprite.material = sprite.material.duplicate()  # Duplicate material for per-instance control
+	# Set up texture rect with atlas texture
+	texture_rect.texture = ATLAS_TEXTURE
+	texture_rect.material = texture_rect.material.duplicate()  # Duplicate material for per-instance control
 
 	# Initialize with current logo
 	set_logo(current_logo)
@@ -41,13 +41,13 @@ func _ready() -> void:
 func set_logo(logo_type: LogoType) -> void:
 	current_logo = logo_type
 
-	if not sprite or not sprite.material:
+	if not texture_rect or not texture_rect.material:
 		return
 
 	# Update shader parameters
-	sprite.material.set_shader_parameter("logo_index", int(logo_type))
-	sprite.material.set_shader_parameter("total_logos", TOTAL_LOGOS)
-	sprite.material.set_shader_parameter("atlas_texture", ATLAS_TEXTURE)
+	texture_rect.material.set_shader_parameter("logo_index", int(logo_type))
+	texture_rect.material.set_shader_parameter("total_logos", TOTAL_LOGOS)
+	texture_rect.material.set_shader_parameter("atlas_texture", ATLAS_TEXTURE)
 
 ## Get current logo type
 func get_logo() -> LogoType:

@@ -59,6 +59,12 @@ var test_kings: Array = []
 var king_move_timer: float = 0.0
 var king_move_interval: float = 2.0  # Move every 2 seconds
 
+# Skull Wizard NPC testing
+var test_skull_wizards: Array = []
+
+# Fireworm NPC testing
+var test_fireworms: Array = []
+
 # Chunk culling stats
 var culling_stats_timer: float = 0.0
 var culling_stats_interval: float = 5.0  # Print stats every 5 seconds
@@ -73,7 +79,8 @@ func _ready():
 	# Generate player ULID (represents the current player)
 	if UlidManager:
 		player_ulid = UlidManager.generate()
-		print("Main: Player ULID generated: %s" % UlidManager.to_hex(player_ulid))
+	else:
+		push_error("Main: UlidManager not found!")
 
 	# Note: Language/seed selection now happens in title.tscn
 	# World seed already set in MapConfig by title.gd
@@ -99,8 +106,9 @@ func _ready():
 	call_deferred("_initialize_game")
 
 func _initialize_game() -> void:
+	print("DEBUG: Main._initialize_game() starting...")
+
 	# Step 1: Map generation (already done in hex_map._ready)
-	print("Main: Generating map...")
 	await get_tree().process_frame
 
 	# NOTE: Camera bounds not needed for infinite world
@@ -148,28 +156,23 @@ func _initialize_game() -> void:
 	#; TEST
 
 	# Step 2: Wait for initial chunks to render
-	print("Main: Rendering initial chunks...")
-
 	# IMPORTANT: Wait for initial chunks to render before spawning entities
 	# This prevents race condition where entities spawn before terrain is ready
-	print("Main: Waiting for initial chunks to render...")
-	await hex_map.initial_chunks_ready
-	print("Main: Initial chunks ready! Proceeding with entity spawning...")
+	if not hex_map.initial_chunks_loaded:
+		print("DEBUG: Waiting for initial_chunks_ready...")
+		await hex_map.initial_chunks_ready
+		print("DEBUG: initial_chunks_ready received!")
+	else:
+		print("DEBUG: initial_chunks already loaded, skipping wait")
 
 	# Step 3: Initialize pathfinding
-	print("Main: Initializing pathfinding...")
 	await get_tree().process_frame
 
 	#### TEST ####
-	# Initialize Rust pathfinding map cache
-	print("Initializing Rust ship pathfinding map cache...")
-	get_node("/root/ShipPathfindingBridge").init_map(hex_map)
-
-	print("Initializing Rust NPC pathfinding map cache...")
-	get_node("/root/NpcPathfindingBridge").init_map(hex_map)
+	# NOTE: Terrain cache is populated incrementally via load_chunk() as chunks are generated
+	# No need to call init_map() - chunks auto-populate the cache in hex.gd:199
 
 	# Step 4: Spawn entities
-	print("Main: Spawning entities...")
 	await get_tree().process_frame
 
 	# Spawn a few test viking ships on water tiles
@@ -191,13 +194,14 @@ func _initialize_game() -> void:
 	# Connect to joker consumption signal
 	if CardComboBridge:
 		CardComboBridge.joker_consumed.connect(_on_joker_consumed)
-		print("Main: Connected to joker_consumed signal")
+	else:
+		push_error("Main: CardComboBridge not found!")
 
 	# Step 5: Complete - Start game timer
-	print("Main: Initialization complete!")
 	if GameTimer:
 		GameTimer.start_timer()
-		print("Main: Game timer started!")
+	else:
+		push_error("Main: GameTimer not found!")
 
 	# Test toast notification
 	Toast.show_toast(I18n.translate("game.welcome"), 5.0)
@@ -207,13 +211,13 @@ func _initialize_game() -> void:
 # === Card Signal Handlers ===
 func _on_card_picked_up() -> void:
 	# Keep manual panning enabled - auto-follow and manual work together
-	print("Card picked up - auto-follow active, manual drag still available")
+	pass
 
 func _on_card_placed() -> void:
-	print("Card placed")
+	pass
 
 func _on_card_cancelled() -> void:
-	print("Card cancelled")
+	pass
 
 # REMOVED: _calculate_camera_bounds() - Not needed for infinite world
 # Camera bounds are unlimited in procedurally generated infinite world
@@ -266,11 +270,11 @@ func _process(delta):
 	# Update chunk visibility based on camera position (for fog of war and culling)
 	ChunkManager.update_visible_chunks()
 
-	# Print culling stats periodically
-	culling_stats_timer += delta
-	if culling_stats_timer >= culling_stats_interval:
-		culling_stats_timer = 0.0
-		_print_culling_stats()
+	# Print culling stats periodically (disabled)
+	# culling_stats_timer += delta
+	# if culling_stats_timer >= culling_stats_interval:
+	# 	culling_stats_timer = 0.0
+	# 	_print_culling_stats()
 
 func _input(event):
 	# Handle right-click to open entity stats panel
@@ -283,31 +287,28 @@ func _input(event):
 			var entity = EntityManager.find_entity_near_position(world_pos, 32.0)  # 32px search radius
 
 			if entity:
-				# Debug: Print entity type
-				print("DEBUG: Clicked entity type: ", entity.get_class())
-				if entity.get_script():
-					print("DEBUG: Entity script global name: ", entity.get_script().get_global_name())
-
 				# Get entity name (translated)
 				var entity_name = "Unknown"
-				if entity is Ship:
-					entity_name = I18n.translate("entity.viking.name")
-				elif entity is Jezza:
+				if entity is Jezza:
 					entity_name = I18n.translate("entity.jezza_raptor")
 				elif entity is FantasyWarrior:
 					entity_name = I18n.translate("entity.fantasy_warrior.name")
 				elif entity is King:
 					entity_name = I18n.translate("entity.king.name")
 				elif entity is NPC:
-					var script = entity.get_script()
-					if script:
-						var class_name_val = script.get_global_name()
-						if not class_name_val.is_empty():
-							entity_name = class_name_val
+					# Check terrain type for water entities (vikings/ships)
+					if "terrain_type" in entity and entity.terrain_type == NPC.TerrainType.WATER:
+						entity_name = I18n.translate("entity.viking.name")
+					else:
+						var script = entity.get_script()
+						if script:
+							var class_name_val = script.get_global_name()
+							if not class_name_val.is_empty():
+								entity_name = class_name_val
+							else:
+								entity_name = "NPC"
 						else:
 							entity_name = "NPC"
-					else:
-						entity_name = "NPC"
 
 				# Show stats panel
 				if entity_stats_panel and "ulid" in entity:
@@ -362,68 +363,24 @@ func _input(event):
 
 #### TEST ####
 func _spawn_test_vikings():
-	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
-	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
-	var water_tiles: Array = []
+	# Get spawn position near camera
+	var spawn_near = hex_map.tile_renderer.world_to_tile(camera.position)
 
-	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
-	var search_radius = 25
-	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
-		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
-			var tile_coords = Vector2i(x, y)
-			# Convert tile coordinates to world position (center of tile)
-			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
-			# Use WorldGenerator to check terrain (queries procedural generation)
-			if hex_map.world_generator and hex_map.world_generator.is_water(world_pos.x, world_pos.y):
-				water_tiles.append(tile_coords)
-
-	print("=== VIKING SPAWN ===")
-	print("Found ", water_tiles.size(), " water tiles (near camera)")
-
-	if water_tiles.size() < 10:
-		print("Not enough water tiles to spawn vikings")
-		return
-
-	# Spawn 10 vikings on random water tiles
-	for i in range(10):
-		var viking = Cluster.acquire("viking")
-		if viking:
-			# Get random unoccupied water tile
-			var random_tile: Vector2i
-			var attempts = 0
-			while attempts < 100:
-				random_tile = water_tiles[randi() % water_tiles.size()]
-				if not occupied_tiles.has(random_tile):
-					break
-				attempts += 1
-
-			# Convert tile coordinates to world position
-			var world_pos = hex_map.tile_map.map_to_local(random_tile)
-
-			# Spawn using EntityManager (handles health bar setup)
-			var spawn_config = {
-				"direction": randi() % 16,
-				"occupied_tiles": occupied_tiles
-			}
-
-			EntityManager.spawn_entity(viking, hex_map, world_pos, spawn_config)
-
-			# Register with EntityManager for tracking and movement
-			EntityManager.register_entity(viking, "viking", random_tile)
-
-			# Apply wave shader to viking (they're on water!)
-			_apply_wave_shader_to_viking(viking)
-
-			# Mark tile as occupied
-			occupied_tiles[random_tile] = viking
-
-			# Store viking and its current tile
-			test_vikings.append({"entity": viking, "tile": random_tile})
-			print("Spawned viking ", i, " at tile ", random_tile, " world pos ", world_pos)
-		else:
-			print("Failed to acquire viking ", i, " from Cluster")
-
-	print("Total vikings spawned: ", test_vikings.size())
+	# Spawn 10 vikings using EntityManager (which uses EntitySpawnBridge internally)
+	# NOTE: Vikings spawn on water near camera position (where chunks are loaded)
+	var count = EntityManager.spawn_multiple({
+		"pool_key": "viking",
+		"count": 10,
+		"tile_type": EntityManager.TileType.WATER,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": occupied_tiles,
+		"storage_array": test_vikings,
+		"player_ulid": player_ulid,
+		"near_pos": spawn_near,  # Spawn near camera where chunks are loaded
+		"entity_name": "Viking",
+		"post_spawn_callback": _apply_wave_shader_to_viking
+	})
 
 ## Generic entity movement handler (called by EntityManager.update_entities)
 ## @param entity: The entity to move
@@ -431,373 +388,99 @@ func _spawn_test_vikings():
 ## @param pool_key: Entity type ("viking", "jezza", "fantasywarrior", "king")
 ## @param registry_entry: Reference to the registry entry (for updating tile)
 func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: String, registry_entry: Dictionary) -> void:
-	# Skip if still moving
-	if entity.is_moving:
+	# Defensive: Validate entity exists
+	if not entity or not is_instance_valid(entity):
+		push_error("_handle_entity_movement: Invalid entity for pool_key=%s" % pool_key)
 		return
 
-	# Handle Vikings (ships) separately - they use different pathfinding
-	if pool_key == "viking":
-		_handle_viking_movement(entity, current_tile)
+	# Skip if entity is not idle (check state flags instead of redundant variables)
+	# State.MOVING = 0b0010, State.PATHFINDING = 0b0100, State.BLOCKED = 0b1000
+	const MOVING = 0b0010
+	const PATHFINDING = 0b0100
+	const BLOCKED = 0b1000
+
+	# Entity must be idle (not moving, pathfinding, or blocked)
+	if (entity.current_state & (MOVING | PATHFINDING | BLOCKED)) != 0:
 		return
 
-	# Land units (jezza, fantasywarrior, king) use NPC pathfinding
-	var destination = _find_random_land_destination(current_tile, 3, 8)
+	# Also check if entity has a path it's following
+	if entity.current_path.size() > 0:
+		return
 
-	# If no destination found or same as current, skip
+	# Defensive: Validate entity has required properties
+	if not "ulid" in entity:
+		push_error("_handle_entity_movement: Entity %s missing 'ulid' property!" % pool_key)
+		return
+
+	if not "terrain_type" in entity:
+		push_error("_handle_entity_movement: Entity %s missing 'terrain_type' property!" % pool_key)
+		return
+
+	# Validate entity has ULID
+	if entity.ulid.is_empty():
+		push_error("_handle_entity_movement: Entity %s has empty ULID!" % pool_key)
+		return
+
+	# Defensive: Get pathfinding bridge with null check
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if not pathfinding_bridge:
+		push_error("_handle_entity_movement: UnifiedPathfindingBridge not found!")
+		return
+
+	# Unified pathfinding for ALL entity types (water and land)
+	# Determine random destination distance based on entity type
+	var min_distance = 2 if pool_key == "viking" else 3
+	var max_distance = 5 if pool_key == "viking" else 8
+
+	# Find random destination using unified pathfinding (works for both water and land)
+	var destination = pathfinding_bridge.find_random_destination(
+		entity.ulid,
+		entity.terrain_type,
+		current_tile,
+		min_distance,
+		max_distance
+	)
+
+	# If no destination found, return silently
 	if destination == current_tile:
 		return
 
-	# Use Rust NPC pathfinding (async via callback)
-	var npc_id = entity.get_instance_id()
-	var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
+	# Free up current tile immediately
+	occupied_tiles.erase(current_tile)
 
-	# Request pathfinding from Rust
-	npc_pathfinding_bridge.request_path(
-		npc_id,
-		current_tile,
+	# Defensive: Validate entity has request_pathfinding method
+	if not entity.has_method("request_pathfinding"):
+		push_error("_handle_entity_movement: Entity %s missing 'request_pathfinding' method!" % pool_key)
+		occupied_tiles[current_tile] = entity  # Put it back
+		return
+
+	# Use unified entity pathfinding (handles both water and land entities)
+	entity.request_pathfinding(
 		destination,
+		hex_map.tile_map,
 		func(path: Array[Vector2i], success: bool):
-			# Callback when path is found
-			if success and path.size() > 1:
-				# Free up current tile
-				occupied_tiles.erase(current_tile)
-
-				# Capture final destination
+			# Callback when path is complete
+			if success and path.size() > 0:
 				var final_destination = path[path.size() - 1]
 
-				# Follow the full path calculated by Rust
-				entity.follow_path(
-					path,
-					hex_map.tile_map,
-					func():  # On path complete
-						# Update occupied tiles
-						occupied_tiles[final_destination] = entity
-						# Update EntityManager registry
-						EntityManager.update_entity_tile(entity, final_destination)
-				)
-	)
+				# CRITICAL: Validate final destination terrain matches entity terrain_type
+				if pathfinding_bridge and not pathfinding_bridge.is_tile_walkable(entity.terrain_type, final_destination):
+					push_error("TERRAIN MISMATCH: %s (terrain_type=%d) ended at %s which is NOT walkable! Keeping at %s" %
+						[pool_key, entity.terrain_type, final_destination, current_tile])
+					occupied_tiles[current_tile] = entity  # Keep at current tile
+					return
 
-## Handle Viking (ship) movement separately
-func _handle_viking_movement(viking: Node, current_tile: Vector2i) -> void:
-	# Find a random water destination
-	var destination = Pathfinding.find_random_destination(
-		current_tile,
-		hex_map,
-		occupied_tiles,
-		viking,
-		3,  # min_distance
-		10  # max_distance
-	)
-
-	# If no destination found, try adjacent tiles
-	if destination == current_tile:
-		var adjacent_tiles = Pathfinding.find_valid_adjacent_water_tiles(
-			current_tile,
-			hex_map,
-			occupied_tiles,
-			viking
-		)
-
-		if adjacent_tiles.size() > 0:
-			destination = adjacent_tiles[randi() % adjacent_tiles.size()]
-		else:
-			return  # No valid tiles found
-
-	# Use Rust ship pathfinding
-	var ship_ulid = viking.ulid
-	var pathfinding_bridge = get_node("/root/ShipPathfindingBridge")
-
-	# DEBUG: Check terrain cache for start and goal
-	var start_terrain = pathfinding_bridge.debug_check_terrain(current_tile)
-	var goal_terrain = pathfinding_bridge.debug_check_terrain(destination)
-	var start_walkable = pathfinding_bridge.debug_is_walkable(current_tile)
-	var goal_walkable = pathfinding_bridge.debug_is_walkable(destination)
-	print("DEBUG: Ship pathfinding from %v to %v" % [current_tile, destination])
-	print("  Start terrain: %s (walkable: %s)" % [start_terrain, start_walkable])
-	print("  Goal terrain: %s (walkable: %s)" % [goal_terrain, goal_walkable])
-
-	# Update ship position in Rust
-	pathfinding_bridge.update_ship_position(ship_ulid, current_tile)
-
-	# Request pathfinding from Rust
-	pathfinding_bridge.request_path(
-		ship_ulid,
-		current_tile,
-		destination,
-		true,  # avoid_ships
-		func(path: Array[Vector2i], success: bool, _cost: float):
-			if success and path.size() > 1:
-				# Free up current tile
-				occupied_tiles.erase(current_tile)
-
-				# Capture final destination
-				var final_destination = path[path.size() - 1]
-
-				# Mark ship as MOVING in Rust
-				pathfinding_bridge.set_ship_moving(ship_ulid)
-
-				# Follow the full path
-				viking.follow_path(
-					path,
-					hex_map.tile_map,
-					func():  # On path complete
-						occupied_tiles[final_destination] = viking
-						# Update EntityManager registry
-						EntityManager.update_entity_tile(viking, final_destination)
-						# Mark ship as IDLE in Rust
-						pathfinding_bridge.set_ship_idle(ship_ulid)
-				)
-	)
-
-func _move_test_vikings():
-	# Move each viking using Rust pathfinding
-	for i in range(test_vikings.size()):
-		var viking_data = test_vikings[i]
-		var viking = viking_data["entity"]  # Vikings are Ship instances
-		var current_tile = viking_data["tile"]
-
-		# Skip if still moving
-		if viking.is_moving:
-			continue
-
-		# Find a random destination within range (keeping GDScript for destination picking)
-		var destination = Pathfinding.find_random_destination(
-			current_tile,
-			hex_map,
-			occupied_tiles,
-			viking,
-			3,  # min_distance - encourage longer movements
-			10  # max_distance - much larger range for more natural paths
-		)
-
-		# If no destination found or same as current, try adjacent tiles
-		if destination == current_tile:
-			var adjacent_tiles = Pathfinding.find_valid_adjacent_water_tiles(
-				current_tile,
-				hex_map,
-				occupied_tiles,
-				viking
-			)
-
-			if adjacent_tiles.size() > 0:
-				destination = adjacent_tiles[randi() % adjacent_tiles.size()]
+				# Update occupied tiles
+				occupied_tiles[final_destination] = entity
+				# Update EntityManager registry
+				EntityManager.update_entity_tile(entity, final_destination)
 			else:
-				continue  # No valid tiles found
+				# Pathfinding failed - entity stays at current tile
+				occupied_tiles[current_tile] = entity
+	)
 
-		# Use Rust pathfinding (async via callback)
-		var ship_ulid = viking.ulid
-		var pathfinding_bridge = get_node("/root/ShipPathfindingBridge")
-
-		# Update ship position in Rust
-		pathfinding_bridge.update_ship_position(ship_ulid, current_tile)
-
-		# Request pathfinding from Rust
-		pathfinding_bridge.request_path(
-			ship_ulid,
-			current_tile,
-			destination,
-			true,  # avoid_ships = true
-			func(path: Array[Vector2i], success: bool, _cost: float):
-				# Callback when path is found
-				if success and path.size() > 1:
-					# Free up current tile
-					occupied_tiles.erase(current_tile)
-
-					# Capture final destination BEFORE ship clears the path
-					var final_destination = path[path.size() - 1]
-
-					# Mark ship as MOVING in Rust
-					pathfinding_bridge.set_ship_moving(ship_ulid)
-
-					# Follow the full path calculated by Rust
-					viking.follow_path(
-						path,
-						hex_map.tile_map,
-						func():  # On path complete
-							# Update occupied tiles
-							occupied_tiles[final_destination] = viking
-							viking_data["tile"] = final_destination
-
-							# Update Rust with final position and set to IDLE
-							pathfinding_bridge.update_ship_position(ship_ulid, final_destination)
-							pathfinding_bridge.set_ship_idle(ship_ulid),
-						func(waypoint: Vector2i):  # On each waypoint reached
-							# Update Rust as ship moves through path
-							pathfinding_bridge.update_ship_position(ship_ulid, waypoint)
-					)
-		)
-
-func _move_test_jezzas():
-	# Move each Jezza using Rust NPC pathfinding
-	for i in range(test_jezzas.size()):
-		var jezza_data = test_jezzas[i]
-		var jezza = jezza_data["entity"]  # Jezzas are NPC instances
-		var current_tile = jezza_data["tile"]
-
-		# Skip if still moving
-		if jezza.is_moving:
-			continue
-
-		# Find a random land destination within range
-		var destination = _find_random_land_destination(current_tile, 3, 8)
-
-		# If no destination found or same as current, skip
-		if destination == current_tile:
-			continue
-
-		# Use Rust NPC pathfinding (async via callback)
-		var npc_id = jezza.get_instance_id()
-		var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
-
-		# Request pathfinding from Rust
-		npc_pathfinding_bridge.request_path(
-			npc_id,
-			current_tile,
-			destination,
-			func(path: Array[Vector2i], success: bool):
-				# Callback when path is found
-				if success and path.size() > 1:
-					# Free up current tile
-					occupied_tiles.erase(current_tile)
-
-					# Capture final destination
-					var final_destination = path[path.size() - 1]
-
-					# Follow the full path calculated by Rust
-					jezza.follow_path(
-						path,
-						hex_map.tile_map,
-						func():  # On path complete
-							# Update occupied tiles
-							occupied_tiles[final_destination] = jezza
-							jezza_data["tile"] = final_destination
-					)
-		)
-
-func _move_test_fantasy_warriors():
-	# Move each Fantasy Warrior using Rust NPC pathfinding
-	for i in range(test_fantasy_warriors.size()):
-		var warrior_data = test_fantasy_warriors[i]
-		var warrior = warrior_data["entity"]  # Warriors are NPC instances
-		var current_tile = warrior_data["tile"]
-
-		# Skip if still moving
-		if warrior.is_moving:
-			continue
-
-		# Find a random land destination within range
-		var destination = _find_random_land_destination(current_tile, 3, 8)
-
-		# If no destination found or same as current, skip
-		if destination == current_tile:
-			continue
-
-		# Use Rust NPC pathfinding (async via callback)
-		var npc_id = warrior.get_instance_id()
-		var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
-
-		# Request pathfinding from Rust
-		npc_pathfinding_bridge.request_path(
-			npc_id,
-			current_tile,
-			destination,
-			func(path: Array[Vector2i], success: bool):
-				# Callback when path is found
-				if success and path.size() > 1:
-					# Free up current tile
-					occupied_tiles.erase(current_tile)
-
-					# Capture final destination
-					var final_destination = path[path.size() - 1]
-
-					# Follow the full path calculated by Rust
-					warrior.follow_path(
-						path,
-						hex_map.tile_map,
-						func():  # On path complete
-							# Update occupied tiles
-							occupied_tiles[final_destination] = warrior
-							warrior_data["tile"] = final_destination
-					)
-		)
-
-func _move_test_kings():
-	# Move each King using Rust NPC pathfinding
-	for i in range(test_kings.size()):
-		var king_data = test_kings[i]
-		var king = king_data["entity"]  # Kings are NPC instances
-		var current_tile = king_data["tile"]
-
-		# Skip if still moving
-		if king.is_moving:
-			continue
-
-		# Find a random land destination within range
-		var destination = _find_random_land_destination(current_tile, 3, 8)
-
-		# If no destination found or same as current, skip
-		if destination == current_tile:
-			continue
-
-		# Use Rust NPC pathfinding (async via callback)
-		var npc_id = king.get_instance_id()
-		var npc_pathfinding_bridge = get_node("/root/NpcPathfindingBridge")
-
-		# Request pathfinding from Rust
-		npc_pathfinding_bridge.request_path(
-			npc_id,
-			current_tile,
-			destination,
-			func(path: Array[Vector2i], success: bool):
-				# Callback when path is found
-				if success and path.size() > 1:
-					# Free up current tile
-					occupied_tiles.erase(current_tile)
-
-					# Capture final destination
-					var final_destination = path[path.size() - 1]
-
-					# Follow the full path calculated by Rust
-					king.follow_path(
-						path,
-						hex_map.tile_map,
-						func():  # On path complete
-							# Update occupied tiles
-							occupied_tiles[final_destination] = king
-							king_data["tile"] = final_destination
-					)
-		)
-
-func _find_random_land_destination(start: Vector2i, min_dist: int, max_dist: int) -> Vector2i:
-	# Find a random land tile (non-water) within distance range
-	var candidates: Array[Vector2i] = []
-
-	for dx in range(-max_dist, max_dist + 1):
-		for dy in range(-max_dist, max_dist + 1):
-			var test_tile = start + Vector2i(dx, dy)
-
-			# No bounds check - infinite world support
-
-			# Check distance
-			var dist = abs(dx) + abs(dy)
-			if dist < min_dist or dist > max_dist:
-				continue
-
-			# Check if land tile (not water, source_id != 4)
-			var source_id = hex_map.tile_map.get_cell_source_id(0, test_tile)
-			if source_id == MapConfig.SOURCE_ID_WATER:  # Water
-				continue
-
-			# Check if not occupied
-			if occupied_tiles.has(test_tile):
-				continue
-
-			candidates.append(test_tile)
-
-	if candidates.size() > 0:
-		return candidates[randi() % candidates.size()]
-
-	return start  # No valid destination found
+# NOTE: All old manual movement functions removed (_handle_viking_movement, _move_test_vikings, etc.)
+# EntityManager now handles movement for ALL entity types through unified _handle_entity_movement()
 
 ## Reveal starting chunks around camera and cities
 func _reveal_starting_chunks() -> void:
@@ -810,8 +493,6 @@ func _reveal_starting_chunks() -> void:
 		for dx in range(-1, 2):
 			var chunk_coords = Vector2i(camera_chunk.x + dx, camera_chunk.y + dy)
 			ChunkManager.reveal_chunk(chunk_coords)
-
-	print("Main: Revealed starting chunks around camera chunk: %v" % camera_chunk)
 
 	# Trigger initial chunk generation
 	ChunkManager.update_visible_chunks()
@@ -838,10 +519,7 @@ func _position_camera_at_city() -> void:
 	# If we found a city, pan camera to it
 	if city_tile != Vector2i(-1, -1):
 		var world_pos = hex_map.tile_map.map_to_local(city_tile)
-		print("Main: Positioning camera at city tile %v (world pos: %v)" % [city_tile, world_pos])
 		CameraManager.set_position_instant(world_pos)
-	else:
-		print("Main: No city found, camera remains at default position")
 
 # Camera position clamping - DISABLED for infinite world
 # Chunks are generated on-demand, so camera can move freely
@@ -866,188 +544,61 @@ func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 			sprite.material = shader_material
 
 func _spawn_test_jezza():
-	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
-	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
-	var land_tiles: Array = []
+	print("DEBUG: _spawn_test_jezza() called - using Rust-authoritative EntityManager")
 
-	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
-	var search_radius = 25
-	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
-		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
-			var tile_coords = Vector2i(x, y)
-			# Convert tile coordinates to world position (center of tile)
-			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
-			# Use WorldGenerator to check terrain (queries procedural generation)
-			if hex_map.world_generator and not hex_map.world_generator.is_water(world_pos.x, world_pos.y):
-				land_tiles.append(tile_coords)
+	# Spawn 3 Jezzas using EntityManager (which uses EntitySpawnBridge internally)
+	var count = EntityManager.spawn_multiple({
+		"pool_key": "jezza",
+		"count": 3,
+		"tile_type": EntityManager.TileType.LAND,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": occupied_tiles,
+		"storage_array": test_jezzas,
+		"player_ulid": player_ulid,
+		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
+		"entity_name": "Jezza"
+	})
 
-	print("=== JEZZA SPAWN ===")
-	print("Found ", land_tiles.size(), " land tiles (near camera)")
-
-	if land_tiles.size() < 3:
-		print("Not enough land tiles to spawn Jezza")
-		return
-
-	# Spawn 3 Jezza raptors on random land tiles
-	for i in range(3):
-		var jezza = Cluster.acquire("jezza")
-		if jezza:
-			# Get random unoccupied land tile
-			var random_tile: Vector2i
-			var attempts = 0
-			while attempts < 100:
-				random_tile = land_tiles[randi() % land_tiles.size()]
-				if not occupied_tiles.has(random_tile):
-					break
-				attempts += 1
-
-			# Convert tile coordinates to world position
-			var world_pos = hex_map.tile_map.map_to_local(random_tile)
-
-			# Spawn using EntityManager (handles health bar setup)
-			var spawn_config = {
-				"direction": randi() % 16,
-				"occupied_tiles": occupied_tiles
-			}
-
-			EntityManager.spawn_entity(jezza, hex_map, world_pos, spawn_config)
-
-			# Register with EntityManager for tracking and movement
-			EntityManager.register_entity(jezza, "jezza", random_tile)
-
-			# Mark tile as occupied
-			occupied_tiles[random_tile] = jezza
-
-			# Store jezza and its current tile (for backward compatibility, can be removed later)
-			test_jezzas.append({"entity": jezza, "tile": random_tile})
-			print("Spawned Jezza ", i, " at tile ", random_tile, " world pos ", world_pos)
-		else:
-			print("Failed to acquire Jezza ", i, " from Cluster")
-
-	print("Total Jezza raptors spawned: 3")
+	print("DEBUG: Spawned %d Jezzas" % count)
 
 func _spawn_test_fantasy_warriors():
-	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
-	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
-	var land_tiles: Array = []
+	print("DEBUG: _spawn_test_fantasy_warriors() called - using Rust-authoritative EntityManager")
 
-	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
-	var search_radius = 25
-	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
-		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
-			var tile_coords = Vector2i(x, y)
-			# Convert tile coordinates to world position (center of tile)
-			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
-			# Use WorldGenerator to check terrain (queries procedural generation)
-			if hex_map.world_generator and not hex_map.world_generator.is_water(world_pos.x, world_pos.y):
-				land_tiles.append(tile_coords)
+	# Spawn 3 Fantasy Warriors using EntityManager (which uses EntitySpawnBridge internally)
+	var count = EntityManager.spawn_multiple({
+		"pool_key": "fantasywarrior",
+		"count": 3,
+		"tile_type": EntityManager.TileType.LAND,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": occupied_tiles,
+		"storage_array": test_fantasy_warriors,
+		"player_ulid": player_ulid,
+		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
+		"entity_name": "Fantasy Warrior"
+	})
 
-	print("=== FANTASY WARRIOR SPAWN ===")
-	print("Found ", land_tiles.size(), " land tiles (near camera)")
-
-	if land_tiles.size() < 3:
-		print("Not enough land tiles to spawn Fantasy Warriors")
-		return
-
-	# Spawn 3 Fantasy Warriors on random land tiles
-	for i in range(3):
-		var warrior = Cluster.acquire("fantasywarrior")
-		if warrior:
-			# Get random unoccupied land tile
-			var random_tile: Vector2i
-			var attempts = 0
-			while attempts < 100:
-				random_tile = land_tiles[randi() % land_tiles.size()]
-				if not occupied_tiles.has(random_tile):
-					break
-				attempts += 1
-
-			# Convert tile coordinates to world position
-			var world_pos = hex_map.tile_map.map_to_local(random_tile)
-
-			# Spawn using EntityManager (handles health bar setup)
-			var spawn_config = {
-				"direction": randi() % 16,
-				"occupied_tiles": occupied_tiles
-			}
-
-			EntityManager.spawn_entity(warrior, hex_map, world_pos, spawn_config)
-
-			# Register with EntityManager for tracking and movement
-			EntityManager.register_entity(warrior, "fantasywarrior", random_tile)
-
-			# Mark tile as occupied
-			occupied_tiles[random_tile] = warrior
-
-			# Store warrior and its current tile
-			test_fantasy_warriors.append({"entity": warrior, "tile": random_tile})
-			print("Spawned Fantasy Warrior ", i, " at tile ", random_tile, " world pos ", world_pos)
-		else:
-			print("Failed to acquire Fantasy Warrior ", i, " from Cluster")
-
-	print("Total Fantasy Warriors spawned: 3")
+	print("DEBUG: Spawned %d Fantasy Warriors" % count)
 
 func _spawn_test_kings():
-	# PROCEDURAL WORLD: Spawn near camera position instead of searching entire map
-	var camera_tile = hex_map.tile_renderer.world_to_tile(camera.position)
-	var land_tiles: Array = []
+	print("DEBUG: _spawn_test_kings() called - using Rust-authoritative EntityManager")
 
-	# Search in a 50x50 area around camera (much smaller than 10000x10000!)
-	var search_radius = 25
-	for x in range(camera_tile.x - search_radius, camera_tile.x + search_radius):
-		for y in range(camera_tile.y - search_radius, camera_tile.y + search_radius):
-			var tile_coords = Vector2i(x, y)
-			# Convert tile coordinates to world position (center of tile)
-			var world_pos = hex_map.tile_map.map_to_local(tile_coords)
-			# Use WorldGenerator to check terrain (queries procedural generation)
-			if hex_map.world_generator and not hex_map.world_generator.is_water(world_pos.x, world_pos.y):
-				land_tiles.append(tile_coords)
+	# Spawn 3 Kings using EntityManager (which uses EntitySpawnBridge internally)
+	var count = EntityManager.spawn_multiple({
+		"pool_key": "king",
+		"count": 3,
+		"tile_type": EntityManager.TileType.LAND,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": occupied_tiles,
+		"storage_array": test_kings,
+		"player_ulid": player_ulid,
+		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
+		"entity_name": "King"
+	})
 
-	print("=== KING SPAWN ===")
-	print("Found ", land_tiles.size(), " land tiles (near camera)")
-
-	if land_tiles.size() < 3:
-		print("Not enough land tiles to spawn Kings")
-		return
-
-	# Spawn 3 Kings on random land tiles
-	for i in range(3):
-		var king = Cluster.acquire("king")
-		if king:
-			# Get random unoccupied land tile
-			var random_tile: Vector2i
-			var attempts = 0
-			while attempts < 100:
-				random_tile = land_tiles[randi() % land_tiles.size()]
-				if not occupied_tiles.has(random_tile):
-					break
-				attempts += 1
-
-			# Convert tile coordinates to world position
-			var world_pos = hex_map.tile_map.map_to_local(random_tile)
-
-			# Set up spawn configuration
-			var spawn_config = {
-				"hex_map": hex_map,
-				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles
-			}
-
-			EntityManager.spawn_entity(king, hex_map, world_pos, spawn_config)
-
-			# Register with EntityManager for tracking and movement
-			EntityManager.register_entity(king, "king", random_tile)
-
-			# Mark tile as occupied
-			occupied_tiles[random_tile] = king
-
-			# Store king and its current tile
-			test_kings.append({"entity": king, "tile": random_tile})
-			print("Spawned King ", i, " at tile ", random_tile, " world pos ", world_pos)
-		else:
-			print("Failed to acquire King ", i, " from Cluster")
-
-	print("Total Kings spawned: 3")
+	print("DEBUG: Spawned %d Kings" % count)
 
 # Find entity near a world position (spatial query)
 func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Node:
@@ -1094,8 +645,6 @@ func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Nod
 
 ## Handle joker consumption from combos
 func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spawn_x: int, spawn_y: int) -> void:
-	print("Main: Joker consumed - %s (x%d) at card position (%d, %d)" % [joker_type, count, spawn_x, spawn_y])
-
 	# Card position where joker was placed
 	var card_pos = Vector2i(spawn_x, spawn_y)
 
@@ -1133,6 +682,70 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"post_spawn_callback": _apply_wave_shader_to_viking
 			})
 			Toast.show_toast("Spawned %d Viking Ships!" % total_vikings, 3.0)
+		"BARON":
+			# Spawn 3 kings per card (count × 3)
+			var total_kings = count * 3
+			EntityManager.spawn_multiple({
+				"pool_key": "king",
+				"count": total_kings,
+				"tile_type": EntityManager.TileType.LAND,
+				"hex_map": hex_map,
+				"tile_map": hex_map.tile_map,
+				"occupied_tiles": occupied_tiles,
+				"storage_array": test_kings,
+				"player_ulid": player_ulid,
+				"near_pos": card_pos,
+				"entity_name": "King"
+			})
+			Toast.show_toast("Spawned %d Kings!" % total_kings, 3.0)
+		"SKULL_WIZARD":
+			# Spawn 3 skull wizards per card (count × 3)
+			var total_wizards = count * 3
+			EntityManager.spawn_multiple({
+				"pool_key": "skullwizard",
+				"count": total_wizards,
+				"tile_type": EntityManager.TileType.LAND,
+				"hex_map": hex_map,
+				"tile_map": hex_map.tile_map,
+				"occupied_tiles": occupied_tiles,
+				"storage_array": test_skull_wizards,
+				"player_ulid": player_ulid,
+				"near_pos": card_pos,
+				"entity_name": "Skull Wizard"
+			})
+			Toast.show_toast("Spawned %d Skull Wizards!" % total_wizards, 3.0)
+		"WARRIOR":
+			# Spawn 3 fantasy warriors per card (count × 3)
+			var total_warriors = count * 3
+			EntityManager.spawn_multiple({
+				"pool_key": "fantasywarrior",
+				"count": total_warriors,
+				"tile_type": EntityManager.TileType.LAND,
+				"hex_map": hex_map,
+				"tile_map": hex_map.tile_map,
+				"occupied_tiles": occupied_tiles,
+				"storage_array": test_fantasy_warriors,
+				"player_ulid": player_ulid,
+				"near_pos": card_pos,
+				"entity_name": "Fantasy Warrior"
+			})
+			Toast.show_toast("Spawned %d Fantasy Warriors!" % total_warriors, 3.0)
+		"FIREWORM":
+			# Spawn 3 fireworms per card (count × 3)
+			var total_fireworms = count * 3
+			EntityManager.spawn_multiple({
+				"pool_key": "fireworm",
+				"count": total_fireworms,
+				"tile_type": EntityManager.TileType.LAND,
+				"hex_map": hex_map,
+				"tile_map": hex_map.tile_map,
+				"occupied_tiles": occupied_tiles,
+				"storage_array": test_fireworms,
+				"player_ulid": player_ulid,
+				"near_pos": card_pos,
+				"entity_name": "Fireworm"
+			})
+			Toast.show_toast("Spawned %d Fireworms!" % total_fireworms, 3.0)
 		_:
 			push_warning("Main: Unknown joker type: %s" % joker_type)
 
@@ -1149,11 +762,5 @@ func _print_culling_stats() -> void:
 	if total_entities > 0:
 		culling_percent = (float(culled) / float(total_entities)) * 100.0
 
-	print("=== CHUNK CULLING STATS ===")
-	# PROCEDURAL WORLD: Show loaded_chunks instead of total_chunks (infinite world has no total)
-	print("Visible Chunks: %d / %d loaded (render_radius=%d)" % [stats["visible_chunks"], stats["loaded_chunks"], stats["render_radius"]])
-	print("Total Entities: %d" % total_entities)
-	print("Active Entities: %d (%.1f%%)" % [active, 100.0 - culling_percent])
-	print("Culled Entities: %d (%.1f%%)" % [culled, culling_percent])
-	print("Culling Enabled: %s" % ("YES" if stats["culling_enabled"] else "NO"))
-	print("============================")
+	# Chunk culling statistics available via ChunkManager.get_culling_stats()
+	# Removed debug prints - use profiler or debug overlay if needed

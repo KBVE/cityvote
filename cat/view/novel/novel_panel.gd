@@ -67,8 +67,6 @@ func _ready() -> void:
 	if I18n:
 		I18n.language_changed.connect(_on_language_changed)
 
-	print("NovelPanel: Ready (Global Singleton)")
-
 func _input(event: InputEvent) -> void:
 	if not panel_container.visible:
 		return

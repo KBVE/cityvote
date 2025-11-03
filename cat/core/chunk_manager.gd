@@ -51,19 +51,14 @@ var camera: Camera2D = null
 var chunk_pool: ChunkPool = null  # Reference to ChunkPool singleton
 
 func _ready():
-	print("ChunkManager: Initialized (infinite world, sparse storage)")
-	print("ChunkManager: FLAG_EXPLORED=0x%02X, FLAG_VISIBLE=0x%02X, FLAG_REVEALED=0x%02X" % [FLAG_EXPLORED, FLAG_VISIBLE, FLAG_REVEALED])
-	print("ChunkManager: Fog of war: ", fog_of_war_enabled)
-	print("ChunkManager: Render radius: ", render_radius)
+	pass  # Initialized successfully
 
 ## Set references (called by main scene)
 func set_camera(cam: Camera2D) -> void:
 	camera = cam
-	print("ChunkManager: Camera reference set")
 
 func set_chunk_pool(pool: ChunkPool) -> void:
 	chunk_pool = pool
-	print("ChunkManager: ChunkPool reference set")
 
 ## Update visible chunks based on camera position (call each frame or when camera moves)
 func update_visible_chunks() -> void:
@@ -87,9 +82,7 @@ func update_visible_chunks() -> void:
 
 	# Check if visible chunks changed
 	if new_visible_chunks != visible_chunks:
-		var old_count = visible_chunks.size()
 		visible_chunks = new_visible_chunks
-		print("ChunkManager: Visible chunks changed: %d -> %d (camera chunk: %v)" % [old_count, visible_chunks.size(), camera_chunk])
 		visible_chunks_changed.emit(visible_chunks)
 		_request_missing_chunks()
 		_apply_chunk_culling()
@@ -117,7 +110,6 @@ func reveal_chunk(chunk_coords: Vector2i) -> void:
 	chunk_states[chunk_coords] = current_state | FLAG_EXPLORED
 
 	chunk_revealed.emit(chunk_coords)
-	print("ChunkManager: Chunk ", chunk_coords, " revealed (flags: 0x%02X)" % chunk_states[chunk_coords])
 
 ## Reveal a chunk by tile coordinates
 func reveal_chunk_at_tile(tile_coords: Vector2i) -> void:
@@ -129,7 +121,6 @@ func reveal_all_chunks() -> void:
 	for chunk_coords in chunk_states.keys():
 		# Set explored and revealed flags
 		chunk_states[chunk_coords] = FLAG_EXPLORED | FLAG_REVEALED
-	print("ChunkManager: All loaded chunks revealed (%d chunks)" % chunk_states.size())
 
 ## Apply chunk culling - update visibility flags for loaded chunks
 func _apply_chunk_culling() -> void:
@@ -169,7 +160,6 @@ func set_fog_of_war_enabled(enabled: bool) -> void:
 	fog_of_war_enabled = enabled
 	if not enabled:
 		reveal_all_chunks()
-	print("ChunkManager: Fog of war ", "enabled" if enabled else "disabled")
 
 ## Check if a tile is in a visible chunk (for entity culling)
 func is_tile_in_visible_chunk(tile_coords: Vector2i) -> bool:

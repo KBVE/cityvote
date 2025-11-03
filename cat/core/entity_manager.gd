@@ -6,10 +6,12 @@ extends Node
 ## Tracks all entities in a unified registry for movement and querying
 
 ## Entity type definitions for spawn_multiple
+## NOTE: These enum values MUST match Rust TerrainType values!
+## Rust: Water=0, Land=1, Obstacle=2
 enum TileType {
-	LAND,   # Non-water tiles (for ground units like Jezzas)
-	WATER,  # Water tiles (for ships like Vikings)
-	ANY     # Any tile (for flying units, etc.)
+	WATER = 0,  # Water tiles (for ships like Vikings) - MUST be 0 to match Rust
+	LAND = 1,   # Land tiles (for ground units like Jezzas) - MUST be 1 to match Rust
+	ANY = 99    # Any tile (for flying units, etc.)
 }
 
 ## Unified entity registry - tracks all spawned entities
@@ -22,6 +24,8 @@ const ENTITY_CONFIGS = {
 	"jezza": {"move_interval": 3.0, "tile_type": TileType.LAND},
 	"fantasywarrior": {"move_interval": 2.5, "tile_type": TileType.LAND},
 	"king": {"move_interval": 2.0, "tile_type": TileType.LAND},
+	"skullwizard": {"move_interval": 2.8, "tile_type": TileType.LAND},
+	"fireworm": {"move_interval": 2.2, "tile_type": TileType.LAND},
 }
 
 ## Spawn an entity (NPC, Ship, etc.) with proper initialization
@@ -57,7 +61,6 @@ func spawn_entity(entity: Node, parent: Node, world_pos: Vector2, config: Dictio
 	# Setup health bar (critical - must happen after entity is in tree)
 	_setup_entity_health_bar(entity)
 
-	print("EntityManager: Spawned %s at %v" % [entity.get_class() if entity.has_method("get_class") else entity.name, world_pos])
 	return entity
 
 ## Register an entity in the unified registry for tracking and movement
@@ -84,7 +87,6 @@ func register_entity(entity: Node, pool_key: String, tile: Vector2i) -> bool:
 	}
 
 	registered_entities.append(entry)
-	print("EntityManager: Registered %s (total entities: %d)" % [pool_key, registered_entities.size()])
 
 	# Register with combat system if entity has ULID and player_ulid
 	if "ulid" in entity and "player_ulid" in entity:
@@ -103,7 +105,6 @@ func unregister_entity(entity: Node) -> bool:
 				_unregister_combat(entity)
 
 			registered_entities.remove_at(i)
-			print("EntityManager: Unregister entity (remaining: %d)" % registered_entities.size())
 			return true
 	return false
 
@@ -154,7 +155,6 @@ func _setup_entity_health_bar(entity: Node) -> void:
 
 	# Check if health bar already exists and is valid
 	if entity.health_bar and is_instance_valid(entity.health_bar):
-		print("EntityManager: Entity already has valid health bar, skipping setup")
 		return
 
 	# Acquire health bar from pool
@@ -174,11 +174,9 @@ func _setup_entity_health_bar(entity: Node) -> void:
 		var current_hp = StatsManager.get_stat(entity.ulid, StatsManager.STAT.HP)
 		var max_hp = StatsManager.get_stat(entity.ulid, StatsManager.STAT.MAX_HP)
 		health_bar.initialize(current_hp, max_hp)
-		print("EntityManager: Health bar initialized with HP: %d/%d" % [current_hp, max_hp])
 	else:
 		# Default values
 		health_bar.initialize(100.0, 100.0)
-		print("EntityManager: Health bar initialized with default HP: 100/100")
 
 	# Configure appearance
 	health_bar.set_bar_offset(Vector2(0, -30))  # Position above entity
@@ -207,10 +205,9 @@ func _cleanup_entity_health_bar(entity: Node) -> void:
 
 	# Clear reference
 	entity.health_bar = null
-	print("EntityManager: Health bar cleaned up and returned to pool")
 
 ## Generic function to spawn multiple entities of a specific type
-## This replaces the need for separate _spawn_jezza_for_player, _spawn_vikings_for_player, etc.
+## Uses Rust-authoritative EntitySpawnBridge for all spawning
 ## @param spawn_config: Dictionary with required fields:
 ##   - pool_key: String - Pool key to acquire from (e.g., "jezza", "viking")
 ##   - count: int - Number of entities to spawn
@@ -245,68 +242,87 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 	var entity_name: String = spawn_config.get("entity_name", pool_key)
 	var post_spawn_callback: Callable = spawn_config.get("post_spawn_callback", Callable())
 
-	print("EntityManager: Spawning %d %s(s) for player %s%s" % [
-		count,
-		entity_name,
-		UlidManager.to_hex(player_ulid),
-		" near position %v" % near_pos if near_pos != Vector2i(-1, -1) else ""
-	])
+	# Convert TileType to Rust terrain_type (0=Water, 1=Land)
+	var terrain_type: int = -1
+	match tile_type:
+		TileType.WATER:
+			terrain_type = 0
+		TileType.LAND:
+			terrain_type = 1
+		TileType.ANY:
+			push_error("EntityManager.spawn_multiple: TileType.ANY not supported with Rust spawning")
+			return 0
 
-	# Find valid tiles based on tile_type
-	var valid_tiles: Array = _find_valid_tiles(tile_type, hex_map, occupied_tiles, near_pos)
+	# Determine preferred location (use near_pos if provided, otherwise use camera position)
+	var preferred_location = near_pos if near_pos != Vector2i(-1, -1) else Vector2i(0, 0)
 
-	if valid_tiles.size() < count:
-		push_error("EntityManager: Not enough valid tiles to spawn %d %s(s) (found %d)" % [count, entity_name, valid_tiles.size()])
-		return 0
-
-	# Spawn entities
+	# Spawn entities using Rust-authoritative EntitySpawnBridge
 	var spawned_count = 0
-	print("EntityManager: Starting spawn loop for %d %s(s)" % [count, entity_name])
 
 	for i in range(count):
+		# Request Rust to find valid spawn location and create entity
+		# Access via Cache to avoid Rust class name collision
+		var spawn_result = Cache.entity_spawn_bridge.spawn_entity(
+			pool_key,
+			terrain_type,
+			preferred_location,  # Vector2i with preferred spawn location
+			50  # search_radius (larger for card spawns)
+		)
+
+		# Check if spawn was successful
+		if not spawn_result.success:
+			push_warning("EntityManager: %s %d spawn FAILED: %s" % [entity_name, i + 1, spawn_result.error_message])
+			continue
+
+		# Acquire entity from pool for rendering
 		var entity = Cluster.acquire(pool_key)
-
-		if entity:
-			# Get spawn tile (closest if near_pos provided, otherwise first available)
-			var spawn_tile: Vector2i = valid_tiles[0]
-			valid_tiles.remove_at(0)
-
-			# Convert to world position
-			var world_pos = tile_map.map_to_local(spawn_tile)
-
-			# Configure entity
-			var entity_config = {
-				"player_ulid": player_ulid,
-				"direction": randi() % 16,
-				"occupied_tiles": occupied_tiles
-			}
-
-			# Spawn using base spawn_entity
-			spawn_entity(entity, hex_map, world_pos, entity_config)
-
-			# Register with EntityManager for movement tracking
-			register_entity(entity, pool_key, spawn_tile)
-
-			# Reveal chunk where entity spawned (for fog of war)
-			if ChunkManager:
-				ChunkManager.reveal_chunk_at_tile(spawn_tile)
-
-			# Call post-spawn callback if provided (e.g., for wave shader on Vikings)
-			if post_spawn_callback.is_valid():
-				post_spawn_callback.call(entity)
-
-			# Mark tile as occupied
-			occupied_tiles[spawn_tile] = entity
-
-			# Store in tracking array (using "entity" for both NPCs and Ships)
-			storage_array.append({"entity": entity, "tile": spawn_tile})
-
-			spawned_count += 1
-			print("  -> Spawned %s %d/%d at tile %v" % [entity_name, i + 1, count, spawn_tile])
-		else:
+		if not entity:
 			push_error("EntityManager: Failed to acquire %s %d from pool '%s'" % [entity_name, i + 1, pool_key])
+			continue
 
-	print("EntityManager: Finished spawning. %d %s(s) spawned. Total in storage: %d" % [spawned_count, entity_name, storage_array.size()])
+		# Set ULID from Rust (source of truth)
+		if "ulid" in entity:
+			entity.ulid = spawn_result.ulid
+
+			# Register stats immediately (can't rely on _ready() for pooled entities)
+			if StatsManager and "terrain_type" in entity:
+				var entity_type = "ship" if entity.terrain_type == 0 else "npc"
+				StatsManager.register_entity(entity, entity_type)
+
+		# Convert tile coordinates to world position for rendering
+		# NOTE: Rust returns position_q and position_r, NOT a Vector2i
+		var spawn_tile: Vector2i = Vector2i(spawn_result.position_q, spawn_result.position_r)
+		var world_pos = tile_map.map_to_local(spawn_tile)
+
+		# Configure entity
+		var entity_config = {
+			"player_ulid": player_ulid,
+			"direction": randi() % 16,
+			"occupied_tiles": occupied_tiles
+		}
+
+		# Spawn using base spawn_entity (handles health bar setup)
+		spawn_entity(entity, hex_map, world_pos, entity_config)
+
+		# Register with EntityManager for movement tracking
+		register_entity(entity, pool_key, spawn_tile)
+
+		# Reveal chunk where entity spawned (for fog of war)
+		if ChunkManager:
+			ChunkManager.reveal_chunk_at_tile(spawn_tile)
+
+		# Call post-spawn callback if provided (e.g., for wave shader on Vikings)
+		if post_spawn_callback.is_valid():
+			post_spawn_callback.call(entity)
+
+		# Mark tile as occupied
+		occupied_tiles[spawn_tile] = entity
+
+		# Store in tracking array
+		storage_array.append({"entity": entity, "tile": spawn_tile})
+
+		spawned_count += 1
+
 	return spawned_count
 
 ## Helper: Find valid tiles for spawning based on tile type
@@ -375,7 +391,6 @@ func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary
 						var result: Array = []
 						for tile_data in tiles_with_distance:
 							result.append(tile_data["pos"])
-						print("EntityManager: Found %d valid tiles near %v using radial search (radius %d)" % [result.size(), center, radius])
 						return result
 
 	# Sort by distance
@@ -383,7 +398,6 @@ func _find_tiles_radial(tile_type: TileType, hex_map, occupied_tiles: Dictionary
 	var result: Array = []
 	for tile_data in tiles_with_distance:
 		result.append(tile_data["pos"])
-	print("EntityManager: Found %d valid tiles near %v using radial search" % [result.size(), center])
 	return result
 
 ## Chunk-based random sampling (for spawning without specific position)
@@ -399,7 +413,6 @@ func _find_tiles_chunk_sampling(tile_type: TileType, hex_map, occupied_tiles: Di
 
 	# If no chunks loaded yet, search near origin (0,0)
 	if loaded_chunks.is_empty():
-		print("EntityManager: No chunks loaded yet, searching near origin")
 		var camera = hex_map.camera if hex_map.has("camera") else null
 		var center = Vector2i(0, 0)
 		if camera:
@@ -440,7 +453,6 @@ func _find_tiles_chunk_sampling(tile_type: TileType, hex_map, occupied_tiles: Di
 			if valid_tiles.size() >= max_tiles:
 				break
 
-	print("EntityManager: Found %d valid tiles using chunk sampling" % valid_tiles.size())
 	return valid_tiles
 
 ## Helper to check if a source_id matches the required tile type (DEPRECATED - use _is_tile_type_match_str)

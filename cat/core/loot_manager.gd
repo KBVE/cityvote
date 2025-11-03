@@ -20,8 +20,6 @@ func _ready() -> void:
 	if StatsManager:
 		StatsManager.entity_died.connect(_on_entity_died)
 
-	print("LootManager: Rust loot bridge ready")
-
 # Forward combat start event to Rust
 func _on_combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray) -> void:
 	if loot_bridge:
@@ -53,8 +51,8 @@ func _process(_delta: float) -> void:
 			match reward_type:
 				"draw":
 					# TODO: Add card draws when draw system exists
-					print("[Loot] Player gains %d card draw(s)" % amount)
+					pass
 
 				"experience":
 					# TODO: Apply XP when XP system exists
-					print("[Loot] Player gains %d experience" % amount)
+					pass

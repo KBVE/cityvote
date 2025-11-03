@@ -72,6 +72,9 @@ var animation_loop: bool = true
 var shader_material: ShaderMaterial = null
 
 func _ready():
+	# Configure terrain type for land pathfinding
+	terrain_type = TerrainType.LAND
+
 	super._ready()  # Call parent NPC _ready
 
 	# Setup shader material
@@ -110,11 +113,6 @@ func _setup_shader():
 	shader_material.set_shader_parameter("frames_per_row", 18)
 	shader_material.set_shader_parameter("frame_index", 0)
 	shader_material.set_shader_parameter("animation_row", 0)
-
-	# Debug shader parameters
-	print("Shader params set - frame_size:", shader_material.get_shader_parameter("frame_size"))
-	print("Shader params set - atlas_size:", shader_material.get_shader_parameter("atlas_size"))
-	print("Shader params set - frames_per_row:", shader_material.get_shader_parameter("frames_per_row"))
 
 	# Apply to sprite
 	if sprite:

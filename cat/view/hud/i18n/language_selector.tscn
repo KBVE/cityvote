@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://view/hud/i18n/language_selector.gd" id="1_selector"]
 [ext_resource type="PackedScene" uid="uid://d9x8y7z6a5b4c" path="res://view/hud/spinner/spinner.tscn" id="2_spinner"]
+[ext_resource type="PackedScene" uid="uid://social_logo_base" path="res://view/social/social_logos.tscn" id="3_social"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
 bg_color = Color(0.1, 0.08, 0.06, 0.95)
@@ -136,3 +137,13 @@ theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 theme_override_font_sizes/font_size = 12
 text = "Initializing..."
 horizontal_alignment = 1
+
+[node name="SocialContainer" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/separation = 32
+alignment = 1
+
+[node name="DiscordLogo" parent="Panel/MarginContainer/VBoxContainer/SocialContainer" instance=ExtResource("3_social")]
+
+[node name="TwitchLogo" parent="Panel/MarginContainer/VBoxContainer/SocialContainer" instance=ExtResource("3_social")]

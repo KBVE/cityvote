@@ -13,12 +13,16 @@ extends CanvasLayer
 @onready var spinner = $Panel/MarginContainer/VBoxContainer/LoadingSection/SpinnerContainer/Spinner
 @onready var progress_bar: ProgressBar = $Panel/MarginContainer/VBoxContainer/LoadingSection/ProgressBar
 @onready var status_label: Label = $Panel/MarginContainer/VBoxContainer/LoadingSection/StatusLabel
+@onready var discord_logo: SocialLogo = $Panel/MarginContainer/VBoxContainer/SocialContainer/DiscordLogo
+@onready var twitch_logo: SocialLogo = $Panel/MarginContainer/VBoxContainer/SocialContainer/TwitchLogo
 
 signal language_selected(language: int, world_seed: int, player_name: String)  # Old signal (for main.gd loading progress)
 signal start_game(language: int, world_seed: int, player_name: String)  # New signal (for title.gd)
 
 var flag_buttons: Array[TextureButton] = []
+var pooled_flags: Array[PooledFlagIcon] = []  # Track pooled flag icons for cleanup
 var selected_language: int = -1
+var selected_button: TextureButton = null  # Track which button is selected
 var world_seed: int = 12345
 var player_name: String = "Player"
 var start_button: Button = null
@@ -48,6 +52,9 @@ func _ready() -> void:
 
 	# Create Start button
 	_create_start_button()
+
+	# Setup social logos
+	_setup_social_logos()
 
 	# Title mode: show inputs and Start button, hide loading
 	if mode == "title":
@@ -99,39 +106,46 @@ func _rotate_language() -> void:
 		status_label.add_theme_font_size_override("font_size", 12)
 
 func _create_flag_buttons() -> void:
+	if not Cluster:
+		push_error("LanguageSelector: Cluster not available!")
+		return
+
 	var languages = I18n.get_available_languages()
 
 	for lang in languages:
 		var flag_info = I18n.get_flag_info(lang)
 		var flag_name = flag_info["flag"]
-		var atlas_name = flag_info["atlas"]
 
-		# Create button
+		# Acquire pooled flag icon
+		var flag_icon = Cluster.acquire("flag_icon") as PooledFlagIcon
+		if not flag_icon:
+			push_error("LanguageSelector: Failed to acquire flag icon from pool!")
+			continue
+
+		# Set flag
+		flag_icon.set_flag(flag_name)
+		pooled_flags.append(flag_icon)  # Track for cleanup
+
+		# Wrap flag in a button for interactivity
 		var button = TextureButton.new()
-		button.custom_minimum_size = Vector2(48, 96)  # 16x32 flag scaled 3x
-		button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-		button.ignore_texture_size = true
+		button.custom_minimum_size = Vector2(48, 96)  # Match flag icon size
+		button.mouse_filter = Control.MOUSE_FILTER_PASS
 
-		# Load flag texture from atlas
-		var texture = _load_flag_texture(flag_name, atlas_name)
-		if texture:
-			button.texture_normal = texture
-			button.texture_hover = texture
-			button.texture_pressed = texture
-
-			# Add hover effect via modulate
-			button.mouse_entered.connect(_on_flag_hover.bind(button, true))
-			button.mouse_exited.connect(_on_flag_hover.bind(button, false))
-
-		# Connect button press
+		# Connect hover and press
+		button.mouse_entered.connect(_on_flag_hover.bind(button, true))
+		button.mouse_exited.connect(_on_flag_hover.bind(button, false))
 		button.pressed.connect(_on_flag_pressed.bind(lang))
 
-		# Add language name label below flag
+		# Create container for flag and label
 		var vbox = VBoxContainer.new()
 		vbox.add_theme_constant_override("separation", 4)
 
+		# Add flag icon on top of button (for visuals)
+		button.add_child(flag_icon)
+
 		vbox.add_child(button)
 
+		# Add language name label below
 		var lang_label = Label.new()
 		lang_label.text = I18n.get_language_display_name(lang)
 		lang_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -147,25 +161,32 @@ func _create_flag_buttons() -> void:
 		flag_container.add_child(vbox)
 		flag_buttons.append(button)
 
-func _load_flag_texture(flag_name: String, atlas_name: String) -> AtlasTexture:
-	# Load the atlas texture
-	var atlas_path = "res://view/hud/i18n/%s.png" % atlas_name
-	var atlas = load(atlas_path)
-	if not atlas:
-		push_error("LanguageSelector: Failed to load atlas: %s" % atlas_path)
-		return null
+## Release all pooled flag icons back to the pool
+func _release_pooled_flags() -> void:
+	if not Cluster:
+		return
 
-	# Get hardcoded flag frame data from I18n (no JSON loading needed)
-	var frame_region = I18n.get_flag_frame(flag_name)
+	for flag_icon in pooled_flags:
+		if is_instance_valid(flag_icon):
+			# Remove from parent
+			if flag_icon.get_parent():
+				flag_icon.get_parent().remove_child(flag_icon)
 
-	# Create AtlasTexture
-	var atlas_texture = AtlasTexture.new()
-	atlas_texture.atlas = atlas
-	atlas_texture.region = frame_region
+			# Reset and return to pool
+			flag_icon.reset_for_pool()
+			Cluster.release("flag_icon", flag_icon)
 
-	return atlas_texture
+	pooled_flags.clear()
+
+## Override tree_exiting to clean up pooled flags
+func _exit_tree() -> void:
+	_release_pooled_flags()
 
 func _on_flag_hover(button: TextureButton, is_hovered: bool) -> void:
+	# Don't apply hover effect if this button is selected
+	if button == selected_button:
+		return
+
 	if is_hovered:
 		button.modulate = Color(1.2, 1.2, 1.0)  # Slight golden tint
 		button.scale = Vector2(1.1, 1.1)
@@ -233,8 +254,6 @@ func _create_start_button() -> void:
 	$Panel/MarginContainer/VBoxContainer.move_child(start_button, $Panel/MarginContainer/VBoxContainer.get_child_count() - 1)
 
 func _on_start_button_pressed() -> void:
-	print("LanguageSelector: Start button pressed!")
-
 	# Emit start_game signal
 	start_game.emit(selected_language, world_seed, player_name)
 
@@ -261,6 +280,24 @@ func _on_flag_pressed(language: int) -> void:
 	# Set language
 	I18n.set_language(language)
 	selected_language = language
+
+	# Find the button that was pressed
+	var pressed_button: TextureButton = null
+	var languages = I18n.get_available_languages()
+	var lang_index = languages.find(language)
+	if lang_index >= 0 and lang_index < flag_buttons.size():
+		pressed_button = flag_buttons[lang_index]
+
+	# Clear previous selection visual
+	if selected_button and selected_button != pressed_button:
+		selected_button.modulate = Color.WHITE
+		selected_button.scale = Vector2.ONE
+
+	# Highlight the selected button
+	if pressed_button:
+		selected_button = pressed_button
+		selected_button.modulate = Color(1.5, 1.3, 0.5)  # Bright golden highlight
+		selected_button.scale = Vector2(1.15, 1.15)  # Slightly larger
 
 	# Enable Start button now that language is selected
 	if start_button and mode == "title":
@@ -362,3 +399,48 @@ func _get_font_for_language(lang: int) -> Font:
 		_:
 			# English, Spanish, and French use Latin characters
 			return Cache.get_font("alagard")
+
+## Setup social logos with click handling
+func _setup_social_logos() -> void:
+	if discord_logo:
+		# Set logo type
+		discord_logo.set_logo(SocialLogo.LogoType.DISCORD)
+
+		# Add clickable area
+		var discord_button = TextureButton.new()
+		discord_button.custom_minimum_size = Vector2(32, 32)
+		discord_button.mouse_filter = Control.MOUSE_FILTER_PASS
+		discord_button.pressed.connect(_on_discord_pressed)
+		discord_button.mouse_entered.connect(_on_social_logo_hover.bind(discord_logo, true))
+		discord_button.mouse_exited.connect(_on_social_logo_hover.bind(discord_logo, false))
+		discord_logo.add_child(discord_button)
+
+	if twitch_logo:
+		# Set logo type
+		twitch_logo.set_logo(SocialLogo.LogoType.TWITCH)
+
+		# Add clickable area
+		var twitch_button = TextureButton.new()
+		twitch_button.custom_minimum_size = Vector2(32, 32)
+		twitch_button.mouse_filter = Control.MOUSE_FILTER_PASS
+		twitch_button.pressed.connect(_on_twitch_pressed)
+		twitch_button.mouse_entered.connect(_on_social_logo_hover.bind(twitch_logo, true))
+		twitch_button.mouse_exited.connect(_on_social_logo_hover.bind(twitch_logo, false))
+		twitch_logo.add_child(twitch_button)
+
+## Handle social logo hover
+func _on_social_logo_hover(logo: SocialLogo, is_hovered: bool) -> void:
+	if is_hovered:
+		logo.modulate = Color(1.2, 1.2, 1.0)  # Slight golden tint
+		logo.scale = Vector2(1.15, 1.15)
+	else:
+		logo.modulate = Color.WHITE
+		logo.scale = Vector2.ONE
+
+## Handle Discord logo click
+func _on_discord_pressed() -> void:
+	Cache.open_url("https://kbve.com/discord/")
+
+## Handle Twitch logo click
+func _on_twitch_pressed() -> void:
+	Cache.open_url("https://kbve.com/twitch/")

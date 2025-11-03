@@ -333,17 +333,19 @@ func _show_entity_preview(entity: Node) -> void:
 
 	# Determine pool key based on entity type
 	var pool_key = ""
-	if entity is Ship:
-		pool_key = "viking"
-	elif entity is Jezza:
+	if entity is Jezza:
 		pool_key = "jezza"
 	elif entity is NPC:
-		# Generic NPC - try to infer pool key
-		var script = entity.get_script()
-		if script:
-			var class_name_val = script.get_global_name()
-			if not class_name_val.is_empty():
-				pool_key = class_name_val.to_lower()
+		# Check for water entities (vikings/ships)
+		if "terrain_type" in entity and entity.terrain_type == NPC.TerrainType.WATER:
+			pool_key = "viking"
+		else:
+			# Generic NPC - try to infer pool key
+			var script = entity.get_script()
+			if script:
+				var class_name_val = script.get_global_name()
+				if not class_name_val.is_empty():
+					pool_key = class_name_val.to_lower()
 
 	if pool_key.is_empty():
 		return

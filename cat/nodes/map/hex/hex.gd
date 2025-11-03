@@ -120,19 +120,23 @@ func _ready():
 	if world_generator:
 		world_generator.set_seed(MapConfig.world_seed)
 		world_generator.start_async_worker()
-		print("Hex: WorldGenerator initialized with seed: ", MapConfig.world_seed)
-		print("Hex: Async chunk generation worker started")
+
+		# IMPORTANT: Also set seed in pathfinding terrain cache for on-demand chunk generation
+		var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+		if pathfinding_bridge:
+			pathfinding_bridge.set_world_seed(MapConfig.world_seed)
+		else:
+			push_warning("Hex: UnifiedPathfindingBridge not found - terrain cache won't generate chunks on-demand")
 	else:
 		push_error("Hex: Failed to instantiate WorldGenerator! Make sure Rust extension is loaded.")
-
-	print("Hex: Infinite world initialized. Chunks will generate on-demand.")
 
 ## Set chunk manager reference and connect signals
 func set_chunk_manager(manager) -> void:
 	chunk_manager = manager
 	if chunk_manager:
 		chunk_manager.chunk_requested.connect(_on_chunk_requested)
-		print("Hex: ChunkManager connected")
+	else:
+		push_error("Hex: ChunkManager is null!")
 
 ## Handle chunk generation requests from ChunkManager
 func _on_chunk_requested(chunk_coords: Vector2i) -> void:
@@ -184,9 +188,7 @@ func _request_chunk_generation(chunk_coords: Vector2i, priority: String) -> void
 		pending_chunk_requests[request_id] = chunk_coords
 		if priority == "low":
 			pending_low_priority_count += 1
-		if priority == "high":
-			print("Hex: [HIGH PRIORITY] Requested async generation for chunk %s (request_id: %d)" % [chunk_coords, request_id])
-		# Don't print low priority requests to reduce console spam
+		# Don't print - reduces console spam
 	else:
 		push_error("Hex: Failed to request async chunk generation for %s" % chunk_coords)
 
@@ -199,19 +201,15 @@ func _load_generated_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
 	# Load into pool
 	var chunk = chunk_pool.load_chunk(chunk_coords, tile_data)
 
-	# Load chunk into pathfinding terrain caches (for both ship and NPC pathfinding)
-	if has_node("/root/ShipPathfindingBridge"):
-		get_node("/root/ShipPathfindingBridge").load_chunk(chunk_coords, tile_data)
-	if has_node("/root/NpcPathfindingBridge"):
-		get_node("/root/NpcPathfindingBridge").load_chunk(chunk_coords, tile_data)
+	# Load chunk into unified pathfinding terrain cache
+	if has_node("/root/UnifiedPathfindingBridge"):
+		get_node("/root/UnifiedPathfindingBridge").load_chunk(chunk_coords, tile_data)
 
 	# Queue for rendering
 	chunk_render_queue.append({
 		"chunk_coords": chunk_coords,
 		"render": true
 	})
-
-	print("Hex: Chunk %s loaded and queued for render (%d tiles)" % [chunk_coords, tile_data.size()])
 
 func _process(delta: float) -> void:
 	# Poll for completed async chunk results
@@ -295,7 +293,7 @@ func _process_chunk_queue() -> void:
 	# Check if initial chunks are done loading
 	if not initial_chunks_loaded and chunk_render_queue.size() == 0 and rendered_chunks.size() > 0:
 		initial_chunks_loaded = true
-		print("Hex: Initial chunks loaded (%d chunks rendered). Emitting initial_chunks_ready signal." % rendered_chunks.size())
+		print("DEBUG: Hex initial_chunks_ready signal emitted! (rendered=%d)" % rendered_chunks.size())
 		initial_chunks_ready.emit()
 
 ## Set the camera reference for chunk culling
@@ -304,9 +302,6 @@ func set_camera(cam: Camera2D) -> void:
 	if camera:
 		var camera_tile = tile_renderer.world_to_tile(camera.global_position)
 		last_camera_chunk = MapConfig.tile_to_chunk(camera_tile)
-		print("Hex: Camera reference set at position ", camera.global_position)
-		print("Hex: Camera in chunk ", last_camera_chunk)
-		print("Hex: Enabling camera-based chunk culling with render distance: ", chunk_render_distance, " chunks")
 		# NOTE: Chunk rendering is now handled by ChunkManager via chunk_requested signals
 		# The old _update_visible_chunks() is no longer used for initial rendering
 	else:
@@ -358,8 +353,6 @@ func _render_chunk_immediate(chunk_coords: Vector2i) -> void:
 			"flip_flags": 0  # No flipping for now
 		})
 
-	print("Hex: Chunk %s - Received Water: %d, Land: %d, Rendering: %d tiles" % [chunk_coords, water_count, land_count, tile_data_array.size()])
-
 	# Render chunk via CustomTileRenderer (using a unique chunk index)
 	# For infinite world, we'll use a hash of chunk coords as the index
 	var chunk_hash = _chunk_coords_to_hash(chunk_coords)
@@ -373,7 +366,6 @@ func _unrender_chunk_immediate(chunk_coords: Vector2i) -> void:
 	var chunk_hash = _chunk_coords_to_hash(chunk_coords)
 	tile_renderer.unrender_chunk(chunk_hash)
 	rendered_chunks.erase(chunk_coords)
-	print("Hex: Unrendered chunk %s" % chunk_coords)
 
 ## Convert chunk coordinates to a unique hash for renderer indexing
 func _chunk_coords_to_hash(chunk_coords: Vector2i) -> int:

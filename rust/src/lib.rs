@@ -19,7 +19,7 @@ mod utility;
 mod storage;
 mod card;
 mod economy;
-mod stats;
+// Stats moved to npc::entity module
 mod combat;
 mod world_gen;
 mod structures;

@@ -17,7 +17,8 @@ const TYPE_RESOURCE = 4
 func _ready() -> void:
 	# Initialize Rust storage
 	storage = UlidStorage.new()
-	print("UlidManager: Ready with Rust-backed storage")
+	if not storage:
+		push_error("UlidManager: Failed to initialize Rust-backed storage")
 
 ## Generate a new ULID
 func generate() -> PackedByteArray:
@@ -29,7 +30,8 @@ func register_entity(entity: Node, entity_type: int, metadata: Dictionary = {}) 
 	# Ensure storage is initialized
 	if not storage:
 		storage = UlidStorage.new()
-		print("UlidManager: Lazy-initialized storage during register_entity()")
+		if not storage:
+			push_error("UlidManager: Failed to lazy-initialize storage during register_entity()")
 
 	var ulid = UlidGenerator.generate()
 	var instance_id = entity.get_instance_id()

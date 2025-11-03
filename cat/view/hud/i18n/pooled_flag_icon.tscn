@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3 uid="uid://pooled_flag_icon"]
+
+[ext_resource type="Script" path="res://view/hud/i18n/pooled_flag_icon.gd" id="1"]
+
+[node name="PooledFlagIcon" type="TextureRect"]
+custom_minimum_size = Vector2(48, 96)
+offset_right = 48.0
+offset_bottom = 96.0
+mouse_filter = 2
+stretch_mode = 5
+expand_mode = 1
+script = ExtResource("1")

@@ -25,8 +25,6 @@ func _ready() -> void:
 	combat_bridge.combat_ended.connect(_on_combat_ended)
 	combat_bridge.entity_died.connect(_on_entity_died)
 
-	print("CombatManager: Initialized and connected to CombatBridge")
-
 ## Called when combat starts between two entities
 func _on_combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray) -> void:
 	if attacker_ulid.is_empty() or defender_ulid.is_empty():
@@ -55,12 +53,6 @@ func _on_damage_dealt(
 		push_error("CombatManager: Invalid defender ULID in damage_dealt")
 		return
 
-	print("[Combat] Damage dealt! Attacker=%s, Defender=%s, Damage=%.1f" % [
-		UlidManager.to_hex(attacker_ulid),
-		UlidManager.to_hex(defender_ulid),
-		damage
-	])
-
 	# Get both entities
 	var attacker = UlidManager.get_instance(attacker_ulid) as Node2D
 	var defender = UlidManager.get_instance(defender_ulid) as Node2D
@@ -68,25 +60,21 @@ func _on_damage_dealt(
 	# Apply damage through StatsManager to trigger signals
 	# This will emit stat_changed signal for health bars to update
 	if StatsManager:
-		var actual_damage = StatsManager.take_damage(defender_ulid, damage)
-		print("[Combat] Applied %.1f damage to defender via StatsManager" % actual_damage)
+		var _actual_damage = StatsManager.take_damage(defender_ulid, damage)
 	else:
-		push_error("[Combat] StatsManager not available to apply damage")
+		push_error("CombatManager: StatsManager not available to apply damage")
 
 	# Check if defender exists (required for visual feedback)
 	if defender == null or not is_instance_valid(defender):
-		print("[Combat] Defender not found or invalid")
 		return  # Entity not found or off-screen (silent, expected for off-screen combat)
 
 	if attacker == null or not is_instance_valid(attacker):
-		print("[Combat] Attacker not found or invalid")
 		return
 
 	# Check if entity is visible (in viewport)
 	var is_visible = _is_entity_visible(defender)
 
 	# Fire projectile - always fire if both entities exist
-	print("[Combat] Firing projectile from attacker to defender")
 	_fire_projectile(attacker, defender)
 
 	# Display damage number popup (only if visible)
@@ -204,24 +192,20 @@ func _trigger_death_animation(entity: Node) -> void:
 
 ## Fire a projectile from attacker to defender
 func _fire_projectile(attacker: Node2D, defender: Node2D) -> void:
-	print("[Combat] _fire_projectile called")
-
 	if not Cluster:
-		push_warning("[Combat] Cluster not available")
+		push_warning("CombatManager: Cluster not available for projectile")
 		return
 
 	# Acquire projectile from pool
 	var projectile = Cluster.acquire("projectile") as Projectile
 	if not projectile:
-		push_warning("[Combat] Failed to acquire projectile from pool")
+		push_warning("CombatManager: Failed to acquire projectile from pool")
 		return
-
-	print("[Combat] Projectile acquired from pool")
 
 	# Add to scene tree (same parent as attacker)
 	var parent = attacker.get_parent()
 	if not parent:
-		push_error("[Combat] Attacker has no parent node")
+		push_error("CombatManager: Attacker has no parent node")
 		Cluster.release("projectile", projectile)
 		return
 
@@ -230,8 +214,6 @@ func _fire_projectile(attacker: Node2D, defender: Node2D) -> void:
 	# Set z-index high enough to render above tiles and ships (using Cache constants)
 	# Projectiles should be above entities (500) but below UI overlays
 	projectile.z_index = Cache.Z_INDEX_WAYPOINTS  # 3000
-
-	print("[Combat] Projectile added to scene at parent: %s with z_index: %d" % [parent.name, projectile.z_index])
 
 	# Determine projectile type based on attacker
 	var projectile_type = Projectile.Type.SPEAR  # Default
@@ -251,7 +233,6 @@ func _fire_projectile(attacker: Node2D, defender: Node2D) -> void:
 		Cluster.release("projectile", proj)
 
 	# Fire!
-	print("[Combat] Firing projectile from %s to %s" % [attacker.global_position, defender.global_position])
 	projectile.fire(
 		attacker.global_position,
 		defender.global_position,
@@ -260,7 +241,6 @@ func _fire_projectile(attacker: Node2D, defender: Node2D) -> void:
 		30.0,   # Arc height (pixels)
 		8       # Max range (tiles) - projectile will "miss" after 8 tiles
 	)
-	print("[Combat] Projectile fired successfully!")
 
 ## Add combat indicator to entity (red outline/glow)
 func _add_combat_indicator(ulid: PackedByteArray) -> void:

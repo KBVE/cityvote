@@ -166,20 +166,31 @@ func _update_card_count() -> void:
 	if card_count_label:
 		card_count_label.text = I18n.translate("ui.hand.card_count") % [hand.size(), Cache.MAX_HAND_SIZE]
 
-# Add a card to the hand (for manual testing/debugging)
+# Add a specific card to the hand (for manual testing/debugging)
 func add_card_to_hand(suit: int, value: int) -> void:
+	# Check if hand is at max capacity
+	if hand.size() >= Cache.MAX_HAND_SIZE:
+		Toast.show_toast(I18n.translate("ui.hand.full"), 3.0)
+		return
+
 	# Acquire a new card from the pool
 	var card = Cluster.acquire("playing_card") as PooledCard
-	if card:
-		card.init_card(suit, value)
-		hand.append(card)
-		display_card(card, hand.size() - 1)
-		_update_card_count()
-
-		# Refresh fan layout to show new card properly
-		call_deferred("_refresh_card_positions")
-	else:
+	if not card:
 		push_error("PlayHand: Failed to acquire card from pool")
+		return
+
+	card.init_card(suit, value)
+	hand.append(card)
+	display_card(card, hand.size() - 1)
+	_update_card_count()
+
+	# Refresh fan layout to show new card properly
+	_refresh_card_positions()
+
+	# Set highest z-index for newly added card
+	var card_wrapper = card_container.get_child(card_container.get_child_count() - 1)
+	if card_wrapper:
+		card_wrapper.z_index = card_container.get_child_count() + 100
 
 # Refresh all card positions to match current fan layout
 func _refresh_card_positions() -> void:
@@ -349,6 +360,13 @@ func _on_card_mouse_entered(card: Control) -> void:
 	if card_state != CardState.IDLE:
 		return  # Don't hover effect while card is held
 
+	# Bring card to front by setting highest z-index
+	var max_z = 0
+	for i in range(card_container.get_child_count()):
+		var other_card = card_container.get_child(i)
+		max_z = max(max_z, other_card.z_index)
+	card.z_index = max_z + 1
+
 	# Lift card up and make it slightly larger
 	var tween = create_tween()
 	tween.set_parallel(true)
@@ -363,6 +381,9 @@ func _on_card_mouse_exited(card: Control) -> void:
 
 	if held_card == card:
 		return  # Don't reset while this card is held
+
+	# Reset z-index to original position in container
+	card.z_index = card.get_index()
 
 	# Return card to original position
 	# Calculate arc offset based on card index (concave up)
@@ -398,11 +419,8 @@ func _create_swap_indicator() -> void:
 		push_error("PlayHand: Failed to instantiate swap indicator scene!")
 		return
 
-	print("PlayHand: Created swap_indicator")
-
 	# Set translated text
 	swap_indicator.text = I18n.translate("ui.hand.swap")
-	print("PlayHand: swap_indicator.text = ", swap_indicator.text)
 
 	# Apply Alagard font
 	var font = Cache.get_font_for_current_language()
@@ -413,7 +431,6 @@ func _create_swap_indicator() -> void:
 	# Set very high z-index to render on top of everything
 	swap_indicator.z_index = 1000
 	add_child(swap_indicator)
-	print("PlayHand: Added swap_indicator as child with z_index=1000")
 
 	# Position above the card container, centered
 	# Wait one frame to get proper sizing
@@ -421,7 +438,7 @@ func _create_swap_indicator() -> void:
 
 	# Validate objects after await
 	if not is_instance_valid(swap_indicator) or not is_instance_valid(card_container):
-		print("PlayHand: swap_indicator or card_container became invalid after await!")
+		push_warning("PlayHand: swap_indicator or card_container became invalid after await!")
 		return
 
 	# Position relative to card_container's global position
@@ -433,17 +450,15 @@ func _create_swap_indicator() -> void:
 		container_global_pos.x + container_width / 2 - swap_indicator.size.x / 2,
 		container_global_pos.y - swap_indicator.size.y - 10  # 10px above
 	)
-	print("PlayHand: Positioned swap_indicator at global ", swap_indicator.global_position, " size=", swap_indicator.size)
 
 # Show swap indicator (fixed position above hand panel)
 func _show_swap_indicator(target_card: Control) -> void:
 	if not swap_indicator:
-		print("PlayHand: swap_indicator is null!")
+		push_warning("PlayHand: swap_indicator is null!")
 		return
 
 	swap_indicator_target_card = target_card
 	swap_indicator.visible = true
-	print("PlayHand: Showing swap indicator at position ", swap_indicator.position, " visible=", swap_indicator.visible)
 
 # Hide swap indicator
 func _hide_swap_indicator() -> void:
@@ -508,7 +523,6 @@ func _event_pick_card(card: Control) -> void:
 
 		# SWAP: Return old card to END of hand, then pick new card
 		_return_card_to_end()
-		print("State: Swapping cards - old card moved to end")
 
 		# Emit signal that cards were swapped
 		card_swapped.emit()
@@ -538,8 +552,6 @@ func _event_pick_card(card: Control) -> void:
 	# Emit signal (for future use if needed)
 	card_picked_up.emit()
 
-	print("State: IDLE → HELD")
-
 # EVENT: Confirm Place - Transition PREVIEW → PLACED
 func _event_confirm_place() -> void:
 	if card_state != CardState.PREVIEW:
@@ -547,7 +559,6 @@ func _event_confirm_place() -> void:
 
 	# Check if mouse is over the hand UI - prevent accidental placement
 	if _is_mouse_over_hand_ui():
-		print("Cannot place card: mouse is over hand UI")
 		return
 
 	if preview_ghost_target_tile != Vector2i(-1, -1):
@@ -556,8 +567,6 @@ func _event_confirm_place() -> void:
 
 		# Emit signal to re-enable manual camera panning
 		card_placed.emit()
-
-		print("State: PREVIEW → PLACED → IDLE")
 
 # EVENT: Cancel - Transition * → CANCELED → IDLE
 func _event_cancel() -> void:
@@ -570,8 +579,6 @@ func _event_cancel() -> void:
 	# Emit signal to re-enable manual camera panning
 	card_cancelled.emit()
 
-	print("State: * → CANCELED → IDLE")
-
 # ===================================================================
 # PREVIEW GHOST MANAGEMENT
 # ===================================================================
@@ -581,10 +588,6 @@ func _create_preview_ghost() -> void:
 	# We'll reparent it back to the hand wrapper when cancelled, or to the board when placed
 	if held_card_pooled:
 		preview_ghost = held_card_pooled
-
-		# Debug: Check what card_id the ghost has
-		print("Ghost created - card_id: ", held_card_pooled.card_id, " (", held_card_pooled.get_card_name(), ")")
-		print("Ghost instance param: ", held_card_pooled.get_instance_shader_parameter("card_id"))
 
 		# Remove from hand wrapper and add to hex_map to follow cursor
 		if held_card_pooled.get_parent():
@@ -674,10 +677,6 @@ func _update_camera_follow(delta: float) -> void:
 			new_pos.x = clamp(new_pos.x, camera_min_bounds.x, camera_max_bounds.x)
 			new_pos.y = clamp(new_pos.y, camera_min_bounds.y, camera_max_bounds.y)
 
-		# Debug: Print when bounds are clamping
-		if pre_clamp_pos != new_pos:
-			print("Camera clamped! Pre: ", pre_clamp_pos, " Post: ", new_pos, " Bounds: ", camera_min_bounds, " to ", camera_max_bounds)
-
 		camera.position = new_pos
 
 # ===================================================================
@@ -752,8 +751,6 @@ func _place_card_on_tile(tile_coords: Vector2i) -> void:
 	held_card = null
 	held_card_pooled = null
 
-	print("Card placed on tile ", tile_coords, " at world pos ", world_pos)
-
 func _return_card_to_end() -> void:
 	if held_card == null or held_card_pooled == null:
 		return
@@ -808,56 +805,62 @@ func _is_mouse_over_hand_ui() -> bool:
 	var hand_rect = hand_container.get_global_rect()
 	return hand_rect.has_point(mouse_pos)
 
-# Auto-draw card when timer resets (every 60 seconds)
-func _on_timer_reset() -> void:
+# Draw a card from the deck and add it to hand
+func draw_card() -> bool:
 	# Check if hand is at max capacity
 	if hand.size() >= Cache.MAX_HAND_SIZE:
-		# Send toast: Hand is full
 		Toast.show_toast(I18n.translate("ui.hand.full"), 3.0)
-		return
+		return false
 
-	# Hand has space - draw a card
+	# Draw a card from deck
 	var card = CardDeck.draw_card(deck_id)
-	if card:
-		# Add the card to hand
-		hand.append(card)
-
-		# Create wrapper for the new card
-		var card_wrapper = Control.new()
-		card_wrapper.name = "Card_%d" % (hand.size() - 1)
-		card_wrapper.custom_minimum_size = Vector2(card_width + card_wrapper_padding * 2, card_height + card_wrapper_padding * 2)
-		card_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
-
-		# Reparent PooledCard to wrapper
-		if card.get_parent():
-			card.get_parent().remove_child(card)
-		card_wrapper.add_child(card)
-
-		# Position sprite within wrapper (centered, accounting for padding)
-		card.scale = Vector2.ONE
-		card.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
-
-		# Connect hover and input signals
-		card_wrapper.mouse_entered.connect(_on_card_mouse_entered.bind(card_wrapper))
-		card_wrapper.mouse_exited.connect(_on_card_mouse_exited.bind(card_wrapper))
-		card_wrapper.gui_input.connect(_on_card_gui_input.bind(card_wrapper))
-
-		# Add to container at END
-		card_container.add_child(card_wrapper)
-
-		# Set z-index to be highest (on top of all other cards) immediately
-		card_wrapper.z_index = hand.size() - 1
-
-		_update_card_count()
-
-		# Refresh fan layout to show all cards properly positioned
-		_refresh_card_positions()
-
-		# Send toast: Drew a card
-		Toast.show_toast(I18n.translate("ui.hand.drew", [card.get_card_name()]), 2.5)
-	else:
-		# No cards left in deck
+	if not card:
 		Toast.show_toast(I18n.translate("ui.hand.deck_empty"), 2.5)
+		return false
+
+	# Add the card to hand array
+	hand.append(card)
+
+	# Create wrapper for the new card
+	var card_wrapper = Control.new()
+	card_wrapper.name = "Card_%d" % (hand.size() - 1)
+	card_wrapper.custom_minimum_size = Vector2(card_width + card_wrapper_padding * 2, card_height + card_wrapper_padding * 2)
+	card_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# Reparent PooledCard to wrapper
+	if card.get_parent():
+		card.get_parent().remove_child(card)
+	card_wrapper.add_child(card)
+
+	# Position sprite within wrapper (centered, accounting for padding)
+	card.scale = Vector2.ONE
+	card.position = Vector2(card_width / 2.0 + card_wrapper_padding, card_height / 2.0 + card_wrapper_padding)
+
+	# Connect hover and input signals
+	card_wrapper.mouse_entered.connect(_on_card_mouse_entered.bind(card_wrapper))
+	card_wrapper.mouse_exited.connect(_on_card_mouse_exited.bind(card_wrapper))
+	card_wrapper.gui_input.connect(_on_card_gui_input.bind(card_wrapper))
+
+	# Add to container at END
+	card_container.add_child(card_wrapper)
+
+	_update_card_count()
+
+	# Refresh fan layout FIRST to position all cards correctly
+	_refresh_card_positions()
+
+	# THEN set the new card's z-index to be highest (on top) after refresh
+	# This ensures the newly drawn card is always visible
+	card_wrapper.z_index = card_container.get_child_count() + 100
+
+	# Show toast notification
+	Toast.show_toast(I18n.translate("ui.hand.drew", [card.get_card_name()]), 2.5)
+
+	return true
+
+# Auto-draw card when timer resets (every 60 seconds)
+func _on_timer_reset() -> void:
+	draw_card()
 
 # ===================================================================
 # COMBO DETECTION
@@ -871,7 +874,6 @@ func _check_for_combos() -> void:
 
 	# If no last placed card position, can't filter
 	if last_placed_card_pos == Vector2i(-1, -1):
-		print("No last placed card position - skipping combo check")
 		return
 
 	# Collect placed cards ONLY within COMBO_CHECK_RADIUS of last placed card
@@ -904,18 +906,8 @@ func _check_for_combos() -> void:
 
 		placed_cards.append(card_dict)
 
-	# Debug: Print card positions and values
-	print("=== Checking combos for %d cards (filtered out %d cards beyond radius %d) ===" % [placed_cards.size(), filtered_out_count, COMBO_CHECK_RADIUS])
-	print("  Last placed card at: (%d, %d)" % [last_placed_card_pos.x, last_placed_card_pos.y])
-	for card in placed_cards:
-		var value_name = _get_value_name(card.get("value", 0))
-		var suit_name = _get_suit_name(card.get("suit", 0))
-		var dist = _hex_distance(last_placed_card_pos, Vector2i(card.get("x"), card.get("y")))
-		print("  Card at (%d, %d): %s of %s (distance: %d)" % [card.get("x"), card.get("y"), value_name, suit_name, dist])
-
 	# Need at least 5 cards for a combo
 	if placed_cards.size() < 5:
-		print("Not enough cards for combo (need 5, have %d in radius)" % placed_cards.size())
 		return
 
 	# Request combo detection (async - result via callback)
@@ -923,27 +915,15 @@ func _check_for_combos() -> void:
 
 ## Callback when combo detection completes
 func _on_combo_result(result: Dictionary) -> void:
-	# Debug: Print result
-	print("=== Combo Detection Result ===")
-	print("  Result keys: %s" % [result.keys()])
-	if result.has("hand_name"):
-		print("  Hand: %s (rank %d)" % [result["hand_name"], result.get("hand_rank", -1)])
-	if result.has("card_indices"):
-		print("  Card indices in combo: %s" % [result["card_indices"]])
-
 	# Check if a combo was found
 	if not result.has("hand_name") or not result.has("card_indices"):
-		print("  No valid combo found (missing hand_name or card_indices)")
 		return
 
 	# Get hand rank (0 = High Card, which we don't want to show)
 	var hand_rank = result.get("hand_rank", 0)
 	if hand_rank == 0:
 		# High Card - not a real combo, don't show popup
-		print("  High Card detected - not showing popup")
 		return
-
-	print("Combo found: %s (rank %d)" % [result["hand_name"], hand_rank])
 
 	# Highlight cards in the combo with outline shader
 	_highlight_combo_cards(result)
@@ -1006,16 +986,13 @@ func _highlight_combo_cards(combo_data: Dictionary) -> void:
 				shader_material.set_shader_parameter("pulse_intensity", 0.4)
 
 				card_sprite.material = shader_material
-				print("  Highlighted card at %s (is_dynamic=%s)" % [tile_coords, card_sprite.is_dynamic])
 
 ## Called when player accepts the combo
 func _on_combo_accepted_by_player(combo_data: Dictionary) -> void:
-	print("PlayHand: Player accepted combo!")
 	_clear_combo_cards(combo_data)
 
 ## Called when player declines the combo
 func _on_combo_declined_by_player(combo_data: Dictionary) -> void:
-	print("PlayHand: Player declined combo")
 	_remove_combo_highlights(combo_data)
 
 ## Remove highlight shader from combo cards
@@ -1033,15 +1010,12 @@ func _remove_combo_highlights(combo_data: Dictionary) -> void:
 			if card_sprite is PooledCard:
 				# Remove shader
 				card_sprite.material = null
-				print("  Removed highlight from card at %s" % [tile_coords])
 
 ## Clear combo cards from board (called when player accepts combo)
 ## Removes ALL cards that were used in the combo (regular cards + wildcards)
 ## Cards NOT in the combo remain on the board
 func _clear_combo_cards(combo_data: Dictionary) -> void:
 	var positions = combo_data.get("positions", [])
-
-	print("PlayHand: Clearing %d combo cards from board" % positions.size())
 
 	for pos in positions:
 		# pos is a Dictionary with "x" and "y" keys from Rust
@@ -1067,8 +1041,6 @@ func _clear_combo_cards(combo_data: Dictionary) -> void:
 						# Fallback: free if not a pooled card
 						card_sprite.queue_free()
 
-				print("  Cleared card at %s" % [tile_coords])
-
 # ===================================================================
 # MULLIGAN SYSTEM
 # ===================================================================
@@ -1087,9 +1059,6 @@ func _on_mulligan_pressed() -> void:
 	# Use float explicitly to match Rust's f32 expectation
 	var cost = {ResourceLedger.R.GOLD: float(MULLIGAN_COST)}
 
-	var gold_before = ResourceLedger.get_current(ResourceLedger.R.GOLD)
-	print("PlayHand: Gold before mulligan: %.1f" % gold_before)
-
 	if not ResourceLedger.can_spend(cost):
 		Toast.show_toast("Not enough gold! Need %d gold to mulligan." % MULLIGAN_COST, 3.0)
 		if GameTimer:
@@ -1101,9 +1070,6 @@ func _on_mulligan_pressed() -> void:
 		if GameTimer:
 			GameTimer.resume()
 		return
-
-	var gold_after = ResourceLedger.get_current(ResourceLedger.R.GOLD)
-	print("PlayHand: Gold after mulligan: %.1f (spent %.1f)" % [gold_after, gold_before - gold_after])
 
 	# Separate bonus cards (custom cards) from deck cards
 	var bonus_cards: Array[PooledCard] = []
@@ -1152,7 +1118,6 @@ func _on_mulligan_pressed() -> void:
 		GameTimer.resume()
 
 	Toast.show_toast("Mulliganed! Drew new hand. (-%d Gold)" % MULLIGAN_COST, 3.0)
-	print("PlayHand: Player mulliganed hand, cost %d gold" % MULLIGAN_COST)
 
 ## Check if mulligan is allowed
 func _can_mulligan() -> bool:
@@ -1176,8 +1141,6 @@ func _update_mulligan_button() -> void:
 	# HIDE button after turn 0 or after placing any cards
 	if not can_mull:
 		if mulligan_button.visible:  # Only hide if currently visible
-			var current_turn = GameTimer.get_current_turn() if GameTimer else -1
-			print("PlayHand: Hiding mulligan button - Turn: %d, Cards placed: %d" % [current_turn, cards_placed_this_game])
 			mulligan_button.visible = false
 		return
 

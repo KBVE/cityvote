@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 
 use super::combat_state::{CombatEvent, CombatInstance, CombatStateMap, Combatant, CombatantMap};
 use super::target_finder::find_closest_enemy;
-use crate::stats::entity_stats::{self, StatType};
+use crate::npc::entity::{StatType, ENTITY_STATS};
 
 /// Combat system singleton
 pub struct CombatSystem {
@@ -157,7 +157,9 @@ impl CombatSystem {
             }
 
             // Get attacker's range from stats
-            let range = entity_stats::get_stat(&attacker_ulid, StatType::Range)
+            let range = ENTITY_STATS
+                .get(&attacker_ulid)
+                .map(|stats| stats.get(StatType::Range))
                 .unwrap_or(1.0) as i32;
 
             // Check if already in combat
@@ -170,8 +172,10 @@ impl CombatSystem {
                         .map(|d| d.is_alive)
                         .unwrap_or(false);
 
-                    // Also check HP in case GDScript killed them via StatsManager
-                    let defender_hp = entity_stats::get_stat(&combat.defender_ulid, StatType::HP)
+                    // Also check HP in case GDScript killed them via EntityManagerBridge
+                    let defender_hp = ENTITY_STATS
+                        .get(&combat.defender_ulid)
+                        .map(|stats| stats.get(StatType::HP))
                         .unwrap_or(0.0);
 
                     if defender_alive && defender_hp > 0.0 {
@@ -228,22 +232,26 @@ impl CombatSystem {
 
     /// Execute an attack between two entities
     /// NOTE: This only calculates damage and queues events
-    /// Actual damage application happens in GDScript via StatsManager (for signal emission)
+    /// Actual damage application happens in GDScript via EntityManagerBridge (for signal emission)
     fn execute_attack(
         attacker_ulid: &[u8],
         defender_ulid: &[u8],
         event_queue: &Arc<SegQueue<CombatEvent>>,
     ) {
         // Get attacker's attack stat
-        let attack = entity_stats::get_stat(attacker_ulid, StatType::Attack)
+        let attack = ENTITY_STATS
+            .get(attacker_ulid)
+            .map(|stats| stats.get(StatType::Attack))
             .unwrap_or(5.0);
 
         // Get defender's current HP for the event
-        let current_hp = entity_stats::get_stat(defender_ulid, StatType::HP)
+        let current_hp = ENTITY_STATS
+            .get(defender_ulid)
+            .map(|stats| stats.get(StatType::HP))
             .unwrap_or(0.0);
 
         // Calculate what new HP would be (but don't apply yet)
-        // GDScript will apply via StatsManager.take_damage() which triggers signals
+        // GDScript will apply via EntityManagerBridge.take_damage() which triggers signals
         let new_hp = (current_hp - attack).max(0.0);
 
         // Queue damage event with calculated damage
@@ -254,7 +262,7 @@ impl CombatSystem {
             new_hp: current_hp,  // Current HP (GDScript will update)
         });
 
-        // Note: entity_died event will be triggered by StatsManager when HP reaches 0
+        // Note: entity_died event will be triggered by EntityManagerBridge when HP reaches 0
     }
 }
 

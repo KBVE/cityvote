@@ -27,28 +27,23 @@ func _show_language_selector() -> void:
 	if language_selector.has_signal("start_game"):
 		language_selector.start_game.connect(_on_start_game)
 
-	print("Title: Language selector displayed")
-
 ## Handle start game button - transition to main scene
 func _on_start_game(language: int, world_seed_input: int, player_name_input: String) -> void:
 	selected_language = language
 	world_seed = world_seed_input
 	player_name = player_name_input
 
-	print("Title: Starting game - Language: %d, World Seed: %d, Player: %s" % [language, world_seed, player_name])
-
 	# Apply world seed to MapConfig before loading main scene
 	if MapConfig:
 		MapConfig.world_seed = world_seed
-		print("Title: World seed set to %d" % world_seed)
+	else:
+		push_error("Title: MapConfig not available!")
 
 	# TODO: Store player_name (could be saved to a PlayerData singleton)
-	print("Title: Player name set to '%s'" % player_name)
 
 	# Transition to main scene
 	_load_main_scene()
 
 ## Load the main game scene
 func _load_main_scene() -> void:
-	print("Title: Loading main scene...")
 	get_tree().change_scene_to_file("res://view/main/main.tscn")

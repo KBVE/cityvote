@@ -14,7 +14,6 @@ func _ready() -> void:
 		return
 
 	add_child(card_registry)
-	print("CardRegistryBridge initialized successfully")
 
 # === PUBLIC API ===
 

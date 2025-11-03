@@ -26,5 +26,15 @@ void fragment() {
     // Sample the atlas texture at the correct position
     vec4 logo_color = texture(atlas_texture, atlas_uv);
 
+    // Calculate circular mask with proper aspect ratio correction
+    // Since we're displaying a square region from the atlas, use UV directly
+    vec2 centered_uv = UV - vec2(0.5, 0.5);
+    float dist = length(centered_uv);
+    float radius = 0.5;
+    float circle_mask = smoothstep(radius, radius - 0.02, dist);
+
+    // Apply circular mask to alpha
+    logo_color.a *= circle_mask;
+
     COLOR = logo_color;
 }

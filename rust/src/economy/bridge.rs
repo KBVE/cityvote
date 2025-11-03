@@ -16,13 +16,12 @@ impl INode for ResourceLedgerBridge {
     fn init(base: Base<Node>) -> Self {
         // Initialize Rust ledger (starts worker thread)
         resource_ledger::initialize();
-        godot_print!("ResourceLedgerBridge: Initialized Rust resource ledger with worker thread");
 
         Self { base }
     }
 
     fn ready(&mut self) {
-        godot_print!("ResourceLedgerBridge: Ready");
+        // Ready - worker thread started
     }
 
     fn process(&mut self, _delta: f64) {

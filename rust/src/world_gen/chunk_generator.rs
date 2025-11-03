@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 /// Thread-safe cache of noise generators by seed
-static NOISE_CACHE: once_cell::sync::Lazy<RwLock<HashMap<i32, Arc<NoiseGenerator>>>> =
+pub static NOISE_CACHE: once_cell::sync::Lazy<RwLock<HashMap<i32, Arc<NoiseGenerator>>>> =
     once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// Chunk generation request
@@ -239,8 +239,6 @@ impl WorldGenerator {
 
         // Spawn worker thread
         let worker_handle = thread::spawn(move || {
-            godot_print!("WorldGenerator: Async worker thread started");
-
             loop {
                 match request_rx.recv() {
                     Ok(request) => {
@@ -269,14 +267,39 @@ impl WorldGenerator {
                             TILE_HEIGHT,
                         );
 
-                        // Convert to flat format (x, y, tile_index)
+                        // FIX: Populate terrain cache directly here instead of round-tripping through Godot
+                        use crate::npc::terrain_cache;
+                        let cache = terrain_cache::get_terrain_cache();
+
+                        let mut water_count = 0;
+                        let mut land_count = 0;
+
+                        // Convert to flat format (x, y, tile_index) AND populate cache
                         let mut tile_data = Vec::with_capacity(CHUNK_SIZE * CHUNK_SIZE);
                         for (idx, terrain_type) in terrain_data.iter().enumerate() {
-                            let x = (idx % CHUNK_SIZE) as i32;
-                            let y = (idx / CHUNK_SIZE) as i32;
+                            let local_x = (idx % CHUNK_SIZE) as i32;
+                            let local_y = (idx / CHUNK_SIZE) as i32;
                             let tile_index = terrain_type.to_tile_index();
-                            tile_data.push((x, y, tile_index));
+
+                            // Calculate world coordinates
+                            let world_x = request.chunk_x * CHUNK_SIZE as i32 + local_x;
+                            let world_y = request.chunk_y * CHUNK_SIZE as i32 + local_y;
+
+                            // Populate terrain cache directly (DashMap allows concurrent writes)
+                            let cache_terrain = terrain_cache::TerrainType::from_biome_terrain(terrain_type);
+                            cache.set(world_x, world_y, cache_terrain);
+
+                            if cache_terrain == terrain_cache::TerrainType::Water {
+                                water_count += 1;
+                            } else {
+                                land_count += 1;
+                            }
+
+                            tile_data.push((local_x, local_y, tile_index));
                         }
+
+                        godot_print!("WorldGenerator: Generated chunk ({}, {}) - {} tiles ({} water, {} land)",
+                            request.chunk_x, request.chunk_y, tile_data.len(), water_count, land_count);
 
                         // Send result back
                         let result = ChunkResult {
@@ -292,7 +315,7 @@ impl WorldGenerator {
                         }
                     }
                     Err(_) => {
-                        godot_print!("WorldGenerator: Async worker thread shutting down");
+                        // Worker thread shutting down
                         break;
                     }
                 }
@@ -300,7 +323,6 @@ impl WorldGenerator {
         });
 
         self.worker_handle = Some(worker_handle);
-        godot_print!("WorldGenerator: Async worker started successfully");
     }
 
     /// Request async chunk generation

@@ -36,6 +36,14 @@ func _setup_pools():
 	var king_scene = preload("res://nodes/npc/king/king.tscn")
 	register_pool("king", king_scene, 10)
 
+	# Skull Wizard NPC pool
+	var skull_wizard_scene = preload("res://nodes/npc/skullwizard/skullwizard.tscn")
+	register_pool("skullwizard", skull_wizard_scene, 10)
+
+	# Fire Worm NPC pool
+	var fire_worm_scene = preload("res://nodes/npc/fireworm/fireworm.tscn")
+	register_pool("fireworm", fire_worm_scene, 10)
+
 	# Playing card pool (starts with MAX_HAND capacity)
 	# Pool grows dynamically if needed. Deck stores CardData, not instances.
 	var card_scene = preload("res://nodes/cards/pooled_card.tscn")
@@ -49,6 +57,11 @@ func _setup_pools():
 	# Projectile pool (for combat visual effects)
 	var projectile_scene = preload("res://nodes/projectile/projectile.tscn")
 	register_pool("projectile", projectile_scene, 30)  # 30 concurrent projectiles
+
+	# Flag icon pool (for language selector and UI)
+	# Shared between language selector and other UI elements
+	var flag_icon_scene = preload("res://view/hud/i18n/pooled_flag_icon.tscn")
+	register_pool("flag_icon", flag_icon_scene, 20)  # 20 flag icons (covers language selector + extras)
 
 	# Add more pools here as needed
 	# register_pool("city", city_scene, 10)

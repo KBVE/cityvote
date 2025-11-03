@@ -13,7 +13,6 @@ func _ready() -> void:
 	randomize()
 
 	# Card pool is automatically initialized in Cluster._setup_pools()
-	print("CardDeck: Ready! Using atlas-based pooling system")
 
 ## Create a new deck
 ## Returns a deck_id that can be used to reference this deck

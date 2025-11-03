@@ -2,7 +2,10 @@ extends CanvasLayer
 class_name HintPanel
 
 ## Docked auto-hide panel for contextual hints
-## Sits under the CityVote logo in topbar and expands on hover or when showing hints
+## Positions differently based on scene:
+## - Title scene: Above the language selector
+## - Main scene: Under the CityVote logo in topbar
+## Expands on hover or when showing hints
 ##
 ## USAGE:
 ## ```gdscript
@@ -49,41 +52,66 @@ func _ready() -> void:
 	panel_container.mouse_entered.connect(_on_mouse_entered)
 	panel_container.mouse_exited.connect(_on_mouse_exited)
 
-	# Position under CityVote button in topbar
-	_position_under_city_vote()
+	# Position based on which scene we're in
+	_position_panel()
 
-	print("HintPanel: Ready - Docked under CityVote logo")
-
-func _position_under_city_vote() -> void:
+func _position_panel() -> void:
 	# Wait for scene tree to be fully loaded (multiple frames)
 	for i in range(10):
 		await get_tree().process_frame
 
+	# Check if we're in the title scene by looking for LanguageSelector
+	var language_selector = get_tree().root.get_node_or_null("Title/LanguageSelector")
+	if language_selector:
+		# We're in title scene - position above language selector
+		_position_above_language_selector(language_selector)
+		return
+
+	# Otherwise, position under CityVote button in main scene
+	_position_under_city_vote()
+
+func _position_above_language_selector(language_selector: Node) -> void:
+	# Wait for layout to finalize
+	await get_tree().process_frame
+
+	# Get the panel from language selector
+	var selector_panel = language_selector.get_node_or_null("Panel")
+	if not selector_panel:
+		push_warning("HintPanel: Could not find language selector panel")
+		return
+
+	# Position above the language selector panel
+	var panel_global_pos = selector_panel.global_position
+	var panel_size = selector_panel.size
+
+	# Center horizontally above panel
+	panel_container.position = Vector2(
+		panel_global_pos.x + panel_size.x / 2 - panel_container.size.x / 2,
+		panel_global_pos.y - expanded_height - 10  # 10px gap above
+	)
+
+	# Match panel width for visual coherence (but slightly narrower)
+	panel_container.custom_minimum_size.x = min(panel_size.x * 0.8, 400)
+
+	print("HintPanel: Positioned above language selector at ", panel_container.position)
+
+func _position_under_city_vote() -> void:
 	# Use Cache to get Main scene reference (faster than tree search)
 	var main_scene = Cache.get_main_scene()
 	if not main_scene:
-		# Cache not set yet, wait and retry
-		push_warning("HintPanel: Main scene not in Cache yet, will retry")
-		await get_tree().create_timer(0.5).timeout
-		_position_under_city_vote()
+		# Cache not set yet, silently return (we're probably in title scene)
 		return
 
 	# Get the topbar from Cache (no expensive node path lookup!)
 	var topbar = Cache.get_ui_reference("topbar")
 	if not topbar:
-		push_warning("HintPanel: Topbar not in Cache yet, will retry")
-		# Retry after a delay
-		await get_tree().create_timer(0.5).timeout
-		_position_under_city_vote()
+		# Topbar not available yet, silently return
 		return
 
 	# Get the CityVote button
 	var city_vote_button = topbar.get_node_or_null("MarginContainer/HBoxContainer/CenterSection/CityVoteButton")
 	if not city_vote_button:
-		push_warning("HintPanel: Could not find CityVote button, will retry")
-		# Retry after a delay
-		await get_tree().create_timer(0.5).timeout
-		_position_under_city_vote()
+		# CityVote button not found, silently return
 		return
 
 	# Wait one more frame for layout to finalize
@@ -93,10 +121,10 @@ func _position_under_city_vote() -> void:
 	var button_global_pos = city_vote_button.global_position
 	var button_size = city_vote_button.size
 
-	# Center horizontally under button, position at bottom edge
+	# Center horizontally under button, position slightly overlapping for tighter docking
 	panel_container.position = Vector2(
 		button_global_pos.x + button_size.x / 2 - panel_container.size.x / 2,
-		button_global_pos.y + button_size.y
+		button_global_pos.y + button_size.y - 8  # 8px overlap for tighter visual connection
 	)
 
 	# Match button width for visual coherence

@@ -51,12 +51,16 @@ var _dirty: bool = true  # Needs redraw
 var _target_health: float = 100.0  # For smoothing
 var _is_smoothing: bool = false
 
+# Combined atlas (cached globally across all health bars)
+static var _combined_atlas: Texture2D = null
+
 # Node references (cached in _ready)
 @onready var border_panel: PanelContainer = $BorderPanel
 @onready var health_container: Control = $BorderPanel/HealthContainer
 @onready var background: Panel = $BorderPanel/HealthContainer/Background
 @onready var health_fill: Panel = $BorderPanel/HealthContainer/HealthFill
 @onready var health_fill_style: StyleBoxFlat = null  # Cached style for color updates
+@onready var flag_icon: TextureRect = $FlagIcon
 
 func _ready() -> void:
 	# Disable all processing by default - only enable when needed
@@ -145,9 +149,16 @@ func set_max_health(new_max_health: float) -> void:
 
 ## Set both health values at once (more efficient)
 func set_health_values(current_hp: float, max_hp: float) -> void:
+	var old_health = current_health
 	max_health = max_hp
 	current_health = clampf(current_hp, 0.0, max_health)
 	_target_health = current_health
+
+	# Show floating number if health changed
+	var health_diff = current_health - old_health
+	if absf(health_diff) > 0.1:  # Ignore tiny changes
+		_show_floating_number(health_diff)
+
 	_dirty = true
 	_update_visual()
 
@@ -258,6 +269,10 @@ func reset_for_pool() -> void:
 	_target_health = 100.0
 	_is_smoothing = false
 	_dirty = true
+	# Reset flag
+	if flag_icon:
+		flag_icon.texture = null
+		flag_icon.visible = false
 
 ## Configure bar appearance
 func set_bar_size(width: float, height: float) -> void:
@@ -303,3 +318,67 @@ func set_auto_hide(enabled: bool) -> void:
 	auto_hide_when_full = enabled
 	_dirty = true
 	_update_visual()
+
+## Show floating damage/healing number
+func _show_floating_number(amount: float) -> void:
+	# Create label
+	var label = Label.new()
+
+	# Format text with sign
+	if amount > 0:
+		label.text = "+%d" % int(amount)
+		label.modulate = Color(0.2, 1.0, 0.2)  # Bright green for healing
+	else:
+		label.text = "%d" % int(amount)  # Already has minus sign
+		label.modulate = Color(1.0, 0.2, 0.2)  # Bright red for damage
+
+	# Style the label
+	label.add_theme_font_size_override("font_size", 14)
+	# Add outline for better visibility
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 2)
+
+	# Add to health bar (will float above it)
+	add_child(label)
+	label.position = Vector2(-10, -15)  # Slightly above the bar
+
+	# Animate: move up and fade out
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 30, 1.2)
+	tween.tween_property(label, "modulate:a", 0.0, 1.2)
+	tween.finished.connect(func(): label.queue_free())
+
+## Set the flag icon for this health bar
+## flag_name: Name of the flag (e.g., "bavaria", "british", "china")
+## If empty or null, hides the flag
+func set_flag(flag_name: String) -> void:
+	if not flag_icon:
+		push_warning("HealthBar: flag_icon node not found!")
+		return
+
+	# Hide flag if no name provided
+	if flag_name.is_empty():
+		flag_icon.visible = false
+		flag_icon.texture = null
+		return
+
+	# Load combined atlas on first use (cached globally)
+	if _combined_atlas == null:
+		_combined_atlas = load(I18n.COMBINED_ATLAS_PATH)
+		if not _combined_atlas:
+			push_error("HealthBar: Failed to load combined atlas from %s" % I18n.COMBINED_ATLAS_PATH)
+			return
+
+	# Get flag frame from I18n system
+	var flag_frame = I18n.get_flag_frame(flag_name)
+
+	# Create AtlasTexture
+	var atlas_texture = AtlasTexture.new()
+	atlas_texture.atlas = _combined_atlas
+	atlas_texture.region = flag_frame
+
+	# Apply texture to flag icon
+	flag_icon.texture = atlas_texture
+	flag_icon.visible = true
+	flag_icon.modulate = Color.WHITE  # Ensure it's not transparent

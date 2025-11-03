@@ -37,8 +37,6 @@ func _ready() -> void:
 	add_child(timer)
 	timer.timeout.connect(_on_timer_timeout)
 
-	print("GameTimer: Timer created but paused. Waiting for game to start...")
-
 func _on_timer_timeout() -> void:
 	time_left -= 1
 
@@ -85,21 +83,18 @@ func pause() -> void:
 	if timer and timer.is_stopped() == false:
 		timer.stop()
 		is_paused = true
-		print("GameTimer: Timer paused at %ds" % time_left)
 
 ## Resume the timer
 func resume() -> void:
 	if timer and is_paused:
 		timer.start()
 		is_paused = false
-		print("GameTimer: Timer resumed at %ds" % time_left)
 
 ## Start the timer (used when game begins)
 func start_timer() -> void:
 	if timer:
 		timer.start()
 		is_paused = false
-		print("GameTimer: Timer started!")
 
 ## Check if timer is paused
 func is_timer_paused() -> bool:

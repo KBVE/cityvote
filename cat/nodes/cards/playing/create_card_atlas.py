@@ -26,9 +26,12 @@ SUITS = ['clubs', 'diamonds', 'hearts', 'spades']
 
 # Custom cards (row 4)
 CUSTOM_CARDS = [
-    ('vikings', 53),  # Position 0 in row 4
-    ('dino', 54),     # Position 1 in row 4
-    ('baron', 55),    # Position 2 in row 4
+    ('vikings', 52),      # Position 0 in row 4 (card_id = 52)
+    ('dino', 53),         # Position 1 in row 4 (card_id = 53)
+    ('baron', 54),        # Position 2 in row 4 (card_id = 54)
+    ('skull-wizard', 55), # Position 3 in row 4 (card_id = 55)
+    ('warrior', 56),      # Position 4 in row 4 (card_id = 56)
+    ('fireworm', 57),     # Position 5 in row 4 (card_id = 57)
 ]
 
 # Paths
@@ -212,7 +215,7 @@ def create_card_atlas():
     print("  Row 1: Diamonds   (1-13)")
     print("  Row 2: Hearts     (1-13)")
     print("  Row 3: Spades     (1-13)")
-    print("  Row 4: Custom     (vikings-53, dino-54, baron-55)")
+    print("  Row 4: Custom     (vikings-52, dino-53, baron-54, skull-wizard-55, warrior-56, fireworm-57)")
     print()
     print("UV calculation:")
     print("  Standard cards (0-51):")
@@ -220,9 +223,12 @@ def create_card_atlas():
     print("    col = card_id % 13")
     print("    row = card_id / 13")
     print("  Custom cards:")
-    print("    vikings-53: col=0, row=4")
-    print("    dino-54:    col=1, row=4")
-    print("    baron-55:   col=2, row=4")
+    print("    vikings-52:      col=0, row=4")
+    print("    dino-53:         col=1, row=4")
+    print("    baron-54:        col=2, row=4")
+    print("    skull-wizard-55: col=3, row=4")
+    print("    warrior-56:      col=4, row=4")
+    print("    fireworm-57:     col=5, row=4")
     print()
     print("  uv_x = col / 13.0")
     print("  uv_y = row / 5.0")

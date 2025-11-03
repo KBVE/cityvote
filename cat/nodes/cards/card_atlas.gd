@@ -33,11 +33,14 @@ const QUEEN = 12
 const KING = 13
 
 # Custom card IDs (start at 52)
-const CARD_VIKINGS = 52  # Custom row, position 0
-const CARD_DINO = 53     # Custom row, position 1
-const CARD_BARON = 54    # Custom row, position 2
-const CUSTOM_CARD_COUNT = 3  # Total number of custom cards
-const TOTAL_CARD_COUNT = STANDARD_CARD_COUNT + CUSTOM_CARD_COUNT  # 55
+const CARD_VIKINGS = 52      # Custom row, position 0
+const CARD_DINO = 53         # Custom row, position 1
+const CARD_BARON = 54        # Custom row, position 2
+const CARD_SKULL_WIZARD = 55 # Custom row, position 3
+const CARD_WARRIOR = 56      # Custom row, position 4
+const CARD_FIREWORM = 57     # Custom row, position 5
+const CUSTOM_CARD_COUNT = 6  # Total number of custom cards
+const TOTAL_CARD_COUNT = STANDARD_CARD_COUNT + CUSTOM_CARD_COUNT  # 58
 
 ## Convert suit and value to card_id for standard cards
 ## suit: 0-3 (CLUBS, DIAMONDS, HEARTS, SPADES)
@@ -104,6 +107,12 @@ static func get_card_name_from_id(card_id: int) -> String:
 		return I18n.translate("card.custom.dino")
 	elif card_id == CARD_BARON:
 		return I18n.translate("card.custom.baron")
+	elif card_id == CARD_SKULL_WIZARD:
+		return I18n.translate("card.custom.skull_wizard")
+	elif card_id == CARD_WARRIOR:
+		return I18n.translate("card.custom.warrior")
+	elif card_id == CARD_FIREWORM:
+		return I18n.translate("card.custom.fireworm")
 	elif card_id >= 0 and card_id < STANDARD_CARD_COUNT:
 		var suit = card_id / CARDS_PER_SUIT
 		var value = (card_id % CARDS_PER_SUIT) + 1

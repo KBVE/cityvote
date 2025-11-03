@@ -8,7 +8,7 @@ extends Node
 # Atlas configuration
 const ATLAS_COLS: int = 13  # Cards per row (Ace through King)
 const ATLAS_ROWS: int = 5   # Rows (4 suits + custom cards)
-const TOTAL_CARDS: int = 55 # 52 standard + 3 custom
+const TOTAL_CARDS: int = 58 # 52 standard + 6 custom (vikings, dino, baron, skull-wizard, warrior, fireworm)
 
 # Mesh cache - populated at _ready()
 var card_meshes: Dictionary = {}  # card_id -> QuadMesh
@@ -23,9 +23,11 @@ func _ready() -> void:
 		push_error("CardAtlasMeshes: Failed to load card_atlas.png!")
 		return
 
-	# Pre-generate all 54 card meshes
+	# Pre-generate all 58 card meshes
 	_generate_all_meshes()
-	print("CardAtlasMeshes: Generated %d card meshes" % card_meshes.size())
+
+	if card_meshes.size() != TOTAL_CARDS:
+		push_error("CardAtlasMeshes: Expected %d meshes but generated %d" % [TOTAL_CARDS, card_meshes.size()])
 
 ## Generate all card meshes with baked UV coordinates
 func _generate_all_meshes() -> void:
@@ -84,13 +86,6 @@ func _create_mesh_for_card(card_id: int) -> ArrayMesh:
 		Vector2(u0, v1),  # Bottom-left
 		Vector2(u1, v1)   # Bottom-right
 	])
-
-	# Debug first card
-	if card_id == 0:
-		print("CardAtlasMeshes: Card 0 (Ace of Clubs) UVs (with %fpx inset):" % inset_px)
-		print("  Original: u0=%f, v0=%f, u1=%f, v1=%f" % [u0 - du, v0 - dv, u1 + du, v1 + dv])
-		print("  Inset:    u0=%f, v0=%f, u1=%f, v1=%f" % [u0, v0, u1, v1])
-		print("  UV corners (Y-flipped): ", uvs)
 
 	# Indices (two triangles forming a quad)
 	var indices = PackedInt32Array([

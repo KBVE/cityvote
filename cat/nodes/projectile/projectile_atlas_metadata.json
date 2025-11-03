@@ -1,23 +1,61 @@
 {
   "tile_size": 32,
-  "atlas_width": 64,
-  "atlas_height": 32,
+  "atlas_width": 416,
+  "atlas_height": 128,
+  "rows": 4,
+  "max_frames": 13,
   "projectiles": [
     {
-      "index": 0,
       "name": "spear",
-      "x": 0,
-      "y": 0,
-      "width": 32,
-      "height": 32
+      "row": 0,
+      "frames": 1,
+      "tile_size": 32,
+      "y": 0
     },
     {
-      "index": 1,
       "name": "glaive",
-      "x": 32,
-      "y": 0,
-      "width": 32,
-      "height": 32
+      "row": 1,
+      "frames": 1,
+      "tile_size": 32,
+      "y": 32
+    },
+    {
+      "name": "shadowbolt",
+      "row": 2,
+      "frames": 11,
+      "tile_size": 32,
+      "y": 64,
+      "animations": {
+        "moving": {
+          "start": 0,
+          "end": 3,
+          "count": 4
+        },
+        "explode": {
+          "start": 4,
+          "end": 10,
+          "count": 7
+        }
+      }
+    },
+    {
+      "name": "firebolt",
+      "row": 3,
+      "frames": 13,
+      "tile_size": 32,
+      "y": 96,
+      "animations": {
+        "moving": {
+          "start": 0,
+          "end": 5,
+          "count": 6
+        },
+        "explode": {
+          "start": 6,
+          "end": 12,
+          "count": 7
+        }
+      }
     }
   ]
 }

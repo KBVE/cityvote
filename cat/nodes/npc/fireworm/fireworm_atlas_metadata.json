@@ -1,0 +1,50 @@
+{
+  "frame_width": 90,
+  "frame_height": 90,
+  "atlas_width": 1440,
+  "atlas_height": 450,
+  "rows": 5,
+  "max_frames": 16,
+  "animations": [
+    {
+      "name": "idle",
+      "row": 0,
+      "frames": 9,
+      "fps": 8,
+      "frame_start": 0,
+      "frame_end": 8
+    },
+    {
+      "name": "walk",
+      "row": 1,
+      "frames": 9,
+      "fps": 10,
+      "frame_start": 0,
+      "frame_end": 8
+    },
+    {
+      "name": "attack",
+      "row": 2,
+      "frames": 16,
+      "fps": 12,
+      "frame_start": 0,
+      "frame_end": 15
+    },
+    {
+      "name": "take_hit",
+      "row": 3,
+      "frames": 3,
+      "fps": 8,
+      "frame_start": 0,
+      "frame_end": 2
+    },
+    {
+      "name": "death",
+      "row": 4,
+      "frames": 8,
+      "fps": 10,
+      "frame_start": 0,
+      "frame_end": 7
+    }
+  ]
+}

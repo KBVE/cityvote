@@ -119,7 +119,6 @@ func _evict_old_chunks():
 	for i in range(chunks_to_evict):
 		var chunk_info = chunks_by_age[i]
 		unload_chunk(chunk_info.coords)
-		print("ChunkPool: Evicted chunk %s (age: %d ms)" % [chunk_info.coords, Time.get_ticks_msec() - chunk_info.time])
 
 ## Get chunks that should be unloaded (outside of render distance)
 func get_chunks_to_unload(center_chunk: Vector2i, render_distance: int) -> Array[Vector2i]:

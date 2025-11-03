@@ -37,7 +37,7 @@ pub struct CardData {
     pub ulid: Vec<u8>,           // 16-byte ULID
     pub suit: u8,                // 0-3 for standard suits, 4 for custom
     pub value: u8,               // 1-13 for standard, custom IDs for special cards
-    pub card_id: i32,            // Atlas card ID (0-53)
+    pub card_id: i32,            // Atlas card ID (0-58)
     pub is_custom: bool,         // Is this a custom card?
     pub state: CardState,        // Current state
     pub position: Option<(i32, i32)>, // Board position if placed (x, y)
@@ -66,7 +66,7 @@ impl CardData {
 
     /// Create a new custom card
     pub fn new_custom(ulid: Vec<u8>, card_id: i32) -> Self {
-        assert!(card_id >= 52, "Custom card_id must be >= 52");
+        assert!(card_id >= 52, "Custom card_id {} must be >= 52", card_id);
 
         Self {
             ulid,
@@ -102,6 +102,10 @@ impl CardData {
             match self.card_id {
                 52 => "Vikings Special".to_string(),
                 53 => "Dino Special".to_string(),
+                54 => "Baron Special".to_string(),
+                55 => "Skull Wizard Special".to_string(),
+                56 => "Warrior Special".to_string(),
+                57 => "Fireworm Special".to_string(),
                 _ => format!("Custom Card {}", self.card_id),
             }
         } else {
@@ -174,6 +178,10 @@ impl CardManager {
             match value {
                 52 => GString::from("Vikings Special"),
                 53 => GString::from("Dino Special"),
+                54 => GString::from("Baron Special"),
+                55 => GString::from("Skull Wizard Special"),
+                56 => GString::from("Warrior Special"),
+                57 => GString::from("Fireworm Special"),
                 _ => GString::from(format!("Custom Card {}", value)),
             }
         } else {

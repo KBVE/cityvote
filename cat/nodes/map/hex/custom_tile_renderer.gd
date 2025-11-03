@@ -76,14 +76,10 @@ func _ready() -> void:
 	# Create quad mesh once and cache it
 	cached_quad_mesh = _create_quad_mesh(TILE_WIDTH, TILE_HEIGHT)
 
-	print("CustomTileRenderer: Initialized with %d tiles" % atlas_metadata["total_tiles"])
-	print("CustomTileRenderer: Quad mesh created with size %dx%d" % [TILE_WIDTH, TILE_HEIGHT])
-	print("CustomTileRenderer: Atlas texture size: %v" % atlas_texture.get_size())
-	if cached_quad_mesh:
-		print("CustomTileRenderer: Mesh has %d surfaces" % cached_quad_mesh.get_surface_count())
-		if cached_quad_mesh.get_surface_count() > 0:
-			var arrays = cached_quad_mesh.surface_get_arrays(0)
-			print("CustomTileRenderer: Mesh vertex count: %d" % arrays[Mesh.ARRAY_VERTEX].size())
+	if not cached_quad_mesh:
+		push_error("CustomTileRenderer: Failed to create quad mesh!")
+	elif not atlas_texture:
+		push_error("CustomTileRenderer: Atlas texture not loaded!")
 
 ## Render a chunk by creating multiple MultiMeshInstance2D nodes (one per row)
 ## This ensures perfect z-ordering across chunk boundaries
@@ -104,7 +100,6 @@ func render_chunk(chunk_index: int, tile_data: Array) -> void:
 
 	if valid_tiles.size() == 0:
 		# Empty chunk, don't render
-		print("CustomTileRenderer: Chunk %d is empty (all %d tiles have tile_index -1)" % [chunk_index, skipped_count])
 		return
 
 	# Sort tiles by Y coordinate (ASCENDING) for proper grouping
@@ -185,8 +180,6 @@ func render_chunk(chunk_index: int, tile_data: Array) -> void:
 
 	# Store all mesh instances for this chunk
 	chunk_meshes[chunk_index] = mesh_instances
-
-	print("CustomTileRenderer: Rendered chunk %d with %d tiles in %d rows (from %d total, skipped %d)" % [chunk_index, valid_tiles.size(), mesh_instances.size(), tile_data.size(), skipped_count])
 
 ## Unrender a chunk by removing all its MultiMeshInstance2D nodes
 func unrender_chunk(chunk_index: int) -> void:

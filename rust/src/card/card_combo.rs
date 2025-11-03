@@ -684,8 +684,6 @@ impl CardComboDetector {
 
         // Spawn worker thread
         let worker_handle: thread::JoinHandle<()> = thread::spawn(move || {
-            godot_print!("CardComboDetector: Worker thread started");
-
             loop {
                 match request_rx.recv() {
                     Ok(request) => {
@@ -717,7 +715,7 @@ impl CardComboDetector {
                         }
                     }
                     Err(_) => {
-                        godot_print!("CardComboDetector: Worker thread shutting down");
+                        // Worker thread shutting down
                         break;
                     }
                 }
@@ -1037,6 +1035,10 @@ impl CardComboDetector {
             let joker_name = match card_id {
                 52 => "VIKING".to_string(),
                 53 => "JEZZA".to_string(),
+                54 => "BARON".to_string(),
+                55 => "SKULL_WIZARD".to_string(),
+                56 => "WARRIOR".to_string(),
+                57 => "FIREWORM".to_string(),
                 _ => format!("CUSTOM_{}", card_id),
             };
 

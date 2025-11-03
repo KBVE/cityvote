@@ -21,12 +21,11 @@ var default_pan_smooth: bool = true
 var pan_tween: Tween = null
 
 func _ready():
-	print("CameraManager: Initialized")
+	pass  # Initialized successfully
 
 ## Set the camera reference (called by main scene)
 func set_camera(cam: Camera2D) -> void:
 	camera = cam
-	print("CameraManager: Camera reference set")
 
 ## Pan camera to a world position
 ## @param target_pos: World position to pan to
@@ -52,8 +51,6 @@ func pan_to_position(target_pos: Vector2, duration: float = -1.0, smooth: bool =
 
 	# Animate position
 	pan_tween.tween_property(camera, "position", target_pos, duration)
-
-	print("CameraManager: Panning to %v over %.2fs" % [target_pos, duration])
 
 	# Emit signal for other systems to react
 	pan_requested.emit(target_pos, duration, smooth)
@@ -103,8 +100,6 @@ func set_zoom(target_zoom: Vector2, duration: float = 0.5) -> void:
 	# Animate zoom
 	pan_tween.tween_property(camera, "zoom", target_zoom, duration)
 
-	print("CameraManager: Zooming to %v over %.2fs" % [target_zoom, duration])
-
 	zoom_requested.emit(target_zoom, duration)
 
 ## Instant camera position (no animation)
@@ -114,4 +109,3 @@ func set_position_instant(target_pos: Vector2) -> void:
 		return
 
 	camera.position = target_pos
-	print("CameraManager: Instant position set to %v" % target_pos)

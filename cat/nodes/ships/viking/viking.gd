@@ -1,8 +1,14 @@
-extends Ship
+extends NPC
 
-# Viking ship - extends the Ship base class
+# Viking ship - water-based NPC with wave shader effects
 
 func _ready():
+	# Configure terrain type for water pathfinding
+	terrain_type = TerrainType.WATER
+
+	# Set movement speed (ships are faster than ground NPCs)
+	move_speed = 3.0
+
 	# Set pool name for proper cleanup
 	pool_name = "viking"
 
@@ -33,25 +39,8 @@ func _ready():
 	# Scale down the sprite to fit better on hex tile (64x64 sprite -> ~38x38 visual size)
 	sprite.scale = Vector2(0.6, 0.6)
 
-	# Still load sprites array for compatibility (though not used for rendering)
-	ship_sprites = [
-		preload("res://nodes/ships/viking/ship1.png"),   # 0 - North
-		preload("res://nodes/ships/viking/ship2.png"),   # 1 - NNW
-		preload("res://nodes/ships/viking/ship3.png"),   # 2 - NW
-		preload("res://nodes/ships/viking/ship4.png"),   # 3 - WNW
-		preload("res://nodes/ships/viking/ship5.png"),   # 4 - West
-		preload("res://nodes/ships/viking/ship6.png"),   # 5 - WSW
-		preload("res://nodes/ships/viking/ship7.png"),   # 6 - SW
-		preload("res://nodes/ships/viking/ship8.png"),   # 7 - SSW
-		preload("res://nodes/ships/viking/ship9.png"),   # 8 - South
-		preload("res://nodes/ships/viking/ship10.png"),  # 9 - SSE
-		preload("res://nodes/ships/viking/ship11.png"),  # 10 - SE
-		preload("res://nodes/ships/viking/ship12.png"),  # 11 - ESE
-		preload("res://nodes/ships/viking/ship13.png"),  # 12 - East
-		preload("res://nodes/ships/viking/ship14.png"),  # 13 - ENE
-		preload("res://nodes/ships/viking/ship15.png"),  # 14 - NE
-		preload("res://nodes/ships/viking/ship16.png")   # 15 - NNE
-	]
+	# Note: Viking uses region_rect updates (shader atlas approach), not individual sprite textures
+	# No need to load ship_sprites array - saves memory by avoiding 16 texture preloads
 
 	super._ready()
 

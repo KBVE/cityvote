@@ -10,11 +10,19 @@ shader_parameter/logo_index = 0
 shader_parameter/total_logos = 2
 shader_parameter/atlas_texture = ExtResource("2")
 
-[node name="SocialLogo" type="Node2D"]
+[node name="SocialLogo" type="Control"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
 script = ExtResource("1")
 
-[node name="Sprite2D" type="Sprite2D" parent="."]
+[node name="TextureRect" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 material = SubResource("ShaderMaterial_social_logo")
 texture = ExtResource("2")
-region_enabled = true
-region_rect = Rect2(0, 0, 32, 32)
+expand_mode = 1
+stretch_mode = 5

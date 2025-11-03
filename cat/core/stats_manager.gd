@@ -38,11 +38,11 @@ enum STAT {
 }
 
 # Rust bridge
-var rust_bridge: StatsManagerBridge
+var rust_bridge: EntityManagerBridge
 
 func _ready() -> void:
 	# Create Rust bridge
-	rust_bridge = StatsManagerBridge.new()
+	rust_bridge = EntityManagerBridge.new()
 	add_child(rust_bridge)
 	rust_bridge.name = "RustBridge"
 
@@ -51,8 +51,6 @@ func _ready() -> void:
 	rust_bridge.entity_damaged.connect(_on_rust_entity_damaged)
 	rust_bridge.entity_healed.connect(_on_rust_entity_healed)
 	rust_bridge.entity_died.connect(_on_rust_entity_died)
-
-	print("StatsManager: Ready with Rust-backed storage")
 
 func _on_rust_stat_changed(ulid: PackedByteArray, stat_type: int, new_value: float) -> void:
 	stat_changed.emit(ulid, stat_type, new_value)
@@ -79,8 +77,15 @@ func register_entity(entity: Node, entity_type: String) -> void:
 		push_error("StatsManager: Entity must have a ULID before registering stats")
 		return
 
-	# Register with Rust
-	rust_bridge.register_entity(ulid, entity_type)
+	# Get entity position (in tile coordinates)
+	var tile_pos = Vector2i(0, 0)
+	if "position" in entity:
+		var tile_map = get_node_or_null("/root/Main/HexMap")
+		if tile_map:
+			tile_pos = tile_map.local_to_map(entity.position)
+
+	# Register with Rust (requires position for ENTITY_DATA)
+	rust_bridge.register_entity(ulid, entity_type, tile_pos.x, tile_pos.y)
 
 ## Unregister entity
 func unregister_entity(ulid: PackedByteArray) -> bool:

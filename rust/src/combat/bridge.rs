@@ -19,13 +19,12 @@ impl INode for CombatBridge {
     fn init(base: Base<Node>) -> Self {
         // Initialize combat system
         combat_system::initialize();
-        godot_print!("CombatBridge: Initialized combat system");
 
         Self { base }
     }
 
     fn ready(&mut self) {
-        godot_print!("CombatBridge: Ready");
+        // Combat system ready
     }
 
     fn process(&mut self, _delta: f64) {
