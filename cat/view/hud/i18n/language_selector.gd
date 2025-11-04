@@ -402,9 +402,12 @@ func _get_font_for_language(lang: int) -> Font:
 
 ## Setup social logos with click handling
 func _setup_social_logos() -> void:
-	if discord_logo:
+	if discord_logo and is_instance_valid(discord_logo):
 		# Set logo type
-		discord_logo.set_logo(SocialLogo.LogoType.DISCORD)
+		if discord_logo.has_method("set_logo"):
+			discord_logo.set_logo(SocialLogo.LogoType.DISCORD)
+		else:
+			push_error("LanguageSelector: discord_logo missing set_logo method!")
 
 		# Add clickable area
 		var discord_button = TextureButton.new()
@@ -414,10 +417,15 @@ func _setup_social_logos() -> void:
 		discord_button.mouse_entered.connect(_on_social_logo_hover.bind(discord_logo, true))
 		discord_button.mouse_exited.connect(_on_social_logo_hover.bind(discord_logo, false))
 		discord_logo.add_child(discord_button)
+	else:
+		push_warning("LanguageSelector: discord_logo not found or invalid")
 
-	if twitch_logo:
+	if twitch_logo and is_instance_valid(twitch_logo):
 		# Set logo type
-		twitch_logo.set_logo(SocialLogo.LogoType.TWITCH)
+		if twitch_logo.has_method("set_logo"):
+			twitch_logo.set_logo(SocialLogo.LogoType.TWITCH)
+		else:
+			push_error("LanguageSelector: twitch_logo missing set_logo method!")
 
 		# Add clickable area
 		var twitch_button = TextureButton.new()
@@ -427,9 +435,14 @@ func _setup_social_logos() -> void:
 		twitch_button.mouse_entered.connect(_on_social_logo_hover.bind(twitch_logo, true))
 		twitch_button.mouse_exited.connect(_on_social_logo_hover.bind(twitch_logo, false))
 		twitch_logo.add_child(twitch_button)
+	else:
+		push_warning("LanguageSelector: twitch_logo not found or invalid")
 
 ## Handle social logo hover
 func _on_social_logo_hover(logo: SocialLogo, is_hovered: bool) -> void:
+	if not logo or not is_instance_valid(logo):
+		return
+
 	if is_hovered:
 		logo.modulate = Color(1.2, 1.2, 1.0)  # Slight golden tint
 		logo.scale = Vector2(1.15, 1.15)

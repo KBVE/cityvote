@@ -52,6 +52,41 @@ static PATH_RESULTS: Lazy<Arc<SegQueue<PathfindingResult>>> = Lazy::new(|| {
     Arc::new(SegQueue::new())
 });
 
+// Chunk loading queue (to avoid blocking main thread during chunk loads)
+#[derive(Debug, Clone)]
+pub struct ChunkLoadRequest {
+    pub chunk_coords: (i32, i32),
+    pub tiles: Vec<(i32, i32, TerrainType)>,
+}
+
+static CHUNK_LOAD_QUEUE: Lazy<Arc<SegQueue<ChunkLoadRequest>>> = Lazy::new(|| {
+    Arc::new(SegQueue::new())
+});
+
+// Random destination request/result queues (to avoid blocking main thread)
+#[derive(Debug, Clone)]
+pub struct RandomDestRequest {
+    pub entity_ulid: Vec<u8>,
+    pub terrain_type: TerrainType,
+    pub start: HexCoord,
+    pub min_distance: i32,
+    pub max_distance: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RandomDestResult {
+    pub entity_ulid: Vec<u8>,
+    pub destination: Option<HexCoord>,
+}
+
+static RANDOM_DEST_REQUESTS: Lazy<Arc<SegQueue<RandomDestRequest>>> = Lazy::new(|| {
+    Arc::new(SegQueue::new())
+});
+
+static RANDOM_DEST_RESULTS: Lazy<Arc<SegQueue<RandomDestResult>>> = Lazy::new(|| {
+    Arc::new(SegQueue::new())
+});
+
 // Worker thread management
 static WORKER_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static WORKERS_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -447,12 +482,42 @@ fn worker_thread() {
             break;
         }
 
-        // Process pathfinding requests
+        let mut did_work = false;
+
+        // Process pathfinding requests (highest priority)
         if let Some(request) = PATH_REQUESTS.pop() {
             let result = find_path_unified(&request);
             PATH_RESULTS.push(result);
-        } else {
-            // No requests, sleep briefly
+            did_work = true;
+        }
+
+        // Process random destination requests (medium priority)
+        if let Some(request) = RANDOM_DEST_REQUESTS.pop() {
+            let destination = find_random_destination(
+                request.start,
+                request.terrain_type,
+                &request.entity_ulid,
+                request.min_distance,
+                request.max_distance,
+            );
+            RANDOM_DEST_RESULTS.push(RandomDestResult {
+                entity_ulid: request.entity_ulid,
+                destination,
+            });
+            did_work = true;
+        }
+
+        // Process chunk loads (lowest priority, but prevents blocking main thread)
+        if let Some(chunk_request) = CHUNK_LOAD_QUEUE.pop() {
+            let cache = terrain_cache::get_terrain_cache();
+            for (x, y, terrain_type) in chunk_request.tiles {
+                cache.set(x, y, terrain_type);
+            }
+            did_work = true;
+        }
+
+        if !did_work {
+            // No work to do, sleep briefly
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
@@ -497,21 +562,23 @@ fn to_entity_terrain_type(cache_type: TerrainType) -> crate::npc::entity::Terrai
     }
 }
 
-/// Register entity position
+/// Register entity position (now uses worker thread for writes)
 pub fn update_entity_position(ulid: Vec<u8>, position: HexCoord, terrain_type: TerrainType) {
-    if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid) {
-        entity.position = position;
+    // Check if entity exists (lock-free read)
+    if super::entity_worker::entity_exists(&ulid) {
+        // Queue position update (lock-free write to SegQueue)
+        super::entity_worker::queue_update_position(ulid, position);
     } else {
-        // Convert terrain_cache::TerrainType to entity::TerrainType
+        // Create new entity and queue insertion
         let entity_terrain_type = to_entity_terrain_type(terrain_type);
         let entity = EntityData::new(ulid.clone(), position, entity_terrain_type, "unknown".to_string());
-        ENTITY_DATA.insert(ulid, entity);
+        super::entity_worker::queue_insert_entity(ulid, entity);
     }
 }
 
-/// Remove entity from tracking
+/// Remove entity from tracking (now uses worker thread for writes)
 pub fn remove_entity(ulid: &[u8]) {
-    ENTITY_DATA.remove(ulid);
+    super::entity_worker::queue_remove_entity(ulid.to_vec());
 }
 
 /// Request pathfinding
@@ -552,12 +619,21 @@ impl INode for UnifiedPathfindingBridge {
 
     fn ready(&mut self) {
         godot_print!("UnifiedPathfindingBridge ready!");
-        self.base_mut().set_process(true);
+        // DON'T set_process - GDScript will poll for results instead
     }
+}
 
-    fn process(&mut self, _delta: f64) {
-        // Poll for pathfinding results every frame
-        while let Some(result) = get_result() {
+#[godot_api]
+impl UnifiedPathfindingBridge {
+    /// Poll for a single pathfinding result (non-blocking)
+    /// Returns null if no results available, otherwise returns Dictionary with:
+    /// - entity_ulid: PackedByteArray
+    /// - path: Array[Dictionary] with {q, r} coords
+    /// - success: bool
+    /// - cost: float
+    #[func]
+    fn poll_result(&mut self) -> Variant {
+        if let Some(result) = get_result() {
             // Convert path to GDScript array
             let mut path_array = Array::new();
             for (q, r) in result.path {
@@ -570,25 +646,18 @@ impl INode for UnifiedPathfindingBridge {
             // Convert ULID to PackedByteArray
             let entity_ulid = PackedByteArray::from(&result.entity_ulid[..]);
 
-            // Emit signal with result
-            self.base_mut().emit_signal(
-                "path_found",
-                &[
-                    entity_ulid.to_variant(),
-                    path_array.to_variant(),
-                    result.success.to_variant(),
-                    result.cost.to_variant(),
-                ]
-            );
+            // Create result dictionary
+            let mut result_dict = Dictionary::new();
+            result_dict.set("entity_ulid", entity_ulid);
+            result_dict.set("path", path_array);
+            result_dict.set("success", result.success);
+            result_dict.set("cost", result.cost);
+
+            result_dict.to_variant()
+        } else {
+            Variant::nil()
         }
     }
-}
-
-#[godot_api]
-impl UnifiedPathfindingBridge {
-    /// Signal emitted when path is found
-    #[signal]
-    fn path_found(entity_ulid: PackedByteArray, path: Array<Dictionary>, success: bool, cost: f32);
 
     /// Update entity position
     #[func]
@@ -649,37 +718,57 @@ impl UnifiedPathfindingBridge {
         stop_workers();
     }
 
-    /// Find random destination
+    /// Request random destination (ASYNC - queues request for worker thread)
     #[func]
-    fn find_random_destination(
-        &self,
+    fn request_random_destination(
+        &mut self,
         entity_ulid: PackedByteArray,
         terrain_type_int: i32,
         start_q: i32,
         start_r: i32,
         min_distance: i32,
         max_distance: i32,
-    ) -> Dictionary {
+    ) {
         let ulid_bytes: Vec<u8> = entity_ulid.to_vec();
         let terrain_type = match terrain_type_int {
             0 => TerrainType::Water,
-            _ => TerrainType::Land, // Default to land for unknown types
+            _ => TerrainType::Land,
         };
-        let start = (start_q, start_r);
 
-        let result = find_random_destination(start, terrain_type, &ulid_bytes, min_distance, max_distance);
+        let request = RandomDestRequest {
+            entity_ulid: ulid_bytes,
+            terrain_type,
+            start: (start_q, start_r),
+            min_distance,
+            max_distance,
+        };
 
-        let mut dict = Dictionary::new();
-        if let Some((q, r)) = result {
-            dict.set("q", q);
-            dict.set("r", r);
-            dict.set("found", true);
+        RANDOM_DEST_REQUESTS.push(request);
+    }
+
+    /// Poll for random destination result (non-blocking)
+    /// Returns Dictionary with {entity_ulid, destination: {q, r}, found: bool}
+    /// or Variant::nil() if no results available
+    #[func]
+    fn poll_random_dest_result(&mut self) -> Variant {
+        if let Some(result) = RANDOM_DEST_RESULTS.pop() {
+            let mut dict = Dictionary::new();
+            dict.set("entity_ulid", PackedByteArray::from(&result.entity_ulid[..]));
+
+            if let Some((q, r)) = result.destination {
+                let mut dest_dict = Dictionary::new();
+                dest_dict.set("q", q);
+                dest_dict.set("r", r);
+                dict.set("destination", dest_dict);
+                dict.set("found", true);
+            } else {
+                dict.set("found", false);
+            }
+
+            dict.to_variant()
         } else {
-            dict.set("q", start_q);
-            dict.set("r", start_r);
-            dict.set("found", false);
+            Variant::nil()
         }
-        dict
     }
 
     /// Set world seed for procedural terrain generation
@@ -722,16 +811,15 @@ impl UnifiedPathfindingBridge {
     }
 
     /// Load a chunk of tiles into the terrain cache (incremental)
+    /// NOW ASYNC: Queues chunk for background processing to avoid blocking main thread
     #[func]
     fn load_chunk(&mut self, chunk_coords: Vector2i, tile_data: Array<Dictionary>) {
-        let mut water_count = 0;
-        let mut land_count = 0;
-
         // Calculate chunk offset for converting local to global coordinates
         let chunk_offset_x = chunk_coords.x * map_config::CHUNK_SIZE as i32;
         let chunk_offset_y = chunk_coords.y * map_config::CHUNK_SIZE as i32;
 
-        // Process tile data BEFORE acquiring the write lock to minimize lock duration
+        // Process tile data (convert Dictionary array to Rust types)
+        // This happens on main thread but is much faster than updating the cache
         let mut tiles_to_set: Vec<(i32, i32, TerrainType)> = Vec::with_capacity(tile_data.len() as usize);
 
         for i in 0..tile_data.len() {
@@ -751,10 +839,8 @@ impl UnifiedPathfindingBridge {
                 // Atlas indices: 0-3 = grassland variants, 4 = water, 5-6 = grassland variants
                 // See biomes.rs:33-43 for tile_index mapping
                 let terrain_type = if tile_index == 4 {
-                    water_count += 1;
                     TerrainType::Water
                 } else {
-                    land_count += 1;
                     TerrainType::Land
                 };
 
@@ -762,15 +848,16 @@ impl UnifiedPathfindingBridge {
             }
         }
 
-        // Update cache (DashMap allows lock-free concurrent writes)
-        let cache = terrain_cache::get_terrain_cache();
-        for (x, y, terrain_type) in tiles_to_set {
-            cache.set(x, y, terrain_type);
-        }
+        // Queue chunk for async processing by worker threads
+        let request = ChunkLoadRequest {
+            chunk_coords: (chunk_coords.x, chunk_coords.y),
+            tiles: tiles_to_set,
+        };
+        CHUNK_LOAD_QUEUE.push(request);
 
         #[cfg(feature = "debug_logs")]
-        godot_print!("UnifiedPathfindingBridge: Loaded chunk {:?} - {} tiles ({} water, {} land)",
-            chunk_coords, tile_data.len(), water_count, land_count);
+        godot_print!("UnifiedPathfindingBridge: Queued chunk {:?} for async loading ({} tiles)",
+            chunk_coords, tile_data.len());
     }
 
     /// Check if tile is walkable for given terrain type

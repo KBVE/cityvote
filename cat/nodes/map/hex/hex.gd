@@ -201,9 +201,9 @@ func _load_generated_chunk(chunk_coords: Vector2i, tile_data: Array) -> void:
 	# Load into pool
 	var chunk = chunk_pool.load_chunk(chunk_coords, tile_data)
 
-	# Load chunk into unified pathfinding terrain cache
+	# Load chunk into unified pathfinding terrain cache (DEFERRED to avoid blocking main thread)
 	if has_node("/root/UnifiedPathfindingBridge"):
-		get_node("/root/UnifiedPathfindingBridge").load_chunk(chunk_coords, tile_data)
+		get_node("/root/UnifiedPathfindingBridge").call_deferred("load_chunk", chunk_coords, tile_data)
 
 	# Queue for rendering
 	chunk_render_queue.append({

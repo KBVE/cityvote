@@ -32,7 +32,12 @@ func _ready() -> void:
 
 	# Set up texture rect with atlas texture
 	texture_rect.texture = ATLAS_TEXTURE
-	texture_rect.material = texture_rect.material.duplicate()  # Duplicate material for per-instance control
+
+	# Duplicate material for per-instance control (only if material exists)
+	if texture_rect.material:
+		texture_rect.material = texture_rect.material.duplicate()
+	else:
+		push_warning("SocialLogo: TextureRect has no material in scene - shader may not work")
 
 	# Initialize with current logo
 	set_logo(current_logo)

@@ -18,6 +18,13 @@ enum TileType {
 ## Each entry: {entity: Node, type: String, pool_key: String, move_timer: float, move_interval: float, tile: Vector2i}
 var registered_entities: Array = []
 
+## Occupied tiles - tracks which entity is on which tile (managed by EntityManager)
+var occupied_tiles: Dictionary = {}
+
+## References to game systems (set by main.gd on initialization)
+var hex_map: Node = null
+var tile_map = null
+
 ## Entity type configurations (movement intervals, etc.)
 const ENTITY_CONFIGS = {
 	"viking": {"move_interval": 2.0, "tile_type": TileType.WATER},
@@ -615,3 +622,173 @@ func _update_combat_position(entity: Node, tile: Vector2i) -> void:
 
 	var ulid: PackedByteArray = entity.ulid
 	CombatManager.combat_bridge.update_position(ulid, tile)
+
+## ============================================================================
+## INITIALIZATION & SIGNAL SETUP
+## ============================================================================
+
+func _ready() -> void:
+	# Connect to game timer for turn-based updates
+	if GameTimer:
+		GameTimer.turn_changed.connect(_on_turn_changed)
+		print("EntityManager: Connected to GameTimer for turn-based updates")
+
+	# Connect to pathfinding bridge signals
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if pathfinding_bridge:
+		pathfinding_bridge.random_destination_found.connect(_on_random_destination_found)
+		print("EntityManager: Connected to UnifiedPathfindingBridge signals")
+	else:
+		push_error("EntityManager: UnifiedPathfindingBridge not found!")
+
+## Initialize EntityManager with game references (called by main.gd)
+func initialize(p_hex_map: Node, p_tile_map) -> void:
+	hex_map = p_hex_map
+	tile_map = p_tile_map
+	print("EntityManager: Initialized with hex_map and tile_map references")
+
+## ============================================================================
+## TURN-BASED ENTITY UPDATES (replaces per-frame updates)
+## ============================================================================
+
+## Called once per turn by GameTimer signal
+func _on_turn_changed(_turn: int) -> void:
+	# Update all entities for movement
+	_update_all_entities()
+
+## Update all registered entities (called once per turn, not every frame!)
+func _update_all_entities() -> void:
+	var culled_count = 0
+	var active_count = 0
+
+	for entry in registered_entities:
+		var entity = entry["entity"]
+
+		# Skip invalid entities
+		if not entity or not is_instance_valid(entity):
+			continue
+
+		# Skip entities in combat (they shouldn't move)
+		if "current_state" in entity:
+			var IN_COMBAT_FLAG = 0b1000000  # 0x40
+			if entity.current_state & IN_COMBAT_FLAG:
+				continue
+
+		# Skip entities in non-visible chunks (chunk culling optimization)
+		if ChunkManager and ChunkManager.chunk_culling_enabled:
+			var entity_chunk = MapConfig.tile_to_chunk(entry["tile"])
+
+			# PROCEDURAL WORLD: Use visible_chunks (Array of Vector2i) instead of visible_chunk_indices
+			if not entity_chunk in ChunkManager.visible_chunks:
+				culled_count += 1
+				continue
+
+		active_count += 1
+
+		# Trigger entity movement (time-based now handled by turn system)
+		_handle_entity_movement(entity, entry["tile"], entry["pool_key"], entry)
+
+## ============================================================================
+## ENTITY MOVEMENT & PATHFINDING (moved from main.gd)
+## ============================================================================
+
+## Handle entity movement by requesting pathfinding
+func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: String, registry_entry: Dictionary) -> void:
+	# Defensive: Validate entity exists
+	if not entity or not is_instance_valid(entity):
+		return
+
+	# Get pathfinding bridge
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if not pathfinding_bridge:
+		push_error("_handle_entity_movement: UnifiedPathfindingBridge not found!")
+		return
+
+	# Unified pathfinding for ALL entity types (water and land)
+	# Determine random destination distance based on entity type
+	var min_distance = 2 if pool_key == "viking" else 3
+	var max_distance = 5 if pool_key == "viking" else 8
+
+	# Request random destination (ASYNC - uses signals)
+	# Result will be handled by _on_random_destination_found signal handler
+	pathfinding_bridge.request_random_destination(
+		entity.ulid,
+		entity.terrain_type,
+		current_tile,
+		min_distance,
+		max_distance
+	)
+
+## Handle random destination found signal from pathfinding bridge
+func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vector2i, found: bool) -> void:
+	if not found:
+		return  # No valid destination found
+
+	# Find the entity by ULID
+	var entity = _find_entity_by_ulid(entity_ulid)
+	if not entity or not is_instance_valid(entity):
+		return
+
+	# Get current tile
+	if not tile_map:
+		push_error("EntityManager: tile_map not initialized!")
+		return
+
+	var current_tile = tile_map.local_to_map(entity.position)
+	if destination == current_tile:
+		return  # Destination is same as current position
+
+	# Free up current tile (we'll put it back if pathfinding fails)
+	occupied_tiles.erase(current_tile)
+
+	# Get pathfinding bridge
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if not pathfinding_bridge:
+		occupied_tiles[current_tile] = entity  # Put it back
+		return
+
+	# Request pathfinding - connect to entity's signal to update occupied_tiles
+	# The NPC will emit pathfinding_completed signal when done
+	if entity.has_method("request_pathfinding"):
+		# Connect to entity's pathfinding_completed signal (ONE_SHOT auto-disconnects)
+		# NOTE: Don't check is_connected - just connect with ONE_SHOT flag
+		# ONE_SHOT connections auto-disconnect after first emission
+		entity.pathfinding_completed.connect(_on_entity_pathfinding_completed.bind(entity, current_tile), CONNECT_ONE_SHOT)
+
+		# Request pathfinding without callback - signal will handle it
+		entity.request_pathfinding(destination, tile_map)
+	else:
+		occupied_tiles[current_tile] = entity  # Put it back
+
+## Handle entity pathfinding completed signal
+func _on_entity_pathfinding_completed(path: Array[Vector2i], success: bool, entity: Node, original_tile: Vector2i) -> void:
+	if not entity or not is_instance_valid(entity):
+		occupied_tiles[original_tile] = entity if entity else null
+		return
+
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+
+	if success and path.size() > 0:
+		var final_destination = path[path.size() - 1]
+
+		# Validate final destination terrain
+		if pathfinding_bridge and not pathfinding_bridge.is_tile_walkable(entity.terrain_type, final_destination):
+			occupied_tiles[original_tile] = entity  # Keep at current tile
+			return
+
+		# Update occupied tiles
+		occupied_tiles[final_destination] = entity
+		# Update EntityManager registry
+		update_entity_tile(entity, final_destination)
+	else:
+		# Pathfinding failed - entity stays at current tile
+		occupied_tiles[original_tile] = entity
+
+## Find entity by ULID
+func _find_entity_by_ulid(ulid: PackedByteArray) -> Node:
+	for entry in registered_entities:
+		var entity = entry.get("entity")
+		if entity and "ulid" in entity:
+			if entity.ulid == ulid:
+				return entity
+	return null

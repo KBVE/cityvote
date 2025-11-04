@@ -6,6 +6,9 @@ class_name NPC
 # Unified entity system supporting both land and water pathfinding via terrain type flags.
 # Uses critically-damped angular spring for smooth rotation and continuous path following.
 
+## Signal emitted when pathfinding completes (for main.gd to update occupied_tiles)
+signal pathfinding_completed(path: Array[Vector2i], success: bool)
+
 @onready var sprite: Sprite2D = $Sprite2D
 
 # Terrain Type enum (matches Rust TerrainType and unified pathfinding system)
@@ -70,6 +73,7 @@ var path_index: int = 0  # Current position in path
 var on_path_complete: Callable  # Callback when entire path is complete
 var on_waypoint_reached: Callable  # Callback when each waypoint is reached
 var path_visualizer: Node2D = null  # Visual representation of path
+var pending_path_callbacks: Dictionary = {}  # ULID hex -> callback for pathfinding results
 
 # Critically-damped spring parameters for organic motion
 var angular_stiffness: float = 18.0
@@ -439,8 +443,7 @@ func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = C
 		remove_state(State.PATHFINDING)
 		add_state(State.BLOCKED)
 		if callback.is_valid():
-			var empty_path: Array[Vector2i] = []
-			callback.call(empty_path, false)
+			callback.call([] as Array[Vector2i], false)
 		return
 
 	# DIAGNOSTIC: Check if start tile is also walkable
@@ -449,33 +452,69 @@ func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = C
 		remove_state(State.PATHFINDING)
 		add_state(State.BLOCKED)
 		if callback.is_valid():
-			var empty_path: Array[Vector2i] = []
-			callback.call(empty_path, false)
+			callback.call([] as Array[Vector2i], false)
 		return
 
 	print("NPC %s (%s): Requesting path from %s to %s (terrain_type=%d, expected=%s)" % [ulid_hex, get_class(), current_tile, target_tile, terrain_type, "WATER" if terrain_type == 0 else "LAND"])
 
-	# Create unified callback
-	var unified_callback = func(path: Array[Vector2i], success: bool, cost: float):
-		remove_state(State.PATHFINDING)
+	# Store the callback for when path_found signal is emitted
+	pending_path_callbacks[ulid_hex] = callback
+
+	# Connect to path_found signal if not already connected
+	if not bridge.path_found.is_connected(_on_path_found):
+		bridge.path_found.connect(_on_path_found)
+
+	# Request path through unified bridge (result comes via signal)
+	bridge.request_path(entity_id, terrain_type, current_tile, target_tile)
+
+## Handle path_found signal from pathfinding bridge
+func _on_path_found(entity_ulid: PackedByteArray, path: Array[Vector2i], success: bool, cost: float) -> void:
+	var ulid_hex = UlidManager.to_hex(entity_ulid)
+
+	# Check if this path is for this entity
+	if entity_ulid != ulid:
+		return  # Not for this entity
+
+	# Remove pathfinding state
+	remove_state(State.PATHFINDING)
+
+	# Emit signal for external listeners (like main.gd)
+	pathfinding_completed.emit(path, success)
+
+	# Find and call the pending callback (if any)
+	if ulid_hex in pending_path_callbacks:
+		var callback = pending_path_callbacks[ulid_hex]
+		pending_path_callbacks.erase(ulid_hex)
+
 		if success and path.size() > 0:
 			print("NPC %s: Path SUCCESS - %d waypoints, starting movement" % [ulid_hex, path.size()])
-			follow_path(path, tile_map)
+			follow_path(path, Cache.get_tile_map())
 			if callback.is_valid():
 				callback.call(path, success)
 		else:
 			add_state(State.BLOCKED)
-			# DIAGNOSTIC: Print more details about the failure
-			var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
-			var goal_walkable = bridge.is_tile_walkable(terrain_type, target_tile)
-			push_error("NPC %s: Path FAILED to %s (success=%s, path_size=%d, start_walkable=%s, goal_walkable=%s)" %
-				[ulid_hex, target_tile, success, path.size(), start_walkable, goal_walkable])
+			# Get bridge for diagnostics
+			var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+			if bridge:
+				var current_tile = Cache.get_tile_map().local_to_map(position)
+				var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
+				push_error("NPC %s: Path FAILED (success=%s, path_size=%d, start_walkable=%s)" %
+					[ulid_hex, success, path.size(), start_walkable])
 			if callback.is_valid():
-				var empty_path: Array[Vector2i] = []
-				callback.call(empty_path, false)
-
-	# Request path through unified bridge
-	bridge.request_path(entity_id, terrain_type, current_tile, target_tile, unified_callback)
+				callback.call([] as Array[Vector2i], false)
+	else:
+		# No callback - just handle path internally
+		if success and path.size() > 0:
+			print("NPC %s: Path SUCCESS - %d waypoints, starting movement" % [ulid_hex, path.size()])
+			follow_path(path, Cache.get_tile_map())
+		else:
+			add_state(State.BLOCKED)
+			var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+			if bridge:
+				var current_tile = Cache.get_tile_map().local_to_map(position)
+				var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
+				push_error("NPC %s: Path FAILED (success=%s, path_size=%d, start_walkable=%s)" %
+					[ulid_hex, success, path.size(), start_walkable])
 
 func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 	# Remove old visualizer if exists
@@ -597,17 +636,18 @@ func _process(delta):
 
 					# CRITICAL: Validate final tile is walkable for our terrain type
 					var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-					if bridge and not bridge.is_tile_walkable(terrain_type, final_tile):
-						var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
-						push_error("NPC %s (terrain_type=%d): Movement completed at UNWALKABLE tile %s! This should never happen!" % [ulid_hex, terrain_type, final_tile])
-						# Don't notify Rust of invalid position
-						current_path.clear()
-						path_index = 0
-						return
+					if bridge and is_instance_valid(bridge):
+						if not bridge.is_tile_walkable(terrain_type, final_tile):
+							var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
+							push_error("NPC %s (terrain_type=%d): Movement completed at UNWALKABLE tile %s! This should never happen!" % [ulid_hex, terrain_type, final_tile])
+							# Don't notify Rust of invalid position
+							current_path.clear()
+							path_index = 0
+							return
 
-					# Update entity position in Rust's ENTITY_DATA (critical for collision detection)
-					if bridge and not ulid.is_empty():
-						bridge.update_entity_position(ulid, final_tile, terrain_type)
+						# Update entity position in Rust's ENTITY_DATA (critical for collision detection)
+						if not ulid.is_empty():
+							bridge.update_entity_position(ulid, final_tile, terrain_type)
 
 				var was_following_path = current_path.size() > 0
 				current_path.clear()

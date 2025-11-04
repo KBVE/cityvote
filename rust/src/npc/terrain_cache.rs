@@ -4,14 +4,14 @@
 /// between ship and ground pathfinding systems. Similar to CardRegistry, it uses
 /// efficient data structures for fast lookups during pathfinding.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::collections::VecDeque;
+// REMOVED: Mutex and VecDeque - no longer needed without LRU tracking
 use dashmap::DashMap;
 use serde::{Serialize, Deserialize};
 use godot::prelude::*;
 use crate::config::map as map_config;
-use crate::db::TerrainDb;
+// REMOVED: TerrainDb import - database operations disabled to prevent Mutex blocking
 
 /// Terrain types for pathfinding
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -125,29 +125,24 @@ impl TerrainChunk {
     }
 }
 
-/// Thread-safe terrain cache using LRU + SQLite for infinite worlds
-/// Uses DashMap for lock-free concurrent reads - no blocking between worker threads
+/// Thread-safe terrain cache using DashMap for lock-free concurrent access
+/// LRU eviction and DB storage REMOVED to prevent ANY Mutex blocking during pathfinding
 pub struct TerrainCache {
     /// Hot cache: Recent chunks in memory (DashMap for concurrent access)
     hot_cache: Arc<DashMap<ChunkCoord, TerrainChunk>>,
-    /// LRU order tracking (most recent at back) - protected by mutex for writes
-    lru_order: Arc<Mutex<VecDeque<ChunkCoord>>>,
-    /// Max chunks to keep in memory before evicting to SQLite
-    max_hot_chunks: usize,
-    /// SQLite connection for cold storage (platform-specific implementation)
-    db: Option<Arc<Mutex<TerrainDb>>>,
+    /// REMOVED: LRU order tracking (was causing Mutex deadlocks)
+    /// REMOVED: SQLite db (was using Mutex, causing blocking)
     /// Current world seed (for procedural generation of missing chunks)
     current_seed: AtomicI32,
 }
 
 impl TerrainCache {
-    /// Create a new terrain cache with SQLite backing (both native and WASM)
+    /// Create a new terrain cache (lock-free, in-memory only)
+    /// LRU eviction and DB storage disabled - chunks stay in memory (unbounded cache)
     pub fn new() -> Self {
         Self {
             hot_cache: Arc::new(DashMap::new()),
-            lru_order: Arc::new(Mutex::new(VecDeque::new())),
-            max_hot_chunks: 100, // Keep 100 chunks in memory (100KB total)
-            db: Self::init_db(),
+            // REMOVED: lru_order, max_hot_chunks, and db to prevent ALL Mutex blocking
             current_seed: AtomicI32::new(0), // Default seed, will be set by set_seed()
         }
     }
@@ -157,78 +152,11 @@ impl TerrainCache {
         self.current_seed.store(seed, Ordering::Relaxed);
     }
 
-    /// Initialize SQLite database for terrain storage (platform-agnostic)
-    fn init_db() -> Option<Arc<Mutex<TerrainDb>>> {
-        match TerrainDb::open() {
-            Ok(db) => Some(Arc::new(Mutex::new(db))),
-            Err(e) => {
-                godot::prelude::godot_error!("TerrainCache: Failed to initialize database: {}", e);
-                None
-            }
-        }
-    }
+    /// REMOVED: init_db() - Database completely disabled to prevent Mutex blocking
 
-    /// Load chunk from SQLite cold storage (platform-agnostic)
-    fn load_from_db(&self, chunk_coord: ChunkCoord) -> Option<TerrainChunk> {
-        let db_arc = self.db.as_ref()?;
-        let db = db_arc.lock().ok()?;
-        let (chunk_x, chunk_y) = chunk_coord;
+    /// REMOVED: load_from_db() - Database completely disabled to prevent Mutex blocking
 
-        match db.load_chunk(chunk_x, chunk_y) {
-            Ok(Some(blob)) => {
-                // Bincode 2.0 with serde: use bincode::serde::decode_from_slice
-                match bincode::serde::decode_from_slice::<TerrainChunk, _>(&blob, bincode::config::standard()) {
-                    Ok((chunk, _len)) => {
-                        #[cfg(feature = "debug_logs")]
-                        godot::prelude::godot_print!("TerrainCache: Loaded chunk ({}, {}) from SQLite", chunk_x, chunk_y);
-                        Some(chunk)
-                    }
-                    Err(e) => {
-                        godot::prelude::godot_error!("TerrainCache: Failed to deserialize chunk ({}, {}): {}", chunk_x, chunk_y, e);
-                        None
-                    }
-                }
-            }
-            Ok(None) => None,  // Chunk not in database
-            Err(e) => {
-                godot::prelude::godot_error!("TerrainCache: Failed to load chunk ({}, {}): {}", chunk_x, chunk_y, e);
-                None
-            }
-        }
-    }
-
-    /// Save chunk to SQLite cold storage (platform-agnostic)
-    fn save_to_db(&self, chunk_coord: ChunkCoord, chunk: &TerrainChunk) {
-        let db_arc = match self.db.as_ref() {
-            Some(db) => db,
-            None => return,
-        };
-
-        let db = match db_arc.lock() {
-            Ok(db) => db,
-            Err(e) => {
-                godot::prelude::godot_error!("TerrainCache: Failed to lock database mutex: {}", e);
-                return;
-            }
-        };
-
-        let (chunk_x, chunk_y) = chunk_coord;
-
-        // Bincode 2.0 with serde: use bincode::serde::encode_to_vec
-        match bincode::serde::encode_to_vec(chunk, bincode::config::standard()) {
-            Ok(blob) => {
-                if let Err(e) = db.save_chunk(chunk_x, chunk_y, &blob) {
-                    godot::prelude::godot_error!("TerrainCache: Failed to save chunk ({}, {}): {}", chunk_x, chunk_y, e);
-                } else {
-                    #[cfg(feature = "debug_logs")]
-                    godot::prelude::godot_print!("TerrainCache: Saved chunk ({}, {}) to SQLite", chunk_x, chunk_y);
-                }
-            }
-            Err(e) => {
-                godot::prelude::godot_error!("TerrainCache: Failed to serialize chunk ({}, {}): {}", chunk_x, chunk_y, e);
-            }
-        }
-    }
+    /// REMOVED: save_to_db() - Database completely disabled to prevent Mutex blocking
 
     /// Generate a chunk procedurally using the world generator
     /// This is called when a chunk is not found in cache or database
@@ -284,29 +212,10 @@ impl TerrainCache {
         Some(TerrainChunk::from_data(cache_terrain))
     }
 
-    /// Evict least recently used chunk from hot cache to SQLite
-    fn evict_lru(&self) {
-        let mut lru = self.lru_order.lock().unwrap();
-        if let Some(lru_coord) = lru.pop_front() {
-            if let Some((_key, chunk)) = self.hot_cache.remove(&lru_coord) {
-                // Save to SQLite (works on both native and WASM)
-                self.save_to_db(lru_coord, &chunk);
-                #[cfg(feature = "debug_logs")]
-                godot::prelude::godot_print!("TerrainCache: Evicted chunk {:?} to SQLite (hot cache full)", lru_coord);
-            }
-        }
-    }
+    /// REMOVED: evict_lru() - LRU eviction disabled to prevent Mutex blocking
+    /// Chunks now stay in memory indefinitely (unbounded cache)
 
-    /// Mark chunk as recently used (move to back of LRU queue)
-    fn touch_chunk(&self, chunk_coord: ChunkCoord) {
-        let mut lru = self.lru_order.lock().unwrap();
-        // Remove from current position in LRU
-        if let Some(pos) = lru.iter().position(|&c| c == chunk_coord) {
-            lru.remove(pos);
-        }
-        // Add to back (most recent)
-        lru.push_back(chunk_coord);
-    }
+    /// REMOVED: touch_chunk() - LRU tracking disabled to prevent Mutex blocking
 
     /// Convert tile coordinates to chunk coordinates
     #[inline]
@@ -318,35 +227,23 @@ impl TerrainCache {
         ((chunk_x, chunk_y), local_x, local_y)
     }
 
-    /// Load a chunk into the hot cache (with LRU eviction if needed)
+    /// Load a chunk into the hot cache (no eviction - unbounded cache)
     pub fn load_chunk(&self, chunk_x: i32, chunk_y: i32, chunk_data: TerrainChunk) {
         let chunk_coord = (chunk_x, chunk_y);
 
-        // Evict LRU chunk if hot cache is full
-        if self.hot_cache.len() >= self.max_hot_chunks && !self.hot_cache.contains_key(&chunk_coord) {
-            self.evict_lru();
-        }
-
-        // Insert into hot cache
+        // REMOVED: LRU eviction - chunks stay in memory
+        // Insert into hot cache (lock-free DashMap operation)
         self.hot_cache.insert(chunk_coord, chunk_data);
-        self.touch_chunk(chunk_coord);
     }
 
-    /// Unload a chunk from hot cache (saves to SQLite/IndexedDB)
+    /// Unload a chunk from hot cache (DB save disabled)
     pub fn unload_chunk(&self, chunk_x: i32, chunk_y: i32) -> Option<TerrainChunk> {
         let chunk_coord = (chunk_x, chunk_y);
 
-        // Remove from LRU tracking
-        {
-            let mut lru = self.lru_order.lock().unwrap();
-            if let Some(pos) = lru.iter().position(|&c| c == chunk_coord) {
-                lru.remove(pos);
-            }
-        }
-
-        // Remove from hot cache and save to SQLite/IndexedDB
+        // REMOVED: LRU tracking - no Mutex blocking
+        // Remove from hot cache (lock-free DashMap operation)
         if let Some((_key, chunk)) = self.hot_cache.remove(&chunk_coord) {
-            self.save_to_db(chunk_coord, &chunk);
+            // DB disabled to prevent blocking
             Some(chunk)
         } else {
             None
@@ -377,31 +274,12 @@ impl TerrainCache {
             return;
         }
 
-        // Chunk not in hot cache - try loading from SQLite/IndexedDB
-        if let Some(mut chunk) = self.load_from_db(chunk_coord) {
-            chunk.set(local_x, local_y, terrain_type);
-
-            // Evict LRU if hot cache is full
-            if self.hot_cache.len() >= self.max_hot_chunks {
-                self.evict_lru();
-            }
-
-            self.hot_cache.insert(chunk_coord, chunk);
-            // NOTE: Don't touch LRU - only touch on explicit load_chunk calls
-            return;
-        }
-
-        // Chunk doesn't exist anywhere - create new one
+        // Chunk not in hot cache - create new one (DB disabled)
         let mut chunk = TerrainChunk::new();
         chunk.set(local_x, local_y, terrain_type);
 
-        // Evict LRU if hot cache is full
-        if self.hot_cache.len() >= self.max_hot_chunks {
-            self.evict_lru();
-        }
-
+        // REMOVED: No LRU eviction - unbounded cache
         self.hot_cache.insert(chunk_coord, chunk);
-        // NOTE: Don't touch LRU - only touch on explicit load_chunk calls
     }
 
     /// Get terrain at tile coordinates (checks hot cache + SQLite/IndexedDB, returns Obstacle if not found)
@@ -433,21 +311,11 @@ impl TerrainCache {
         }
     }
 
-    /// Clear all terrain (hot cache + SQLite)
+    /// Clear all terrain (hot cache only - DB disabled)
     pub fn clear(&self) {
         self.hot_cache.clear();
-        self.lru_order.lock().unwrap().clear();
-
-        // Clear SQLite database
-        if let Some(db_arc) = self.db.as_ref() {
-            if let Ok(db) = db_arc.lock() {
-                if let Err(e) = db.clear() {
-                    godot::prelude::godot_error!("TerrainCache: Failed to clear database: {}", e);
-                } else {
-                    godot::prelude::godot_print!("TerrainCache: Cleared all terrain data (hot cache + SQLite)");
-                }
-            }
-        }
+        // REMOVED: LRU and DB operations
+        godot::prelude::godot_print!("TerrainCache: Cleared all terrain data (hot cache)");
     }
 
     /// Get terrain statistics (for debugging - only counts hot cache for performance)

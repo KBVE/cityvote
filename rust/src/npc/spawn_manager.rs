@@ -135,20 +135,10 @@ pub fn spawn_entity(
         };
     };
 
-    // Verify final location (paranoid check)
-    if !is_valid_spawn_location(position, terrain_type) {
-        godot_error!("spawn_entity: CRITICAL - Found location {:?} became invalid!", position);
-        return SpawnResult {
-            ulid: vec![],
-            entity_type,
-            position,
-            terrain_type,
-            success: false,
-            error_message: "Spawn location became invalid".to_string(),
-        };
-    }
-
     // Generate ULID for entity
+    // Note: We skip the paranoid re-check here because with the worker thread,
+    // there's a race between queueing insertion and checking occupancy.
+    // The initial location search already validated the position.
     let ulid_obj = ulid::Ulid::new();
     let ulid = ulid_obj.to_bytes().to_vec();
 
@@ -177,8 +167,8 @@ pub fn spawn_entity(
         entity_type.clone(),
     );
 
-    // Store in ENTITY_DATA (source of truth)
-    ENTITY_DATA.insert(ulid.clone(), entity_data);
+    // Queue entity insertion (uses worker thread for thread-safe writes)
+    super::entity_worker::queue_insert_entity(ulid.clone(), entity_data);
 
     godot_print!("spawn_entity: SUCCESS - Spawned {} at {:?} (ulid={:02x}{:02x}...)",
         entity_type, position, ulid[0], ulid[1]);

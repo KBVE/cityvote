@@ -42,7 +42,8 @@ var player_ulid: PackedByteArray = PackedByteArray()
 var test_vikings: Array = []
 var viking_move_timer: float = 0.0
 var viking_move_interval: float = 2.0
-var occupied_tiles: Dictionary = {}  # Track which tiles have ships
+# REMOVED: occupied_tiles now managed by EntityManager
+# Access via EntityManager.occupied_tiles if needed
 
 # Jezza NPC testing
 var test_jezzas: Array = []
@@ -119,6 +120,9 @@ func _initialize_game() -> void:
 
 	# Setup hex_map with camera for chunk culling
 	hex_map.set_camera(camera)
+
+	# Initialize EntityManager with game references (handles pathfinding signals internally)
+	EntityManager.initialize(hex_map, hex_map.tile_map)
 
 	# Setup ChunkManager with camera and chunk pool references
 	ChunkManager.set_camera(camera)
@@ -264,8 +268,8 @@ func _process(delta):
 	#; TEST
 
 	#### TEST ####
-	# Update all entities through EntityManager (handles movement timers)
-	EntityManager.update_entities(delta, _handle_entity_movement)
+	# REMOVED: Entity updates now handled by EntityManager via GameTimer signal (turn-based)
+	# EntityManager.update_entities() is called once per turn, not every frame
 
 	# Update chunk visibility based on camera position (for fog of war and culling)
 	ChunkManager.update_visible_chunks()
@@ -374,13 +378,83 @@ func _spawn_test_vikings():
 		"tile_type": EntityManager.TileType.WATER,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
-		"occupied_tiles": occupied_tiles,
+		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_vikings,
 		"player_ulid": player_ulid,
 		"near_pos": spawn_near,  # Spawn near camera where chunks are loaded
 		"entity_name": "Viking",
 		"post_spawn_callback": _apply_wave_shader_to_viking
 	})
+
+## Handle random destination found signal from pathfinding bridge
+func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vector2i, found: bool) -> void:
+	if not found:
+		return  # No valid destination found
+
+	# Find the entity by ULID
+	var entity = _find_entity_by_ulid(entity_ulid)
+	if not entity or not is_instance_valid(entity):
+		return
+
+	# Get current tile
+	var current_tile = hex_map.tile_map.local_to_map(entity.position)
+	if destination == current_tile:
+		return  # Destination is same as current position
+
+	# Free up current tile (we'll put it back if pathfinding fails)
+	EntityManager.occupied_tiles.erase(current_tile)
+
+	# Get pathfinding bridge
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if not pathfinding_bridge:
+		EntityManager.occupied_tiles[current_tile] = entity  # Put it back
+		return
+
+	# Request pathfinding - connect to entity's signal to update occupied_tiles
+	# The NPC will emit pathfinding_completed signal when done
+	if entity.has_method("request_pathfinding"):
+		# Connect to entity's pathfinding_completed signal (ONE_SHOT auto-disconnects)
+		# NOTE: Don't check is_connected - just connect with ONE_SHOT flag
+		# ONE_SHOT connections auto-disconnect after first emission
+		entity.pathfinding_completed.connect(_on_entity_pathfinding_completed.bind(entity, current_tile), CONNECT_ONE_SHOT)
+
+		# Request pathfinding without callback - signal will handle it
+		entity.request_pathfinding(destination, hex_map.tile_map)
+	else:
+		EntityManager.occupied_tiles[current_tile] = entity  # Put it back
+
+## Handle entity pathfinding completed signal
+func _on_entity_pathfinding_completed(path: Array[Vector2i], success: bool, entity: Node, original_tile: Vector2i) -> void:
+	if not entity or not is_instance_valid(entity):
+		EntityManager.occupied_tiles[original_tile] = entity if entity else null
+		return
+
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+
+	if success and path.size() > 0:
+		var final_destination = path[path.size() - 1]
+
+		# Validate final destination terrain
+		if pathfinding_bridge and not pathfinding_bridge.is_tile_walkable(entity.terrain_type, final_destination):
+			EntityManager.occupied_tiles[original_tile] = entity  # Keep at current tile
+			return
+
+		# Update occupied tiles
+		EntityManager.occupied_tiles[final_destination] = entity
+		# Update EntityManager registry
+		EntityManager.update_entity_tile(entity, final_destination)
+	else:
+		# Pathfinding failed - entity stays at current tile
+		EntityManager.occupied_tiles[original_tile] = entity
+
+## Find entity by ULID
+func _find_entity_by_ulid(ulid: PackedByteArray) -> Node:
+	for entry in EntityManager.get_registered_entities():
+		var entity = entry.get("entity")
+		if entity and "ulid" in entity:
+			if entity.ulid == ulid:
+				return entity
+	return null
 
 ## Generic entity movement handler (called by EntityManager.update_entities)
 ## @param entity: The entity to move
@@ -432,51 +506,14 @@ func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: Str
 	var min_distance = 2 if pool_key == "viking" else 3
 	var max_distance = 5 if pool_key == "viking" else 8
 
-	# Find random destination using unified pathfinding (works for both water and land)
-	var destination = pathfinding_bridge.find_random_destination(
+	# Request random destination (ASYNC - uses signals)
+	# Result will be handled by _on_random_destination_found signal handler
+	pathfinding_bridge.request_random_destination(
 		entity.ulid,
 		entity.terrain_type,
 		current_tile,
 		min_distance,
 		max_distance
-	)
-
-	# If no destination found, return silently
-	if destination == current_tile:
-		return
-
-	# Free up current tile immediately
-	occupied_tiles.erase(current_tile)
-
-	# Defensive: Validate entity has request_pathfinding method
-	if not entity.has_method("request_pathfinding"):
-		push_error("_handle_entity_movement: Entity %s missing 'request_pathfinding' method!" % pool_key)
-		occupied_tiles[current_tile] = entity  # Put it back
-		return
-
-	# Use unified entity pathfinding (handles both water and land entities)
-	entity.request_pathfinding(
-		destination,
-		hex_map.tile_map,
-		func(path: Array[Vector2i], success: bool):
-			# Callback when path is complete
-			if success and path.size() > 0:
-				var final_destination = path[path.size() - 1]
-
-				# CRITICAL: Validate final destination terrain matches entity terrain_type
-				if pathfinding_bridge and not pathfinding_bridge.is_tile_walkable(entity.terrain_type, final_destination):
-					push_error("TERRAIN MISMATCH: %s (terrain_type=%d) ended at %s which is NOT walkable! Keeping at %s" %
-						[pool_key, entity.terrain_type, final_destination, current_tile])
-					occupied_tiles[current_tile] = entity  # Keep at current tile
-					return
-
-				# Update occupied tiles
-				occupied_tiles[final_destination] = entity
-				# Update EntityManager registry
-				EntityManager.update_entity_tile(entity, final_destination)
-			else:
-				# Pathfinding failed - entity stays at current tile
-				occupied_tiles[current_tile] = entity
 	)
 
 # NOTE: All old manual movement functions removed (_handle_viking_movement, _move_test_vikings, etc.)
@@ -553,7 +590,7 @@ func _spawn_test_jezza():
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
-		"occupied_tiles": occupied_tiles,
+		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_jezzas,
 		"player_ulid": player_ulid,
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
@@ -572,7 +609,7 @@ func _spawn_test_fantasy_warriors():
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
-		"occupied_tiles": occupied_tiles,
+		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_fantasy_warriors,
 		"player_ulid": player_ulid,
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
@@ -591,7 +628,7 @@ func _spawn_test_kings():
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
-		"occupied_tiles": occupied_tiles,
+		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_kings,
 		"player_ulid": player_ulid,
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
@@ -658,7 +695,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"tile_type": EntityManager.TileType.LAND,
 				"hex_map": hex_map,
 				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles,
+				"occupied_tiles": EntityManager.occupied_tiles,
 				"storage_array": test_jezzas,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
@@ -674,7 +711,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"tile_type": EntityManager.TileType.WATER,
 				"hex_map": hex_map,
 				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles,
+				"occupied_tiles": EntityManager.occupied_tiles,
 				"storage_array": test_vikings,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
@@ -691,7 +728,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"tile_type": EntityManager.TileType.LAND,
 				"hex_map": hex_map,
 				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles,
+				"occupied_tiles": EntityManager.occupied_tiles,
 				"storage_array": test_kings,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
@@ -707,7 +744,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"tile_type": EntityManager.TileType.LAND,
 				"hex_map": hex_map,
 				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles,
+				"occupied_tiles": EntityManager.occupied_tiles,
 				"storage_array": test_skull_wizards,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
@@ -723,7 +760,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"tile_type": EntityManager.TileType.LAND,
 				"hex_map": hex_map,
 				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles,
+				"occupied_tiles": EntityManager.occupied_tiles,
 				"storage_array": test_fantasy_warriors,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
@@ -739,7 +776,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"tile_type": EntityManager.TileType.LAND,
 				"hex_map": hex_map,
 				"tile_map": hex_map.tile_map,
-				"occupied_tiles": occupied_tiles,
+				"occupied_tiles": EntityManager.occupied_tiles,
 				"storage_array": test_fireworms,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
