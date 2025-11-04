@@ -66,6 +66,9 @@ var test_skull_wizards: Array = []
 # Fireworm NPC testing
 var test_fireworms: Array = []
 
+# Martial Hero NPC testing
+var test_martial_heroes: Array = []
+
 # Chunk culling stats
 var culling_stats_timer: float = 0.0
 var culling_stats_interval: float = 5.0  # Print stats every 5 seconds
@@ -108,6 +111,12 @@ func _ready():
 
 func _initialize_game() -> void:
 	print("DEBUG: Main._initialize_game() starting...")
+
+	# CRITICAL: Reset resources to initial values (1000 each)
+	# This ensures resources start fresh even if scene is reloaded without restarting Godot
+	if ResourceLedger:
+		ResourceLedger.reset_resources()
+		print("DEBUG: Resources reset to 1000 each (Gold, Food, Labor, Faith)")
 
 	# Step 1: Map generation (already done in hex_map._ready)
 	await get_tree().process_frame
@@ -157,6 +166,9 @@ func _initialize_game() -> void:
 	play_hand.card_picked_up.connect(_on_card_picked_up)
 	play_hand.card_placed.connect(_on_card_placed)
 	play_hand.card_cancelled.connect(_on_card_cancelled)
+
+	# Connect EntityManager signals
+	EntityManager.entity_spawned.connect(_on_entity_spawned)
 	#; TEST
 
 	# Step 2: Wait for initial chunks to render
@@ -190,6 +202,9 @@ func _initialize_game() -> void:
 
 	# Spawn test Kings on land tiles
 	_spawn_test_kings()
+
+	# Spawn test Martial Heroes on land tiles
+	_spawn_test_martial_heroes()
 
 	# Position camera at a city for a nice starting view
 	# DISABLED: Cities don't exist in procedurally generated world yet
@@ -299,6 +314,8 @@ func _input(event):
 					entity_name = I18n.translate("entity.fantasy_warrior.name")
 				elif entity is King:
 					entity_name = I18n.translate("entity.king.name")
+				elif entity is MartialHero:
+					entity_name = I18n.translate("entity.martialhero.name")
 				elif entity is NPC:
 					# Check terrain type for water entities (vikings/ships)
 					if "terrain_type" in entity and entity.terrain_type == NPC.TerrainType.WATER:
@@ -372,7 +389,8 @@ func _spawn_test_vikings():
 
 	# Spawn 10 vikings using EntityManager (which uses EntitySpawnBridge internally)
 	# NOTE: Vikings spawn on water near camera position (where chunks are loaded)
-	var count = EntityManager.spawn_multiple({
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
 		"pool_key": "viking",
 		"count": 10,
 		"tile_type": EntityManager.TileType.WATER,
@@ -382,8 +400,7 @@ func _spawn_test_vikings():
 		"storage_array": test_vikings,
 		"player_ulid": player_ulid,
 		"near_pos": spawn_near,  # Spawn near camera where chunks are loaded
-		"entity_name": "Viking",
-		"post_spawn_callback": _apply_wave_shader_to_viking
+		"entity_name": "Viking"
 	})
 
 ## Handle random destination found signal from pathfinding bridge
@@ -563,6 +580,12 @@ func _position_camera_at_city() -> void:
 func _clamp_camera_position(pos: Vector2) -> Vector2:
 	return pos  # No clamping needed for infinite world
 
+# Signal handler for entity spawned
+func _on_entity_spawned(entity: Node, pool_key: String) -> void:
+	# Apply wave shader to Vikings
+	if pool_key == "viking":
+		_apply_wave_shader_to_viking(entity)
+
 # Apply wave shader to viking ships
 func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 	# Create shader material from Cache with parameters
@@ -581,10 +604,9 @@ func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 			sprite.material = shader_material
 
 func _spawn_test_jezza():
-	print("DEBUG: _spawn_test_jezza() called - using Rust-authoritative EntityManager")
-
 	# Spawn 3 Jezzas using EntityManager (which uses EntitySpawnBridge internally)
-	var count = EntityManager.spawn_multiple({
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
 		"pool_key": "jezza",
 		"count": 3,
 		"tile_type": EntityManager.TileType.LAND,
@@ -597,13 +619,10 @@ func _spawn_test_jezza():
 		"entity_name": "Jezza"
 	})
 
-	print("DEBUG: Spawned %d Jezzas" % count)
-
 func _spawn_test_fantasy_warriors():
-	print("DEBUG: _spawn_test_fantasy_warriors() called - using Rust-authoritative EntityManager")
-
 	# Spawn 3 Fantasy Warriors using EntityManager (which uses EntitySpawnBridge internally)
-	var count = EntityManager.spawn_multiple({
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
 		"pool_key": "fantasywarrior",
 		"count": 3,
 		"tile_type": EntityManager.TileType.LAND,
@@ -616,13 +635,10 @@ func _spawn_test_fantasy_warriors():
 		"entity_name": "Fantasy Warrior"
 	})
 
-	print("DEBUG: Spawned %d Fantasy Warriors" % count)
-
 func _spawn_test_kings():
-	print("DEBUG: _spawn_test_kings() called - using Rust-authoritative EntityManager")
-
 	# Spawn 3 Kings using EntityManager (which uses EntitySpawnBridge internally)
-	var count = EntityManager.spawn_multiple({
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
 		"pool_key": "king",
 		"count": 3,
 		"tile_type": EntityManager.TileType.LAND,
@@ -635,7 +651,21 @@ func _spawn_test_kings():
 		"entity_name": "King"
 	})
 
-	print("DEBUG: Spawned %d Kings" % count)
+func _spawn_test_martial_heroes():
+	# Spawn 10 Martial Heroes using EntityManager (which uses EntitySpawnBridge internally)
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
+		"pool_key": "martialhero",
+		"count": 10,
+		"tile_type": EntityManager.TileType.LAND,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": EntityManager.occupied_tiles,
+		"storage_array": test_martial_heroes,
+		"player_ulid": player_ulid,
+		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
+		"entity_name": "Martial Hero"
+	})
 
 # Find entity near a world position (spatial query)
 func _find_entity_near_position(world_pos: Vector2, search_radius: float) -> Node:
@@ -715,8 +745,7 @@ func _on_joker_consumed(joker_type: String, joker_card_id: int, count: int, spaw
 				"storage_array": test_vikings,
 				"player_ulid": player_ulid,
 				"near_pos": card_pos,
-				"entity_name": "Viking",
-				"post_spawn_callback": _apply_wave_shader_to_viking
+				"entity_name": "Viking"
 			})
 			Toast.show_toast("Spawned %d Viking Ships!" % total_vikings, 3.0)
 		"BARON":

@@ -29,4 +29,7 @@ https://luizmelo.itch.io/evil-wizard-3/
 Fire Worm
 https://luizmelo.itch.io/fire-worm
 
+Martial Hero
+https://luizmelo.itch.io/martial-hero
+
 ---

@@ -79,18 +79,18 @@ func get_main_scene() -> Node:
 	return main_scene
 
 ## Cache a UI reference by name
-func set_ui_reference(name: String, node: Node) -> void:
+func set_ui_reference(reference_name: String, node: Node) -> void:
 	if node == null:
-		push_error("Cache: Attempted to cache null UI reference for '%s'" % name)
+		push_error("Cache: Attempted to cache null UI reference for '%s'" % reference_name)
 		return
-	ui_references[name] = node
+	ui_references[reference_name] = node
 
 ## Get a cached UI reference
-func get_ui_reference(name: String) -> Node:
-	if not ui_references.has(name):
-		push_warning("Cache: UI reference '%s' not found" % name)
+func get_ui_reference(reference_name: String) -> Node:
+	if not ui_references.has(reference_name):
+		push_warning("Cache: UI reference '%s' not found" % reference_name)
 		return null
-	return ui_references[name]
+	return ui_references[reference_name]
 
 ## Load spinner scene for reuse
 func _load_spinner_scene() -> void:

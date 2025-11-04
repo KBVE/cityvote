@@ -21,11 +21,14 @@ class_name CardComboBridgeClass
 ##     )
 ##     cards.append(card_dict)
 ##
-## # 2. Request combo detection (ASYNC - runs on worker thread)
-## var request_id = CardComboBridge.request_combo_detection(cards, _on_combo_result)
+## # 2. Connect to combo_detected signal
+## CardComboBridge.combo_detected.connect(_on_combo_result)
 ##
-## # 3. Handle result in callback
-## func _on_combo_result(result: Dictionary):
+## # 3. Request combo detection (ASYNC - runs on worker thread)
+## var request_id = CardComboBridge.request_combo_detection(cards)
+##
+## # 4. Handle result in signal handler
+## func _on_combo_result(request_id: int, result: Dictionary):
 ##     # Highlight cards in the combo
 ##     if result.has("card_indices"):
 ##         for idx in result["card_indices"]:
@@ -59,7 +62,6 @@ signal joker_consumed(joker_type: String, joker_card_id: int, count: int, spawn_
 
 # Rust combo detector (typed as Variant since it's a Rust class loaded at runtime)
 var combo_detector = null
-var pending_requests: Dictionary = {}  # request_id -> callback
 
 func _ready() -> void:
 	# Create the Rust combo detector
@@ -103,12 +105,6 @@ func _on_combo_found(request_id: int, result: Dictionary) -> void:
 	# Add request_id to result for tracking (needed for accept/decline)
 	result["request_id"] = request_id
 
-	# Call callback if registered
-	if pending_requests.has(request_id):
-		var callback = pending_requests[request_id]
-		pending_requests.erase(request_id)
-		callback.call(result)
-
 	# Emit signal
 	combo_detected.emit(request_id, result)
 
@@ -116,7 +112,7 @@ func _on_combo_found(request_id: int, result: Dictionary) -> void:
 ## Each dictionary should have: ulid, suit, value, card_id, is_custom, x, y (hex position)
 ## Jokers (custom cards) can be in the line and will be skipped
 ## Returns request_id for tracking
-func request_combo_detection(cards: Array[Dictionary], callback: Callable) -> int:
+func request_combo_detection(cards: Array[Dictionary]) -> int:
 	if not combo_detector:
 		push_error("CardComboBridge: Combo detector not initialized!")
 		return 0
@@ -134,10 +130,6 @@ func request_combo_detection(cards: Array[Dictionary], callback: Callable) -> in
 
 	# Request combo detection from Rust worker thread
 	var request_id = combo_detector.request_combo_detection(card_data)
-
-	# Register callback
-	if request_id > 0:
-		pending_requests[request_id] = callback
 
 	return request_id
 

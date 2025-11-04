@@ -29,7 +29,7 @@ const SOURCE_ID_WATER: int = 4
 # Helper functions
 
 ## Convert tile coordinates to chunk coordinates (supports infinite world, negative coords)
-static func tile_to_chunk(tile_coords: Vector2i) -> Vector2i:
+func tile_to_chunk(tile_coords: Vector2i) -> Vector2i:
 	# Use floor division to handle negative coordinates correctly
 	return Vector2i(
 		floori(float(tile_coords.x) / CHUNK_SIZE),
@@ -37,24 +37,24 @@ static func tile_to_chunk(tile_coords: Vector2i) -> Vector2i:
 	)
 
 ## Get top-left tile of a chunk
-static func chunk_to_tile(chunk_coords: Vector2i) -> Vector2i:
+func chunk_to_tile(chunk_coords: Vector2i) -> Vector2i:
 	return Vector2i(chunk_coords.x * CHUNK_SIZE, chunk_coords.y * CHUNK_SIZE)
 
 ## Convert world coordinates (pixels) to chunk coordinates
-static func world_to_chunk(world_pos: Vector2) -> Vector2i:
+func world_to_chunk(world_pos: Vector2) -> Vector2i:
 	var tile_x = floori(world_pos.x / TILE_WIDTH)
 	var tile_y = floori(world_pos.y / TILE_HEIGHT)
 	return tile_to_chunk(Vector2i(tile_x, tile_y))
 
 ## Convert chunk coordinates to world coordinates (top-left corner)
-static func chunk_to_world(chunk_coords: Vector2i) -> Vector2:
+func chunk_to_world(chunk_coords: Vector2i) -> Vector2:
 	return Vector2(
 		chunk_coords.x * CHUNK_SIZE * TILE_WIDTH,
 		chunk_coords.y * CHUNK_SIZE * TILE_HEIGHT
 	)
 
 ## Get chunks within a radius of a center chunk (for camera visibility)
-static func get_chunks_in_radius(center_chunk: Vector2i, radius: int) -> Array[Vector2i]:
+func get_chunks_in_radius(center_chunk: Vector2i, radius: int) -> Array[Vector2i]:
 	var chunks: Array[Vector2i] = []
 	for y in range(center_chunk.y - radius, center_chunk.y + radius + 1):
 		for x in range(center_chunk.x - radius, center_chunk.x + radius + 1):

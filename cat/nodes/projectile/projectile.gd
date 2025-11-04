@@ -13,6 +13,12 @@ class_name Projectile
 ##   Current implementation supports: EXPLODES (explosion animation), AOE (area damage)
 ##   Future: PASS_THROUGH, PIERCING, HOMING, BOUNCES, SPLITS, LIFESTEAL, BURN, FREEZE, etc.
 
+## Signal emitted when projectile hits target
+signal projectile_hit()
+
+## Signal emitted when projectile is ready to be returned to pool
+signal ready_for_pool(projectile: Projectile)
+
 # Projectile type enum (matches atlas rows)
 enum Type {
 	SPEAR = 0,      # Row 0: Static spear
@@ -129,10 +135,6 @@ var current_frame: int = 0
 var animation_timer: float = 0.0
 var current_animation: String = "moving"  # "moving" or "explode"
 var is_exploding: bool = false
-
-# Callbacks
-var on_hit: Callable  # Called when projectile reaches target
-var on_return_to_pool: Callable  # Called when projectile finishes
 
 func _ready() -> void:
 	set_process(false)  # Disabled until fired
@@ -449,9 +451,8 @@ func _start_explosion() -> void:
 
 	_update_sprite()
 
-	# Call hit callback when explosion starts
-	if on_hit.is_valid():
-		on_hit.call()
+	# Emit hit signal when explosion starts
+	projectile_hit.emit()
 
 ## Finish explosion and return to pool
 func _finish_explosion() -> void:
@@ -463,19 +464,16 @@ func _finish_projectile() -> void:
 	set_process(false)
 	visible = false
 
-	# Call hit callback if not already called
-	if not is_exploding and on_hit.is_valid():
-		on_hit.call()
+	# Emit hit signal if not already called (for non-exploding projectiles)
+	if not is_exploding:
+		projectile_hit.emit()
 
-	# Return to pool
-	if on_return_to_pool.is_valid():
-		on_return_to_pool.call(self)
-	else:
-		# Fallback: queue free if not pooled
-		queue_free()
+	# Emit ready_for_pool signal
+	ready_for_pool.emit(self)
 
 ## Reset projectile to default state (for pooling)
-func reset() -> void:
+## Called by Pool.release() to clear ALL internal state
+func reset_for_pool() -> void:
 	is_active = false
 	travel_progress = 0.0
 	distance_traveled = 0.0
@@ -495,5 +493,3 @@ func reset() -> void:
 	damage = 10.0
 	hit_entities.clear()
 	set_process(false)
-	on_hit = Callable()
-	on_return_to_pool = Callable()

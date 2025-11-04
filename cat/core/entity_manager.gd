@@ -5,6 +5,9 @@ extends Node
 ## Manages health bar pooling to ensure proper setup and cleanup
 ## Tracks all entities in a unified registry for movement and querying
 
+## Signal emitted when an entity is spawned
+signal entity_spawned(entity: Node, pool_key: String)
+
 ## Entity type definitions for spawn_multiple
 ## NOTE: These enum values MUST match Rust TerrainType values!
 ## Rust: Water=0, Land=1, Obstacle=2
@@ -25,6 +28,111 @@ var occupied_tiles: Dictionary = {}
 var hex_map: Node = null
 var tile_map = null
 
+## Pending spawn contexts - tracks context data for async spawns
+## Key: entity_type (String), Value: Array of context dictionaries
+var pending_spawn_contexts: Dictionary = {}
+
+## Movement update throttling (to avoid per-frame overhead)
+var movement_update_accumulator: float = 0.0
+const MOVEMENT_UPDATE_INTERVAL: float = 0.5  # Update every 0.5 seconds (2 updates/sec)
+
+## Batch processing for entities (spread work across frames)
+var entity_process_index: int = 0
+const ENTITIES_PER_UPDATE: int = 10  # Process max 10 entities per update cycle
+
+## Global handler for all spawn completions (called by signal)
+func _on_spawn_completed_global(success: bool, ulid: PackedByteArray, position: Vector2i, terrain_type: int, entity_type: String, error_message: String):
+	if not success:
+		push_warning("EntityManager: Spawn failed for %s: %s" % [entity_type, error_message])
+		return
+
+	# Get spawn context for this entity_type
+	if not pending_spawn_contexts.has(entity_type):
+		push_error("EntityManager: No pending spawn context for %s! This shouldn't happen." % entity_type)
+		return
+
+	var contexts = pending_spawn_contexts[entity_type]
+	if contexts.is_empty():
+		push_error("EntityManager: Empty spawn context array for %s! This shouldn't happen." % entity_type)
+		return
+
+	# Pop the first context (FIFO queue)
+	var context: Dictionary = contexts.pop_front()
+
+	# Clean up context array if empty
+	if contexts.is_empty():
+		pending_spawn_contexts.erase(entity_type)
+
+	# Extract context data
+	var pool_key: String = context["pool_key"]
+	var p_hex_map = context["hex_map"]
+	var p_tile_map = context["tile_map"]
+	var storage_array: Array = context["storage_array"]
+	var player_ulid: PackedByteArray = context["player_ulid"]
+
+	# Check for collision - allow "ghost" spawning (entities will move apart naturally)
+	if occupied_tiles.has(position):
+		var existing_entity = occupied_tiles[position]
+		if existing_entity and is_instance_valid(existing_entity):
+			# GHOST SPAWN: Allow temporary overlap, entities will move apart on next movement tick
+			push_warning("EntityManager: Ghost spawn at %s (occupied by %s), spawning %s anyway - will resolve naturally" % [position, existing_entity.name, entity_type])
+			# Don't return - continue with spawn
+		else:
+			# Stale reference, clean it up
+			occupied_tiles.erase(position)
+
+	# Acquire entity from pool
+	var entity = Cluster.acquire(pool_key)
+	if not entity:
+		push_error("EntityManager: Failed to acquire %s from pool after successful Rust spawn!" % pool_key)
+		return
+
+	# Set ULID from Rust
+	if "ulid" in entity:
+		entity.ulid = ulid
+		# Register with StatsManager if entity has terrain_type
+		if StatsManager and "terrain_type" in entity:
+			var etype = "ship" if entity.terrain_type == 0 else "npc"
+			StatsManager.register_entity(entity, etype)
+
+	# Convert tile position to world position
+	var world_pos = p_tile_map.map_to_local(position)
+
+	# Configure entity
+	var entity_config = {
+		"player_ulid": player_ulid,
+		"direction": randi() % 16,
+		"occupied_tiles": occupied_tiles
+	}
+
+	# Spawn entity in scene
+	var spawned = spawn_entity(entity, p_hex_map, world_pos, entity_config)
+	if not spawned:
+		push_error("EntityManager: Failed to spawn entity %s at %s" % [entity_type, position])
+		# Return entity to pool
+		Cluster.release(pool_key, entity)
+		return
+
+	# Register entity with EntityManager
+	register_entity(entity, pool_key, position)
+
+	# Reveal chunk for fog of war
+	if ChunkManager:
+		ChunkManager.reveal_chunk_at_tile(position)
+
+	# Mark tile as occupied (for ghost spawning, we store the LAST entity at this position)
+	# Multiple entities can temporarily overlap - they'll move apart on next movement tick
+	occupied_tiles[position] = entity
+
+	# Store in tracking array if provided
+	if storage_array != null:
+		storage_array.append(entity)
+
+	# Emit signal
+	entity_spawned.emit(entity, pool_key)
+
+	print("EntityManager: Spawned %s at %s (ulid: %02x%02x...)" % [entity_type, position, ulid[0], ulid[1]])
+
 ## Entity type configurations (movement intervals, etc.)
 const ENTITY_CONFIGS = {
 	"viking": {"move_interval": 2.0, "tile_type": TileType.WATER},
@@ -33,7 +141,60 @@ const ENTITY_CONFIGS = {
 	"king": {"move_interval": 2.0, "tile_type": TileType.LAND},
 	"skullwizard": {"move_interval": 2.8, "tile_type": TileType.LAND},
 	"fireworm": {"move_interval": 2.2, "tile_type": TileType.LAND},
+	"martialhero": {"move_interval": 2.3, "tile_type": TileType.LAND},
 }
+
+## ============================================================================
+## DEFENSIVE PROGRAMMING HELPERS
+## ============================================================================
+
+## Validate that an entity is still valid and safe to access
+## This is a critical defensive programming function to prevent crashes from:
+## - Accessing freed entities
+## - Using stale references after pool reuse
+## - Race conditions with async operations (pathfinding, combat)
+## @param entity: The entity to validate (can be Node or Dictionary entry)
+## @return: Node - Valid entity, or null if invalid
+static func get_valid_entity(entity) -> Node:
+	# Handle dictionary entries (from registered_entities array)
+	if typeof(entity) == TYPE_DICTIONARY:
+		entity = entity.get("entity")
+
+	# Validate entity exists and is valid
+	if not entity:
+		return null
+
+	if not is_instance_valid(entity):
+		return null
+
+	# Check if entity is being freed (queued for deletion)
+	if entity.is_queued_for_deletion():
+		return null
+
+	# Check if entity is in scene tree (not orphaned)
+	if not entity.is_inside_tree():
+		return null
+
+	return entity
+
+## Validate entity with ULID matching (prevents using pooled/reused entities)
+## @param entity: The entity to validate
+## @param expected_ulid: The ULID it should have
+## @return: Node - Valid entity with matching ULID, or null if invalid/mismatch
+static func get_valid_entity_with_ulid(entity, expected_ulid: PackedByteArray) -> Node:
+	entity = get_valid_entity(entity)
+	if not entity:
+		return null
+
+	# Verify ULID matches (prevents accessing reused pooled entities)
+	if "ulid" in entity and entity.ulid != expected_ulid:
+		return null  # Entity was pooled and reused with different ULID
+
+	return entity
+
+## ============================================================================
+## ENTITY SPAWNING & LIFECYCLE
+## ============================================================================
 
 ## Spawn an entity (NPC, Ship, etc.) with proper initialization
 ## @param entity: The entity node acquired from Cluster
@@ -137,6 +298,13 @@ func despawn_entity(entity: Node, pool_key: String) -> void:
 		push_warning("EntityManager: Cannot despawn - entity is invalid!")
 		return
 
+	# CRITICAL: Clean up occupied_tiles to prevent desync
+	# Find which tile this entity occupies and clear it
+	for tile in occupied_tiles.keys():
+		if occupied_tiles[tile] == entity:
+			occupied_tiles.erase(tile)
+			break
+
 	# Unregister from tracking
 	unregister_entity(entity)
 
@@ -186,7 +354,7 @@ func _setup_entity_health_bar(entity: Node) -> void:
 		health_bar.initialize(100.0, 100.0)
 
 	# Configure appearance
-	health_bar.set_bar_offset(Vector2(0, -30))  # Position above entity
+	health_bar.set_bar_offset(Vector2(0, -25))  # Position above entity (5px closer than before)
 	health_bar.set_auto_hide(false)  # Always visible
 
 ## Cleanup health bar when despawning entity (returns to pool)
@@ -226,15 +394,14 @@ func _cleanup_entity_health_bar(entity: Node) -> void:
 ##   - player_ulid: PackedByteArray - Player ownership
 ##   - near_pos: Vector2i (optional) - Card position to spawn near (default: Vector2i(-1, -1))
 ##   - entity_name: String (optional) - Display name for logging (default: pool_key)
-##   - post_spawn_callback: Callable (optional) - Function to call after each spawn (receives entity as parameter)
-## @return: int - Number of entities successfully spawned
-func spawn_multiple(spawn_config: Dictionary) -> int:
+## @return: void - Non-blocking, results handled asynchronously
+func spawn_multiple(spawn_config: Dictionary) -> void:
 	# Validate required fields
 	var required_fields = ["pool_key", "count", "tile_type", "hex_map", "tile_map", "occupied_tiles", "storage_array", "player_ulid"]
 	for field in required_fields:
 		if not spawn_config.has(field):
 			push_error("EntityManager.spawn_multiple: Missing required field '%s'" % field)
-			return 0
+			return
 
 	# Extract config
 	var pool_key: String = spawn_config["pool_key"]
@@ -247,7 +414,6 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 	var player_ulid: PackedByteArray = spawn_config["player_ulid"]
 	var near_pos: Vector2i = spawn_config.get("near_pos", Vector2i(-1, -1))
 	var entity_name: String = spawn_config.get("entity_name", pool_key)
-	var post_spawn_callback: Callable = spawn_config.get("post_spawn_callback", Callable())
 
 	# Convert TileType to Rust terrain_type (0=Water, 1=Land)
 	var terrain_type: int = -1
@@ -258,79 +424,36 @@ func spawn_multiple(spawn_config: Dictionary) -> int:
 			terrain_type = 1
 		TileType.ANY:
 			push_error("EntityManager.spawn_multiple: TileType.ANY not supported with Rust spawning")
-			return 0
+			return
 
 	# Determine preferred location (use near_pos if provided, otherwise use camera position)
 	var preferred_location = near_pos if near_pos != Vector2i(-1, -1) else Vector2i(0, 0)
 
-	# Spawn entities using Rust-authoritative EntitySpawnBridge
-	var spawned_count = 0
+	# Initialize context array for this entity_type if not exists
+	if not pending_spawn_contexts.has(pool_key):
+		pending_spawn_contexts[pool_key] = []
 
+	# Queue all spawn requests (non-blocking) - results will come via global signal handler
 	for i in range(count):
-		# Request Rust to find valid spawn location and create entity
-		# Access via Cache to avoid Rust class name collision
-		var spawn_result = Cache.entity_spawn_bridge.spawn_entity(
+		# Store spawn context for this request
+		var context = {
+			"pool_key": pool_key,
+			"hex_map": hex_map,
+			"tile_map": tile_map,
+			"storage_array": storage_array,
+			"player_ulid": player_ulid
+		}
+		pending_spawn_contexts[pool_key].append(context)
+
+		# Queue spawn request to Rust
+		Cache.entity_spawn_bridge.spawn_entity(
 			pool_key,
 			terrain_type,
-			preferred_location,  # Vector2i with preferred spawn location
+			preferred_location,
 			50  # search_radius (larger for card spawns)
 		)
 
-		# Check if spawn was successful
-		if not spawn_result.success:
-			push_warning("EntityManager: %s %d spawn FAILED: %s" % [entity_name, i + 1, spawn_result.error_message])
-			continue
-
-		# Acquire entity from pool for rendering
-		var entity = Cluster.acquire(pool_key)
-		if not entity:
-			push_error("EntityManager: Failed to acquire %s %d from pool '%s'" % [entity_name, i + 1, pool_key])
-			continue
-
-		# Set ULID from Rust (source of truth)
-		if "ulid" in entity:
-			entity.ulid = spawn_result.ulid
-
-			# Register stats immediately (can't rely on _ready() for pooled entities)
-			if StatsManager and "terrain_type" in entity:
-				var entity_type = "ship" if entity.terrain_type == 0 else "npc"
-				StatsManager.register_entity(entity, entity_type)
-
-		# Convert tile coordinates to world position for rendering
-		# NOTE: Rust returns position_q and position_r, NOT a Vector2i
-		var spawn_tile: Vector2i = Vector2i(spawn_result.position_q, spawn_result.position_r)
-		var world_pos = tile_map.map_to_local(spawn_tile)
-
-		# Configure entity
-		var entity_config = {
-			"player_ulid": player_ulid,
-			"direction": randi() % 16,
-			"occupied_tiles": occupied_tiles
-		}
-
-		# Spawn using base spawn_entity (handles health bar setup)
-		spawn_entity(entity, hex_map, world_pos, entity_config)
-
-		# Register with EntityManager for movement tracking
-		register_entity(entity, pool_key, spawn_tile)
-
-		# Reveal chunk where entity spawned (for fog of war)
-		if ChunkManager:
-			ChunkManager.reveal_chunk_at_tile(spawn_tile)
-
-		# Call post-spawn callback if provided (e.g., for wave shader on Vikings)
-		if post_spawn_callback.is_valid():
-			post_spawn_callback.call(entity)
-
-		# Mark tile as occupied
-		occupied_tiles[spawn_tile] = entity
-
-		# Store in tracking array
-		storage_array.append({"entity": entity, "tile": spawn_tile})
-
-		spawned_count += 1
-
-	return spawned_count
+	# That's it! Results handled by _on_spawn_completed_global
 
 ## Helper: Find valid tiles for spawning based on tile type
 ## Uses optimized spatial sampling instead of full map scan
@@ -497,55 +620,6 @@ func _is_tile_type_match_procedural(is_water: bool, tile_type: TileType) -> bool
 			return true
 	return false
 
-## Update all registered entities (movement timers)
-## Call this from main scene's _process(delta)
-## @param delta: Time since last frame
-## @param movement_callback: Callable that handles pathfinding for an entity
-##   Signature: func(entity: Node, current_tile: Vector2i, pool_key: String)
-func update_entities(delta: float, movement_callback: Callable) -> void:
-	var culled_count = 0
-	var active_count = 0
-
-	for entry in registered_entities:
-		var entity = entry["entity"]
-
-		# Skip invalid entities
-		if not entity or not is_instance_valid(entity):
-			continue
-
-		# Skip entities in combat (they shouldn't move)
-		if "current_state" in entity:
-			var IN_COMBAT_FLAG = 0b1000000  # 0x40
-			if entity.current_state & IN_COMBAT_FLAG:
-				continue
-
-		# Skip entities in non-visible chunks (chunk culling optimization)
-		if ChunkManager and ChunkManager.chunk_culling_enabled:
-			var entity_chunk = MapConfig.tile_to_chunk(entry["tile"])
-
-			# PROCEDURAL WORLD: Use visible_chunks (Array of Vector2i) instead of visible_chunk_indices
-			if not entity_chunk in ChunkManager.visible_chunks:
-				culled_count += 1
-				continue
-
-		active_count += 1
-
-		# Update movement timer
-		entry["move_timer"] += delta
-
-		# Check if it's time to move
-		if entry["move_timer"] >= entry["move_interval"]:
-			entry["move_timer"] = 0.0
-
-			# Call the movement callback to handle pathfinding
-			if movement_callback.is_valid():
-				movement_callback.call(entity, entry["tile"], entry["pool_key"], entry)
-
-	# Update statistics for debugging
-	if ChunkManager:
-		ChunkManager.culled_entities_count = culled_count
-		ChunkManager.active_entities_count = active_count
-
 ## Find entity near a world position (spatial query)
 ## @param world_pos: World position to search near
 ## @param search_radius: Search radius in pixels
@@ -628,6 +702,14 @@ func _update_combat_position(entity: Node, tile: Vector2i) -> void:
 ## ============================================================================
 
 func _ready() -> void:
+	# Wait for Cache to initialize
+	await get_tree().process_frame
+
+	# Connect to spawn bridge signal once for all spawns
+	if Cache.entity_spawn_bridge:
+		Cache.entity_spawn_bridge.spawn_completed.connect(_on_spawn_completed_global)
+		print("EntityManager: Connected to spawn bridge")
+
 	# Connect to game timer for turn-based updates
 	if GameTimer:
 		GameTimer.turn_changed.connect(_on_turn_changed)
@@ -648,20 +730,36 @@ func initialize(p_hex_map: Node, p_tile_map) -> void:
 	print("EntityManager: Initialized with hex_map and tile_map references")
 
 ## ============================================================================
-## TURN-BASED ENTITY UPDATES (replaces per-frame updates)
+## REAL-TIME ENTITY UPDATES (per-frame with throttling)
 ## ============================================================================
 
-## Called once per turn by GameTimer signal
+## Called once per turn by GameTimer signal (kept for compatibility)
 func _on_turn_changed(_turn: int) -> void:
-	# Update all entities for movement
-	_update_all_entities()
+	pass  # No longer using turn-based updates
 
-## Update all registered entities (called once per turn, not every frame!)
-func _update_all_entities() -> void:
+## Update all registered entities every frame (with per-entity move timers)
+func _process(delta: float) -> void:
+	# Throttle movement updates to avoid per-frame overhead
+	movement_update_accumulator += delta
+
+	if movement_update_accumulator >= MOVEMENT_UPDATE_INTERVAL:
+		movement_update_accumulator = 0.0
+		_update_all_entities(delta)
+
+## Update all registered entities (called every 0.5 seconds, not every frame!)
+func _update_all_entities(delta: float) -> void:
 	var culled_count = 0
 	var active_count = 0
+	var processed_count = 0
 
-	for entry in registered_entities:
+	# Process entities in batches (round-robin) to spread work
+	var total_entities = registered_entities.size()
+	if total_entities == 0:
+		return
+
+	for i in range(ENTITIES_PER_UPDATE):
+		var idx = (entity_process_index + i) % total_entities
+		var entry = registered_entities[idx]
 		var entity = entry["entity"]
 
 		# Skip invalid entities
@@ -684,9 +782,19 @@ func _update_all_entities() -> void:
 				continue
 
 		active_count += 1
+		processed_count += 1
 
-		# Trigger entity movement (time-based now handled by turn system)
-		_handle_entity_movement(entity, entry["tile"], entry["pool_key"], entry)
+		# Update entity's move timer (accumulate time since last check)
+		entry["move_timer"] += MOVEMENT_UPDATE_INTERVAL
+
+		# Check if it's time for this entity to move
+		if entry["move_timer"] >= entry["move_interval"]:
+			entry["move_timer"] = 0.0  # Reset timer
+			# Trigger entity movement (real-time with per-entity intervals)
+			_handle_entity_movement(entity, entry["tile"], entry["pool_key"], entry)
+
+	# Advance the round-robin index for next update
+	entity_process_index = (entity_process_index + ENTITIES_PER_UPDATE) % max(total_entities, 1)
 
 ## ============================================================================
 ## ENTITY MOVEMENT & PATHFINDING (moved from main.gd)
@@ -750,10 +858,14 @@ func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vec
 	# Request pathfinding - connect to entity's signal to update occupied_tiles
 	# The NPC will emit pathfinding_completed signal when done
 	if entity.has_method("request_pathfinding"):
-		# Connect to entity's pathfinding_completed signal (ONE_SHOT auto-disconnects)
-		# NOTE: Don't check is_connected - just connect with ONE_SHOT flag
-		# ONE_SHOT connections auto-disconnect after first emission
-		entity.pathfinding_completed.connect(_on_entity_pathfinding_completed.bind(entity, current_tile), CONNECT_ONE_SHOT)
+		# Check if already connected (entity still pathfinding from previous request)
+		if not entity.pathfinding_completed.is_connected(_on_entity_pathfinding_completed):
+			# Connect to entity's pathfinding_completed signal (ONE_SHOT auto-disconnects)
+			entity.pathfinding_completed.connect(_on_entity_pathfinding_completed.bind(entity, current_tile), CONNECT_ONE_SHOT)
+		else:
+			# Entity is still pathfinding - skip this movement request
+			occupied_tiles[current_tile] = entity  # Put it back
+			return
 
 		# Request pathfinding without callback - signal will handle it
 		entity.request_pathfinding(destination, tile_map)
@@ -762,11 +874,19 @@ func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vec
 
 ## Handle entity pathfinding completed signal
 func _on_entity_pathfinding_completed(path: Array[Vector2i], success: bool, entity: Node, original_tile: Vector2i) -> void:
-	if not entity or not is_instance_valid(entity):
-		occupied_tiles[original_tile] = entity if entity else null
+	# CRITICAL: Use defensive validation helper
+	entity = get_valid_entity(entity)
+	if not entity:
+		# Entity was freed - clean up occupied_tiles
+		occupied_tiles.erase(original_tile)
 		return
 
 	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+
+	# CRITICAL: Sync Rust state immediately to prevent desync
+	# Update Rust with current position before pathfinding starts
+	if pathfinding_bridge and "ulid" in entity and not entity.ulid.is_empty():
+		pathfinding_bridge.update_entity_position(entity.ulid, original_tile, entity.terrain_type)
 
 	if success and path.size() > 0:
 		var final_destination = path[path.size() - 1]

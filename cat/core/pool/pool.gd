@@ -63,6 +63,15 @@ func release(instance: Node):
 		# Reset position
 		instance.global_position = Vector2.ZERO
 
+		# Reset transform properties for pool reuse
+		instance.scale = Vector2(1.0, 1.0)
+		instance.rotation = 0.0
+
+		# CRITICAL: Call reset_for_pool() to clear ALL internal state
+		# This prevents stale data (signals, references, state flags) across pool reuse
+		if instance.has_method("reset_for_pool"):
+			instance.reset_for_pool()
+
 # Get count of available objects
 func get_available_count() -> int:
 	return available.size()

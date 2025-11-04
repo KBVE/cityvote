@@ -112,6 +112,10 @@ func _initialize() -> void:
 		ComboPopup.combo_accepted_by_player.connect(_on_combo_accepted_by_player)
 		ComboPopup.combo_declined_by_player.connect(_on_combo_declined_by_player)
 
+	# Connect to CardComboBridge signal for combo detection results
+	if CardComboBridge:
+		CardComboBridge.combo_detected.connect(_on_combo_result)
+
 	# Create swap indicator UI (await since it's async)
 	await _create_swap_indicator()
 
@@ -910,11 +914,11 @@ func _check_for_combos() -> void:
 	if placed_cards.size() < 5:
 		return
 
-	# Request combo detection (async - result via callback)
-	CardComboBridge.request_combo_detection(placed_cards, _on_combo_result)
+	# Request combo detection (async - result via signal)
+	CardComboBridge.request_combo_detection(placed_cards)
 
-## Callback when combo detection completes
-func _on_combo_result(result: Dictionary) -> void:
+## Signal handler when combo detection completes
+func _on_combo_result(request_id: int, result: Dictionary) -> void:
 	# Check if a combo was found
 	if not result.has("hand_name") or not result.has("card_indices"):
 		return

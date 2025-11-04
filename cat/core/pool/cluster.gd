@@ -44,6 +44,10 @@ func _setup_pools():
 	var fire_worm_scene = preload("res://nodes/npc/fireworm/fireworm.tscn")
 	register_pool("fireworm", fire_worm_scene, 10)
 
+	# Martial Hero NPC pool
+	var martial_hero_scene = preload("res://nodes/npc/martialhero/martialhero.tscn")
+	register_pool("martialhero", martial_hero_scene, 10)
+
 	# Playing card pool (starts with MAX_HAND capacity)
 	# Pool grows dynamically if needed. Deck stores CardData, not instances.
 	var card_scene = preload("res://nodes/cards/pooled_card.tscn")

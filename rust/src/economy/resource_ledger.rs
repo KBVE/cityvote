@@ -362,6 +362,30 @@ pub fn load_save_data(data: &[(i32, f32, f32)]) {
     }
 }
 
+/// Reset all resources to their initial values (1000 each)
+pub fn reset_resources_to_default() {
+    if let Some(mut entry) = RESOURCE_LEDGER.get_mut(&ResourceType::Gold) {
+        entry.current = 1000.0;
+        entry.cap = f32::MAX;
+        entry.rate = 0.0;
+    }
+    if let Some(mut entry) = RESOURCE_LEDGER.get_mut(&ResourceType::Food) {
+        entry.current = 1000.0;
+        entry.cap = f32::MAX;
+        entry.rate = 0.0;
+    }
+    if let Some(mut entry) = RESOURCE_LEDGER.get_mut(&ResourceType::Labor) {
+        entry.current = 1000.0;
+        entry.cap = f32::MAX;
+        entry.rate = 0.0;
+    }
+    if let Some(mut entry) = RESOURCE_LEDGER.get_mut(&ResourceType::Faith) {
+        entry.current = 1000.0;
+        entry.cap = f32::MAX;
+        entry.rate = 0.0;
+    }
+}
+
 /// Clear all producers and consumers (useful for testing/reset)
 pub fn clear_producers_and_consumers() {
     PRODUCERS.clear();

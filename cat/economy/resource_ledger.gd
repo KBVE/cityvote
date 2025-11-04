@@ -142,6 +142,10 @@ func remove_producer(ulid: PackedByteArray) -> void:
 func remove_consumer(ulid: PackedByteArray) -> void:
 	rust_bridge.remove_consumer(ulid)
 
+## Reset all resources to their initial values (1000 each)
+func reset_resources() -> void:
+	rust_bridge.reset_resources()
+
 ## Print statistics (debugging)
 func print_stats() -> void:
 	rust_bridge.print_stats()

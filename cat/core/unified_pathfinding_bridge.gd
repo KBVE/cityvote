@@ -25,6 +25,10 @@ const ENABLE_PERF_LOGGING = false
 var frame_count = 0
 var perf_log_interval = 60  # Log every 60 frames
 
+## Polling throttling (to avoid per-frame FFI overhead)
+var poll_accumulator: float = 0.0
+const POLL_INTERVAL: float = 0.1  # Poll every 0.1 seconds (10 polls/sec)
+
 func _ready() -> void:
 	call_deferred("_initialize_bridge")
 
@@ -51,10 +55,17 @@ func _initialize_bridge() -> void:
 
 # No longer need pending callback dictionaries - using signals instead!
 
-## Poll for pathfinding results every frame (GDScript-side polling)
-func _process(_delta: float) -> void:
+## Poll for pathfinding results (throttled to reduce FFI overhead)
+func _process(delta: float) -> void:
 	if not pathfinding_bridge or not is_instance_valid(pathfinding_bridge):
 		return
+
+	# Throttle polling to avoid per-frame FFI overhead
+	poll_accumulator += delta
+	if poll_accumulator < POLL_INTERVAL:
+		return  # Skip this frame
+
+	poll_accumulator = 0.0  # Reset accumulator
 
 	var frame_start_time = Time.get_ticks_usec()
 	var path_poll_time = 0

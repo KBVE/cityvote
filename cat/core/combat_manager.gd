@@ -53,10 +53,6 @@ func _on_damage_dealt(
 		push_error("CombatManager: Invalid defender ULID in damage_dealt")
 		return
 
-	# Get both entities
-	var attacker = UlidManager.get_instance(attacker_ulid) as Node2D
-	var defender = UlidManager.get_instance(defender_ulid) as Node2D
-
 	# Apply damage through StatsManager to trigger signals
 	# This will emit stat_changed signal for health bars to update
 	if StatsManager:
@@ -64,11 +60,16 @@ func _on_damage_dealt(
 	else:
 		push_error("CombatManager: StatsManager not available to apply damage")
 
-	# Check if defender exists (required for visual feedback)
-	if defender == null or not is_instance_valid(defender):
-		return  # Entity not found or off-screen (silent, expected for off-screen combat)
+	# CRITICAL: Validate entities using defensive programming helper
+	var defender = UlidManager.get_instance(defender_ulid) as Node2D
+	defender = EntityManager.get_valid_entity_with_ulid(defender, defender_ulid)
+	if not defender:
+		# Entity freed, despawned, or ULID mismatch (pooled/reused)
+		return
 
-	if attacker == null or not is_instance_valid(attacker):
+	var attacker = UlidManager.get_instance(attacker_ulid) as Node2D
+	attacker = EntityManager.get_valid_entity_with_ulid(attacker, attacker_ulid)
+	if not attacker:
 		return
 
 	# Check if entity is visible (in viewport)

@@ -9,6 +9,15 @@ class_name NPC
 ## Signal emitted when pathfinding completes (for main.gd to update occupied_tiles)
 signal pathfinding_completed(path: Array[Vector2i], success: bool)
 
+## Signal emitted when entire path is complete
+signal path_complete()
+
+## Signal emitted when each waypoint is reached
+signal waypoint_reached(tile: Vector2i)
+
+## Signal emitted when pathfinding result is ready (replaces callbacks)
+signal pathfinding_result(path: Array[Vector2i], success: bool)
+
 @onready var sprite: Sprite2D = $Sprite2D
 
 # Terrain Type enum (matches Rust TerrainType and unified pathfinding system)
@@ -70,10 +79,11 @@ var rotation_threshold: float = 5.0  # Degrees - how close to target angle befor
 # Path following
 var current_path: Array[Vector2i] = []  # Tile coordinates of path to follow
 var path_index: int = 0  # Current position in path
-var on_path_complete: Callable  # Callback when entire path is complete
-var on_waypoint_reached: Callable  # Callback when each waypoint is reached
 var path_visualizer: Node2D = null  # Visual representation of path
-var pending_path_callbacks: Dictionary = {}  # ULID hex -> callback for pathfinding results
+
+# Pathfinding timeout (prevents entities getting stuck in PATHFINDING state forever)
+var pathfinding_timeout: float = 5.0  # 5 seconds max wait for pathfinding result
+var pathfinding_timer: float = 0.0  # Current time spent waiting
 
 # Critically-damped spring parameters for organic motion
 var angular_stiffness: float = 18.0
@@ -332,7 +342,7 @@ func move_to(target_pos: Vector2):
 				# Land entities move immediately
 				is_moving = true
 
-func follow_path(path: Array[Vector2i], tile_map, complete_callback: Callable = Callable(), waypoint_callback: Callable = Callable()):
+func follow_path(path: Array[Vector2i], tile_map):
 	if path.size() < 2:
 		return
 
@@ -363,8 +373,6 @@ func follow_path(path: Array[Vector2i], tile_map, complete_callback: Callable = 
 
 	current_path = path
 	path_index = 1  # Start at index 1 (0 is current position)
-	on_path_complete = complete_callback
-	on_waypoint_reached = waypoint_callback
 
 	# Create path visualizer
 	_create_path_visualizer(path, tile_map)
@@ -376,8 +384,7 @@ func follow_path(path: Array[Vector2i], tile_map, complete_callback: Callable = 
 ## @param tile_map: The tile map reference for coordinate conversion
 ## @param min_distance: Minimum distance in tiles
 ## @param max_distance: Maximum distance in tiles
-## @param callback: Optional callback when movement completes
-func request_random_movement(tile_map, min_distance: int, max_distance: int, callback: Callable = Callable()) -> void:
+func request_random_movement(tile_map, min_distance: int, max_distance: int) -> void:
 	# Validate ULID
 	if ulid.is_empty():
 		push_error("request_random_movement: Entity has no ULID!")
@@ -406,10 +413,10 @@ func request_random_movement(tile_map, min_distance: int, max_distance: int, cal
 		return
 
 	# Request pathfinding to that destination
-	request_pathfinding(destination, tile_map, callback)
+	request_pathfinding(destination, tile_map)
 
 ## Request pathfinding to a target tile (uses unified pathfinding bridge)
-func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = Callable()):
+func request_pathfinding(target_tile: Vector2i, tile_map):
 	# Validate ULID
 	if ulid.is_empty():
 		push_error("request_pathfinding: Entity has no ULID! Cannot request pathfinding.")
@@ -425,6 +432,7 @@ func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = C
 
 	# Set state to pathfinding
 	add_state(State.PATHFINDING)
+	pathfinding_timer = 0.0  # Reset timeout timer
 
 	# Get unified pathfinding bridge
 	var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
@@ -442,8 +450,7 @@ func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = C
 		push_error("NPC %s: Target tile %s is NOT walkable for terrain_type=%d! Aborting pathfinding." % [ulid_hex, target_tile, terrain_type])
 		remove_state(State.PATHFINDING)
 		add_state(State.BLOCKED)
-		if callback.is_valid():
-			callback.call([] as Array[Vector2i], false)
+		pathfinding_result.emit([] as Array[Vector2i], false)
 		return
 
 	# DIAGNOSTIC: Check if start tile is also walkable
@@ -451,18 +458,16 @@ func request_pathfinding(target_tile: Vector2i, tile_map, callback: Callable = C
 		push_error("NPC %s: START tile %s is NOT walkable for terrain_type=%d! Current position is invalid!" % [ulid_hex, current_tile, terrain_type])
 		remove_state(State.PATHFINDING)
 		add_state(State.BLOCKED)
-		if callback.is_valid():
-			callback.call([] as Array[Vector2i], false)
+		pathfinding_result.emit([] as Array[Vector2i], false)
 		return
 
 	print("NPC %s (%s): Requesting path from %s to %s (terrain_type=%d, expected=%s)" % [ulid_hex, get_class(), current_tile, target_tile, terrain_type, "WATER" if terrain_type == 0 else "LAND"])
 
-	# Store the callback for when path_found signal is emitted
-	pending_path_callbacks[ulid_hex] = callback
-
-	# Connect to path_found signal if not already connected
-	if not bridge.path_found.is_connected(_on_path_found):
-		bridge.path_found.connect(_on_path_found)
+	# CRITICAL: Prevent signal connection leaks
+	# Disconnect first to ensure we don't accumulate duplicate connections when entity is pooled/reused
+	if bridge.path_found.is_connected(_on_path_found):
+		bridge.path_found.disconnect(_on_path_found)
+	bridge.path_found.connect(_on_path_found)
 
 	# Request path through unified bridge (result comes via signal)
 	bridge.request_path(entity_id, terrain_type, current_tile, target_tile)
@@ -475,46 +480,31 @@ func _on_path_found(entity_ulid: PackedByteArray, path: Array[Vector2i], success
 	if entity_ulid != ulid:
 		return  # Not for this entity
 
+	# CRITICAL: Validate entity is still valid before proceeding
+	# Entity may have been freed (death, despawn) during async pathfinding
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		# Entity is being freed - don't process pathfinding result
+		return
+
 	# Remove pathfinding state
 	remove_state(State.PATHFINDING)
 
-	# Emit signal for external listeners (like main.gd)
+	# Emit signals for external listeners
 	pathfinding_completed.emit(path, success)
+	pathfinding_result.emit(path, success)
 
-	# Find and call the pending callback (if any)
-	if ulid_hex in pending_path_callbacks:
-		var callback = pending_path_callbacks[ulid_hex]
-		pending_path_callbacks.erase(ulid_hex)
-
-		if success and path.size() > 0:
-			print("NPC %s: Path SUCCESS - %d waypoints, starting movement" % [ulid_hex, path.size()])
-			follow_path(path, Cache.get_tile_map())
-			if callback.is_valid():
-				callback.call(path, success)
-		else:
-			add_state(State.BLOCKED)
-			# Get bridge for diagnostics
-			var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-			if bridge:
-				var current_tile = Cache.get_tile_map().local_to_map(position)
-				var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
-				push_error("NPC %s: Path FAILED (success=%s, path_size=%d, start_walkable=%s)" %
-					[ulid_hex, success, path.size(), start_walkable])
-			if callback.is_valid():
-				callback.call([] as Array[Vector2i], false)
+	# Handle path internally
+	if success and path.size() > 0:
+		print("NPC %s: Path SUCCESS - %d waypoints, starting movement" % [ulid_hex, path.size()])
+		follow_path(path, Cache.get_tile_map())
 	else:
-		# No callback - just handle path internally
-		if success and path.size() > 0:
-			print("NPC %s: Path SUCCESS - %d waypoints, starting movement" % [ulid_hex, path.size()])
-			follow_path(path, Cache.get_tile_map())
-		else:
-			add_state(State.BLOCKED)
-			var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-			if bridge:
-				var current_tile = Cache.get_tile_map().local_to_map(position)
-				var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
-				push_error("NPC %s: Path FAILED (success=%s, path_size=%d, start_walkable=%s)" %
-					[ulid_hex, success, path.size(), start_walkable])
+		add_state(State.BLOCKED)
+		var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+		if bridge:
+			var current_tile = Cache.get_tile_map().local_to_map(position)
+			var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
+			push_error("NPC %s: Path FAILED (success=%s, path_size=%d, start_walkable=%s)" %
+				[ulid_hex, success, path.size(), start_walkable])
 
 func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 	# Remove old visualizer if exists
@@ -578,6 +568,16 @@ func _process(delta):
 	# Update z-index for proper layering as NPC moves
 	_update_z_index()
 
+	# CRITICAL: Check pathfinding timeout to prevent stuck state
+	if has_state(State.PATHFINDING):
+		pathfinding_timer += delta
+		if pathfinding_timer > pathfinding_timeout:
+			var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
+			push_warning("NPC %s: Pathfinding timeout! Resetting to BLOCKED state." % ulid_hex)
+			remove_state(State.PATHFINDING)
+			add_state(State.BLOCKED)
+			pathfinding_timer = 0.0
+
 	# Pause movement if in combat
 	if current_state & State.IN_COMBAT:
 		return
@@ -614,10 +614,10 @@ func _process(delta):
 			if path_visualizer and path_visualizer.has_method("remove_first_waypoint"):
 				path_visualizer.remove_first_waypoint()
 
-			# Notify waypoint reached
-			if current_path.size() > 0 and path_index >= 0 and path_index < current_path.size() and on_waypoint_reached.is_valid():
+			# Notify waypoint reached via signal
+			if current_path.size() > 0 and path_index >= 0 and path_index < current_path.size():
 				var reached_tile = current_path[path_index]
-				on_waypoint_reached.call(reached_tile)
+				waypoint_reached.emit(reached_tile)
 
 			# If following a path, move to next waypoint
 			if current_path.size() > 0 and path_index < current_path.size() - 1:
@@ -663,9 +663,9 @@ func _process(delta):
 					path_visualizer.queue_free()
 					path_visualizer = null
 
-				# Notify completion
-				if was_following_path and on_path_complete.is_valid():
-					on_path_complete.call()
+				# Notify completion via signal
+				if was_following_path:
+					path_complete.emit()
 		else:
 			# Smooth interpolation - terrain-specific easing
 			var t = move_progress
@@ -823,7 +823,13 @@ func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: f
 	if entity_ulid != ulid:
 		return
 
-	if not health_bar:
+	# CRITICAL: Validate entity still valid (not being freed)
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# If health bar doesn't exist yet, defer this update
+	if not health_bar or not is_instance_valid(health_bar):
+		call_deferred("_on_stat_changed", entity_ulid, stat_type, new_value)
 		return
 
 	# Update health bar based on stat type
@@ -836,49 +842,69 @@ func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: f
 
 # Handle entity death
 func _on_entity_died(entity_ulid: PackedByteArray) -> void:
-	if entity_ulid == ulid:
-		# Release health bar before dying
-		_release_health_bar()
+	if entity_ulid != ulid:
+		return
 
-		# Clean up path visualizer (waypoints)
-		if path_visualizer:
-			# Remove from parent first, then free
-			var parent = path_visualizer.get_parent()
-			if parent:
-				parent.remove_child(path_visualizer)
-				path_visualizer.queue_free()
-				path_visualizer = null
-			else:
-				push_error("NPC: Failed to remove path visualizer - no parent found for ULID: %s" % UlidManager.to_hex(ulid))
+	# CRITICAL: Validate entity still valid before cleanup
+	# Prevents double-free if signal fires multiple times
+	if not is_instance_valid(self) or is_queued_for_deletion():
+		return
 
-		# Cleanup pathfinding using unified bridge (all entities use ULID)
-		var pathfinding = get_node_or_null("/root/UnifiedPathfindingBridge")
-		if pathfinding:
-			pathfinding.remove_entity(ulid, terrain_type)
+	# Release health bar before dying
+	_release_health_bar()
 
-		# Unregister from combat system
-		if CombatManager and CombatManager.combat_bridge:
-			CombatManager.combat_bridge.unregister_combatant(ulid)
+	# Clean up path visualizer (waypoints)
+	if path_visualizer:
+		# Remove from parent first, then free
+		if path_visualizer.get_parent():
+			path_visualizer.get_parent().remove_child(path_visualizer)
+		# Free regardless of parent status (fix potential memory leak)
+		path_visualizer.queue_free()
+		path_visualizer = null
 
-		# Unregister from stats system
-		if StatsManager:
-			StatsManager.unregister_entity(ulid)
+	# Cleanup pathfinding using unified bridge (all entities use ULID)
+	var pathfinding = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if pathfinding:
+		pathfinding.remove_entity(ulid, terrain_type)
 
-		# Unregister from ULID manager
-		UlidManager.unregister_entity(ulid)
+	# Unregister from combat system
+	if CombatManager and CombatManager.combat_bridge:
+		CombatManager.combat_bridge.unregister_combatant(ulid)
 
-		# Return entity to pool or despawn
-		if Cluster and pool_name != "":
-			# Entity came from pool - return it
-			if is_inside_tree():
-				get_parent().remove_child(self)
-			Cluster.release(pool_name, self)
-		else:
-			# Entity not pooled - queue free
-			queue_free()
+	# Unregister from stats system
+	if StatsManager:
+		StatsManager.unregister_entity(ulid)
+
+	# Unregister from ULID manager
+	UlidManager.unregister_entity(ulid)
+
+	# CRITICAL: Clear ULID before returning to pool to prevent stale references
+	ulid = PackedByteArray()
+
+	# Return entity to pool or despawn
+	if Cluster and pool_name != "":
+		# Entity came from pool - return it
+		if is_inside_tree():
+			get_parent().remove_child(self)
+		Cluster.release(pool_name, self)
+	else:
+		# Entity not pooled - queue free
+		queue_free()
 
 # Override _exit_tree to ensure cleanup
 func _exit_tree() -> void:
+	# CRITICAL: Disconnect all signals first to prevent signal leaks
+	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	if pathfinding_bridge and pathfinding_bridge.path_found.is_connected(_on_path_found):
+		pathfinding_bridge.path_found.disconnect(_on_path_found)
+
+	if StatsManager:
+		if StatsManager.stat_changed.is_connected(_on_stat_changed):
+			StatsManager.stat_changed.disconnect(_on_stat_changed)
+		if StatsManager.entity_died.is_connected(_on_entity_died):
+			StatsManager.entity_died.disconnect(_on_entity_died)
+
+	# Release health bar
 	_release_health_bar()
 
 	# Clean up path visualizer
@@ -889,6 +915,53 @@ func _exit_tree() -> void:
 	# Unregister from combat system
 	if CombatManager and CombatManager.combat_bridge and not ulid.is_empty():
 		CombatManager.combat_bridge.unregister_combatant(ulid)
+
+## Reset entity state for pool reuse (called by Pool.release())
+## CRITICAL: Clears ALL internal state to prevent stale data across pool reuse
+func reset_for_pool() -> void:
+	# Reset movement state
+	is_moving = false
+	is_rotating_to_target = false
+	move_start_pos = Vector2.ZERO
+	move_target_pos = Vector2.ZERO
+	move_progress = 0.0
+	move_distance = 0.0
+
+	# Reset path following
+	current_path.clear()
+	path_index = 0
+
+	# Clear path visualizer (should already be freed, but defensive)
+	if path_visualizer:
+		if path_visualizer.get_parent():
+			path_visualizer.get_parent().remove_child(path_visualizer)
+		path_visualizer.queue_free()
+		path_visualizer = null
+
+	# Reset state flags
+	current_state = State.IDLE
+
+	# Reset pathfinding timeout
+	pathfinding_timer = 0.0
+
+	# Clear ULID and player ownership (will be set on next spawn)
+	ulid = PackedByteArray()
+	player_ulid = PackedByteArray()
+
+	# Reset direction and angles
+	direction = 0
+	current_angle = 0.0
+	target_angle = 0.0
+	angular_velocity = 0.0
+
+	# Clear occupied tiles reference
+	occupied_tiles.clear()
+
+	# Health bar should already be released, but ensure it's cleared
+	health_bar = null
+
+	# Energy reset
+	energy = max_energy
 
 # ============================================================================
 # COMBAT SYSTEM
@@ -948,22 +1021,25 @@ func ranged_attack(target: Node2D, projectile_type: int = Projectile.Type.SPEAR)
 	# Calculate projectile arc based on distance (farther = higher arc)
 	var arc_height = min(distance_to_target * 0.15, 50.0)  # Max 50px arc
 
-	# Set up hit callback to deal damage
+	# Set up signal connections for hit and pool return
 	var target_ulid: PackedByteArray
 	if "ulid" in target and target.ulid is PackedByteArray:
 		target_ulid = target.ulid
 
-	projectile.on_hit = func():
+	# Connect to projectile_hit signal to deal damage
+	projectile.projectile_hit.connect(func():
 		# Deal damage through StatsManager
 		if StatsManager and not target_ulid.is_empty():
 			var damage_dealt = StatsManager.take_damage(target_ulid, attack_power)
+	, CONNECT_ONE_SHOT)
 
-	# Set up pool return callback
-	projectile.on_return_to_pool = func(proj: Projectile):
+	# Connect to ready_for_pool signal to return projectile
+	projectile.ready_for_pool.connect(func(proj: Projectile):
 		if proj.get_parent():
 			proj.get_parent().remove_child(proj)
 		if Cluster:
 			Cluster.release("projectile", proj)
+	, CONNECT_ONE_SHOT)
 
 	# Fire projectile
 	projectile.fire(

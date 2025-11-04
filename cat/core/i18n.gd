@@ -340,6 +340,38 @@ var translations: Dictionary = {
 		Language.SPANISH: "Dino Especial",
 		Language.FRENCH: "Spécial Dino"
 	},
+	"card.custom.baron": {
+		Language.ENGLISH: "Baron Special",
+		Language.JAPANESE: "男爵特別",
+		Language.CHINESE: "男爵特殊",
+		Language.HINDI: "बैरन विशेष",
+		Language.SPANISH: "Barón Especial",
+		Language.FRENCH: "Spécial Baron"
+	},
+	"card.custom.skull_wizard": {
+		Language.ENGLISH: "Skull Wizard Special",
+		Language.JAPANESE: "スカルウィザード特別",
+		Language.CHINESE: "骷髅巫师特殊",
+		Language.HINDI: "खोपड़ी जादूगर विशेष",
+		Language.SPANISH: "Mago de Calavera Especial",
+		Language.FRENCH: "Spécial Sorcier Crâne"
+	},
+	"card.custom.warrior": {
+		Language.ENGLISH: "Warrior Special",
+		Language.JAPANESE: "戦士特別",
+		Language.CHINESE: "战士特殊",
+		Language.HINDI: "योद्धा विशेष",
+		Language.SPANISH: "Guerrero Especial",
+		Language.FRENCH: "Spécial Guerrier"
+	},
+	"card.custom.fireworm": {
+		Language.ENGLISH: "Fireworm Special",
+		Language.JAPANESE: "ファイアワーム特別",
+		Language.CHINESE: "火虫特殊",
+		Language.HINDI: "आग कीड़ा विशेष",
+		Language.SPANISH: "Gusano de Fuego Especial",
+		Language.FRENCH: "Spécial Ver de Feu"
+	},
 	"card.custom.generic": {
 		Language.ENGLISH: "Custom Card",
 		Language.JAPANESE: "カスタムカード",
@@ -405,6 +437,14 @@ var translations: Dictionary = {
 		Language.HINDI: "राजा",
 		Language.SPANISH: "Rey",
 		Language.FRENCH: "Roi"
+	},
+	"entity.martialhero.name": {
+		Language.ENGLISH: "Martial Hero",
+		Language.JAPANESE: "武道家",
+		Language.CHINESE: "武术英雄",
+		Language.HINDI: "मार्शल नायक",
+		Language.SPANISH: "Héroe Marcial",
+		Language.FRENCH: "Héros Martial"
 	},
 
 	# Tile Types

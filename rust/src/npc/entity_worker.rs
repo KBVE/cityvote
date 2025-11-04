@@ -1,4 +1,5 @@
 use super::entity::{EntityData, ENTITY_DATA};
+use super::spawn_manager::PENDING_SPAWNS;
 use crossbeam_queue::SegQueue;
 use std::sync::Arc;
 use std::thread;
@@ -61,6 +62,8 @@ pub fn start_entity_worker() {
                             }
                         }
                         EntityCommand::Insert { ulid, entity } => {
+                            // Remove from pending spawns (now safely inserted)
+                            PENDING_SPAWNS.remove(&entity.position);
                             ENTITY_DATA.insert(ulid, entity);
                         }
                         EntityCommand::Remove { ulid } => {

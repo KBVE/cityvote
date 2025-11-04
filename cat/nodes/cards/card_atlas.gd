@@ -46,20 +46,20 @@ const TOTAL_CARD_COUNT = STANDARD_CARD_COUNT + CUSTOM_CARD_COUNT  # 58
 ## suit: 0-3 (CLUBS, DIAMONDS, HEARTS, SPADES)
 ## value: 1-13 (Ace through King)
 ## Returns: card_id (0-51)
-static func get_card_id(suit: int, value: int) -> int:
+func get_card_id(suit: int, value: int) -> int:
 	assert(suit >= 0 and suit < NUM_STANDARD_SUITS, "Suit must be 0-%d" % (NUM_STANDARD_SUITS - 1))
 	assert(value >= ACE and value <= KING, "Value must be %d-%d" % [ACE, KING])
 	return suit * CARDS_PER_SUIT + (value - 1)
 
 ## Get card_id from suit enum and value
-static func get_card_id_from_suit(suit: Suit, value: int) -> int:
+func get_card_id_from_suit(suit: Suit, value: int) -> int:
 	if suit == Suit.CUSTOM:
 		push_error("Use CARD_VIKINGS or CARD_DINO constants for custom cards")
 		return 0
 	return get_card_id(suit, value)
 
 ## Create a card material with the specified card_id
-static func create_card_material(card_id: int) -> ShaderMaterial:
+func create_card_material(card_id: int) -> ShaderMaterial:
 	var shader = load("res://nodes/cards/card_atlas.gdshader")
 	var material = ShaderMaterial.new()
 	material.shader = shader
@@ -67,11 +67,11 @@ static func create_card_material(card_id: int) -> ShaderMaterial:
 	return material
 
 ## Update an existing material to show a different card
-static func set_card(material: ShaderMaterial, card_id: int) -> void:
+func set_card(material: ShaderMaterial, card_id: int) -> void:
 	material.set_shader_parameter("card_id", card_id)
 
 ## Get human-readable card name
-static func get_card_name(suit: int, value: int) -> String:
+func get_card_name(suit: int, value: int) -> String:
 	if suit < 0 or suit > 3 or value < 1 or value > 13:
 		return "Invalid Card"
 
@@ -100,7 +100,7 @@ static func get_card_name(suit: int, value: int) -> String:
 		return "%s %s %s" % [value_name, of_text, suit_name]
 
 ## Get card name from card_id
-static func get_card_name_from_id(card_id: int) -> String:
+func get_card_name_from_id(card_id: int) -> String:
 	if card_id == CARD_VIKINGS:
 		return I18n.translate("card.custom.viking")
 	elif card_id == CARD_DINO:
@@ -121,11 +121,11 @@ static func get_card_name_from_id(card_id: int) -> String:
 		return I18n.translate("card.custom.generic")
 
 ## Check if a card_id is valid
-static func is_valid_card_id(card_id: int) -> bool:
+func is_valid_card_id(card_id: int) -> bool:
 	return card_id >= 0 and card_id < TOTAL_CARD_COUNT
 
 ## Check if a card_id is a custom card
-static func is_custom_card(card_id: int) -> bool:
+func is_custom_card(card_id: int) -> bool:
 	return card_id >= CUSTOM_CARD_START and card_id < TOTAL_CARD_COUNT
 
 ## Example usage:

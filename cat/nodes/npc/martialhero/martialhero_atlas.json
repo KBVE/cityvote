@@ -1,0 +1,394 @@
+{
+  "atlas_width": 1600,
+  "atlas_height": 1600,
+  "frame_width": 200,
+  "frame_height": 200,
+  "animations": [
+    {
+      "name": "Idle",
+      "row": 0,
+      "frame_count": 8,
+      "y_offset": 0,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 4,
+          "x": 800,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 5,
+          "x": 1000,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 6,
+          "x": 1200,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 7,
+          "x": 1400,
+          "y": 0,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Run",
+      "row": 1,
+      "frame_count": 8,
+      "y_offset": 200,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 4,
+          "x": 800,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 5,
+          "x": 1000,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 6,
+          "x": 1200,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 7,
+          "x": 1400,
+          "y": 200,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Jump",
+      "row": 2,
+      "frame_count": 4,
+      "y_offset": 400,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 400,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Fall",
+      "row": 3,
+      "frame_count": 4,
+      "y_offset": 600,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 600,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 600,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 600,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 600,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Attack1",
+      "row": 4,
+      "frame_count": 6,
+      "y_offset": 800,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 800,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 800,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 800,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 800,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 4,
+          "x": 800,
+          "y": 800,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 5,
+          "x": 1000,
+          "y": 800,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Attack2",
+      "row": 5,
+      "frame_count": 6,
+      "y_offset": 1000,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 1000,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 1000,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 1000,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 1000,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 4,
+          "x": 800,
+          "y": 1000,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 5,
+          "x": 1000,
+          "y": 1000,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Take Hit",
+      "row": 6,
+      "frame_count": 4,
+      "y_offset": 1200,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 1200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 1200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 1200,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 1200,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    },
+    {
+      "name": "Death",
+      "row": 7,
+      "frame_count": 6,
+      "y_offset": 1400,
+      "frames": [
+        {
+          "frame_index": 0,
+          "x": 0,
+          "y": 1400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 1,
+          "x": 200,
+          "y": 1400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 2,
+          "x": 400,
+          "y": 1400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 3,
+          "x": 600,
+          "y": 1400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 4,
+          "x": 800,
+          "y": 1400,
+          "width": 200,
+          "height": 200
+        },
+        {
+          "frame_index": 5,
+          "x": 1000,
+          "y": 1400,
+          "width": 200,
+          "height": 200
+        }
+      ]
+    }
+  ]
+}

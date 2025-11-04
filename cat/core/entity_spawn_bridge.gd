@@ -5,6 +5,11 @@ extends Node
 ## This bridge ensures Rust is the source of truth for entity positions.
 ## GDScript only handles rendering - Rust validates spawn locations,
 ## checks terrain types, avoids collisions, and creates entity data.
+##
+## ASYNC API: spawn_entity() now queues requests and emits spawn_completed signal
+
+# Signal emitted when a spawn request completes (async)
+signal spawn_completed(success: bool, ulid: PackedByteArray, position: Vector2i, terrain_type: int, entity_type: String, error_message: String)
 
 # Reference to Rust EntitySpawnBridge
 var spawn_bridge: Node = null
@@ -14,11 +19,18 @@ func _ready():
 	spawn_bridge = ClassDB.instantiate("EntitySpawnBridge")
 	if spawn_bridge:
 		add_child(spawn_bridge)
-		print("EntitySpawnBridge: Initialized with Rust backend")
+		# Connect to Rust spawn_completed signal
+		spawn_bridge.spawn_completed.connect(_on_rust_spawn_completed)
+		print("EntitySpawnBridge: Initialized with Rust backend (async mode)")
 	else:
 		push_error("EntitySpawnBridge: Failed to instantiate Rust bridge!")
 
-## Spawn an entity with Rust validation
+func _on_rust_spawn_completed(success: bool, ulid: PackedByteArray, position_q: int, position_r: int, terrain_type: int, entity_type: String, error_message: String):
+	# Convert position to Vector2i and re-emit signal
+	var position = Vector2i(position_q, position_r)
+	spawn_completed.emit(success, ulid, position, terrain_type, entity_type, error_message)
+
+## Queue an entity spawn request (ASYNC - result comes via spawn_completed signal)
 ##
 ## # Arguments
 ## * entity_type: String - Type of entity ("viking", "jezza", "king", etc.)
@@ -27,44 +39,27 @@ func _ready():
 ## * search_radius: int - Radius to search for valid spawn location
 ##
 ## # Returns
-## Dictionary with:
-## * success: bool - Whether spawn succeeded
-## * ulid: PackedByteArray - Entity ULID (empty if failed)
-## * entity_type: String - Entity type
-## * position: Vector2i - Spawn position (q, r)
-## * terrain_type: int - Terrain type
-## * error_message: String - Error message if failed
+## void - Connect to spawn_completed signal to get the result
 func spawn_entity(
 	entity_type: String,
 	terrain_type: int,
 	preferred_location: Vector2i = Vector2i(-999999, -999999),
 	search_radius: int = 25
-) -> Dictionary:
+) -> void:
 	if not spawn_bridge:
 		push_error("EntitySpawnBridge: Rust bridge not initialized!")
-		return {
-			"success": false,
-			"ulid": PackedByteArray(),
-			"entity_type": entity_type,
-			"position": Vector2i(0, 0),
-			"terrain_type": terrain_type,
-			"error_message": "Rust bridge not initialized"
-		}
+		# Emit failure immediately
+		spawn_completed.emit(false, PackedByteArray(), Vector2i(0, 0), terrain_type, entity_type, "Rust bridge not initialized")
+		return
 
-	# Call Rust spawn function
-	var result = spawn_bridge.spawn_entity(
+	# Queue the spawn request (async - result will come via signal)
+	spawn_bridge.spawn_entity(
 		entity_type,
 		terrain_type,
 		preferred_location.x,
 		preferred_location.y,
 		search_radius
 	)
-
-	# Convert position to Vector2i for GDScript convenience
-	if result.has("position_q") and result.has("position_r"):
-		result["position"] = Vector2i(result["position_q"], result["position_r"])
-
-	return result
 
 ## Check if a location is valid for spawning
 ##

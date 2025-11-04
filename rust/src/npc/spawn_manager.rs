@@ -2,8 +2,36 @@ use godot::prelude::*;
 use super::entity::{EntityData, ENTITY_DATA};
 use super::terrain_cache::{self, TerrainType as CacheTerrainType};
 use super::entity::TerrainType as EntityTerrainType;
+use dashmap::DashSet;
+use once_cell::sync::Lazy;
+use crossbeam_queue::SegQueue;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 
 type HexCoord = (i32, i32);
+
+/// Track positions that have pending spawns (not yet in ENTITY_DATA due to worker thread)
+/// This prevents duplicate position assignments during rapid spawn bursts
+pub(super) static PENDING_SPAWNS: Lazy<DashSet<HexCoord>> = Lazy::new(|| DashSet::new());
+
+/// Spawn request structure
+#[derive(Debug, Clone)]
+pub struct SpawnRequest {
+    pub entity_type: String,
+    pub terrain_type: CacheTerrainType,
+    pub preferred_location: Option<HexCoord>,
+    pub search_radius: i32,
+}
+
+/// Spawn request queue (GDScript -> Worker thread)
+static SPAWN_REQUESTS: Lazy<Arc<SegQueue<SpawnRequest>>> = Lazy::new(|| Arc::new(SegQueue::new()));
+
+/// Spawn result queue (Worker thread -> GDScript)
+static SPAWN_RESULTS: Lazy<Arc<SegQueue<SpawnResult>>> = Lazy::new(|| Arc::new(SegQueue::new()));
+
+/// Worker thread running flag
+static SPAWN_WORKER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Result of a spawn attempt
 #[derive(Debug, Clone)]
@@ -29,7 +57,46 @@ fn is_valid_spawn_location(pos: HexCoord, terrain_type: CacheTerrainType) -> boo
         entry.value().position == pos
     });
 
-    !occupied
+    if occupied {
+        return false;
+    }
+
+    // Check not pending spawn (race condition protection)
+    !PENDING_SPAWNS.contains(&pos)
+}
+
+/// Validate and atomically reserve a spawn location
+/// Returns true if the location was valid and successfully reserved
+fn try_reserve_spawn_location(pos: HexCoord, terrain_type: CacheTerrainType) -> bool {
+    // Check if already pending
+    if PENDING_SPAWNS.contains(&pos) {
+        godot_print!("  -> Position {:?} already pending spawn (in PENDING_SPAWNS)", pos);
+        return false;
+    }
+
+    // Check terrain matches
+    let terrain = terrain_cache::get_terrain(pos.0, pos.1);
+    if terrain != terrain_type {
+        godot_print!("  -> Position {:?} has wrong terrain type", pos);
+        return false;
+    }
+
+    // Check not occupied by another entity
+    let occupied_count = ENTITY_DATA.iter().filter(|entry| entry.value().position == pos).count();
+    if occupied_count > 0 {
+        godot_print!("  -> Position {:?} occupied by {} entities in ENTITY_DATA", pos, occupied_count);
+        return false;
+    }
+
+    // CRITICAL: Atomically insert into pending spawns
+    // DashSet::insert() returns true if value was newly inserted
+    let inserted = PENDING_SPAWNS.insert(pos);
+    if inserted {
+        godot_print!("  -> Successfully reserved position {:?} (PENDING_SPAWNS size: {})", pos, PENDING_SPAWNS.len());
+    } else {
+        godot_print!("  -> Failed to reserve position {:?} (race condition - already in PENDING_SPAWNS)", pos);
+    }
+    inserted
 }
 
 /// Calculate hex distance between two coordinates
@@ -41,6 +108,7 @@ fn hex_distance(a: HexCoord, b: HexCoord) -> f32 {
 }
 
 /// Find a valid spawn location near a preferred position
+/// CRITICAL: Atomically reserves the position before returning
 fn find_nearby_spawn_location(
     preferred: HexCoord,
     terrain_type: CacheTerrainType,
@@ -57,7 +125,8 @@ fn find_nearby_spawn_location(
                     continue;
                 }
 
-                if is_valid_spawn_location(candidate, terrain_type) {
+                // CRITICAL: Atomically validate and reserve position
+                if try_reserve_spawn_location(candidate, terrain_type) {
                     return Some(candidate);
                 }
             }
@@ -68,6 +137,7 @@ fn find_nearby_spawn_location(
 }
 
 /// Find a random valid spawn location in the world
+/// CRITICAL: Atomically reserves the position before returning
 fn find_random_spawn_location(
     center: HexCoord,
     terrain_type: CacheTerrainType,
@@ -77,7 +147,7 @@ fn find_random_spawn_location(
     let mut rng = rand::thread_rng();
     let mut valid_locations = Vec::new();
 
-    // Search in area around center
+    // Search in area around center (but DON'T reserve yet)
     for dx in -search_radius..=search_radius {
         for dy in -search_radius..=search_radius {
             let candidate = (center.0 + dx, center.1 + dy);
@@ -89,42 +159,86 @@ fn find_random_spawn_location(
     }
 
     if valid_locations.is_empty() {
-        None
-    } else {
-        let idx = rng.gen_range(0..valid_locations.len());
-        Some(valid_locations[idx])
+        return None;
     }
+
+    // Try to reserve one of the valid locations
+    // Keep trying random locations until one succeeds (race condition protection)
+    for _ in 0..valid_locations.len() {
+        let idx = rng.gen_range(0..valid_locations.len());
+        let candidate = valid_locations[idx];
+
+        // CRITICAL: Atomically reserve the position
+        if try_reserve_spawn_location(candidate, terrain_type) {
+            return Some(candidate);
+        }
+
+        // If reservation failed (race condition), try another location
+        valid_locations.swap_remove(idx);
+
+        if valid_locations.is_empty() {
+            break;
+        }
+    }
+
+    None
 }
 
-/// Main spawn function - creates entity in Rust and returns spawn info
-pub fn spawn_entity(
-    entity_type: String,
-    terrain_type: CacheTerrainType,
-    preferred_location: Option<HexCoord>,
-    search_radius: i32,
-) -> SpawnResult {
-    godot_print!("spawn_entity: type={}, terrain={:?}, preferred={:?}, radius={}",
-        entity_type, terrain_type, preferred_location, search_radius);
+/// Initialize spawn worker thread
+pub fn initialize_spawn_worker() {
+    if SPAWN_WORKER_RUNNING.swap(true, Ordering::SeqCst) {
+        return; // Already running
+    }
 
-    // Find valid spawn location
-    let spawn_pos = if let Some(preferred) = preferred_location {
-        // Try preferred location first
-        if is_valid_spawn_location(preferred, terrain_type) {
+    thread::Builder::new()
+        .name("spawn_worker".to_string())
+        .spawn(|| {
+            godot_print!("Spawn worker thread started");
+
+            while SPAWN_WORKER_RUNNING.load(Ordering::SeqCst) {
+                // Process spawn requests from the queue
+                while let Some(request) = SPAWN_REQUESTS.pop() {
+                    let result = process_spawn_request(request);
+                    SPAWN_RESULTS.push(result);
+                }
+
+                // Sleep briefly to avoid spinning
+                thread::sleep(std::time::Duration::from_micros(100));
+            }
+
+            godot_print!("Spawn worker thread stopped");
+        })
+        .expect("Failed to start spawn worker thread");
+}
+
+/// Process a single spawn request (called by worker thread)
+fn process_spawn_request(request: SpawnRequest) -> SpawnResult {
+    let entity_type = request.entity_type;
+    let terrain_type = request.terrain_type;
+    let search_radius = request.search_radius;
+
+    godot_print!("process_spawn_request: type={}, terrain={:?}, preferred={:?}, radius={}",
+        entity_type, terrain_type, request.preferred_location, search_radius);
+
+    // Find valid spawn location (atomically reserved by the search functions)
+    let spawn_pos = if let Some(preferred) = request.preferred_location {
+        // Try preferred location first (atomically reserve if valid)
+        if try_reserve_spawn_location(preferred, terrain_type) {
             godot_print!("  -> Using preferred location: {:?}", preferred);
             Some(preferred)
         } else {
-            // Find nearby valid location
+            // Find nearby valid location (atomically reserves position)
             godot_print!("  -> Preferred location invalid, searching nearby...");
             find_nearby_spawn_location(preferred, terrain_type, search_radius)
         }
     } else {
-        // Find random valid location around world origin
+        // Find random valid location around world origin (atomically reserves position)
         godot_print!("  -> No preferred location, searching random...");
         find_random_spawn_location((0, 0), terrain_type, search_radius)
     };
 
     let Some(position) = spawn_pos else {
-        godot_error!("spawn_entity: Failed to find valid spawn location for {} (terrain={:?})", entity_type, terrain_type);
+        godot_error!("process_spawn_request: Failed to find valid spawn location for {} (terrain={:?})", entity_type, terrain_type);
         return SpawnResult {
             ulid: vec![],
             entity_type,
@@ -135,10 +249,10 @@ pub fn spawn_entity(
         };
     };
 
+    // Position is already reserved by the search functions above
+    // (no need for redundant PENDING_SPAWNS.insert() here)
+
     // Generate ULID for entity
-    // Note: We skip the paranoid re-check here because with the worker thread,
-    // there's a race between queueing insertion and checking occupancy.
-    // The initial location search already validated the position.
     let ulid_obj = ulid::Ulid::new();
     let ulid = ulid_obj.to_bytes().to_vec();
 
@@ -147,7 +261,9 @@ pub fn spawn_entity(
         CacheTerrainType::Water => EntityTerrainType::Water,
         CacheTerrainType::Land => EntityTerrainType::Land,
         CacheTerrainType::Obstacle => {
-            godot_error!("spawn_entity: Cannot spawn on Obstacle terrain!");
+            godot_error!("process_spawn_request: Cannot spawn on Obstacle terrain!");
+            // CRITICAL: Clean up pending spawn reservation before returning error
+            PENDING_SPAWNS.remove(&position);
             return SpawnResult {
                 ulid: vec![],
                 entity_type,
@@ -167,10 +283,17 @@ pub fn spawn_entity(
         entity_type.clone(),
     );
 
-    // Queue entity insertion (uses worker thread for thread-safe writes)
-    super::entity_worker::queue_insert_entity(ulid.clone(), entity_data);
+    // CRITICAL: Insert entity directly into ENTITY_DATA (we're already in a worker thread)
+    // This must happen BEFORE removing from PENDING_SPAWNS to prevent race conditions
+    ENTITY_DATA.insert(ulid.clone(), entity_data);
+    godot_print!("  -> Inserted into ENTITY_DATA (total entities: {})", ENTITY_DATA.len());
 
-    godot_print!("spawn_entity: SUCCESS - Spawned {} at {:?} (ulid={:02x}{:02x}...)",
+    // CRITICAL: Remove position from pending spawns AFTER entity is in ENTITY_DATA
+    // This ensures subsequent spawns see the entity and avoid the position
+    let removed = PENDING_SPAWNS.remove(&position);
+    godot_print!("  -> Removed from PENDING_SPAWNS: {} (remaining: {})", removed.is_some(), PENDING_SPAWNS.len());
+
+    godot_print!("process_spawn_request: SUCCESS - Spawned {} at {:?} (ulid={:02x}{:02x}...)",
         entity_type, position, ulid[0], ulid[1]);
 
     SpawnResult {
@@ -181,6 +304,26 @@ pub fn spawn_entity(
         success: true,
         error_message: String::new(),
     }
+}
+
+/// Queue a spawn request (called from GDScript)
+pub fn queue_spawn_request(
+    entity_type: String,
+    terrain_type: CacheTerrainType,
+    preferred_location: Option<HexCoord>,
+    search_radius: i32,
+) {
+    SPAWN_REQUESTS.push(SpawnRequest {
+        entity_type,
+        terrain_type,
+        preferred_location,
+        search_radius,
+    });
+}
+
+/// Get a spawn result from the queue (called from GDScript)
+pub fn get_spawn_result() -> Option<SpawnResult> {
+    SPAWN_RESULTS.pop()
 }
 
 // ============================================================================
@@ -197,13 +340,51 @@ pub struct EntitySpawnBridge {
 impl INode for EntitySpawnBridge {
     fn init(base: Base<Node>) -> Self {
         godot_print!("EntitySpawnBridge initialized!");
+        // Start the spawn worker thread
+        initialize_spawn_worker();
         Self { base }
+    }
+
+    fn process(&mut self, _delta: f64) {
+        // Poll spawn results and emit signals
+        while let Some(result) = get_spawn_result() {
+            self.base_mut().emit_signal(
+                "spawn_completed",
+                &[
+                    result.success.to_variant(),
+                    PackedByteArray::from(result.ulid.as_slice()).to_variant(),
+                    result.position.0.to_variant(),
+                    result.position.1.to_variant(),
+                    (match result.terrain_type {
+                        CacheTerrainType::Water => 0,
+                        CacheTerrainType::Land => 1,
+                        CacheTerrainType::Obstacle => 2,
+                    }).to_variant(),
+                    GString::from(result.entity_type.as_str()).to_variant(),
+                    GString::from(result.error_message.as_str()).to_variant(),
+                ],
+            );
+        }
     }
 }
 
 #[godot_api]
 impl EntitySpawnBridge {
-    /// Spawn an entity and return spawn information
+    /// Signal emitted when a spawn request completes
+    /// Args: success (bool), ulid (PackedByteArray), position_q (int), position_r (int),
+    ///       terrain_type (int), entity_type (String), error_message (String)
+    #[signal]
+    fn spawn_completed(
+        success: bool,
+        ulid: PackedByteArray,
+        position_q: i32,
+        position_r: i32,
+        terrain_type: i32,
+        entity_type: GString,
+        error_message: GString,
+    );
+
+    /// Queue a spawn request (async, non-blocking)
     ///
     /// # Arguments
     /// * `entity_type` - Type of entity to spawn ("viking", "jezza", etc.)
@@ -212,14 +393,7 @@ impl EntitySpawnBridge {
     /// * `preferred_r` - Optional preferred R coordinate (use -999999 for none)
     /// * `search_radius` - Radius to search for valid spawn location
     ///
-    /// # Returns
-    /// Dictionary with:
-    /// - success: bool
-    /// - ulid: PackedByteArray
-    /// - position_q: int
-    /// - position_r: int
-    /// - terrain_type: int
-    /// - error_message: String
+    /// The result will be emitted via the `spawn_completed` signal
     #[func]
     pub fn spawn_entity(
         &self,
@@ -228,7 +402,7 @@ impl EntitySpawnBridge {
         preferred_q: i32,
         preferred_r: i32,
         search_radius: i32,
-    ) -> Dictionary {
+    ) {
         let entity_type_str = entity_type.to_string();
 
         let terrain_type = match terrain_type_int {
@@ -236,10 +410,7 @@ impl EntitySpawnBridge {
             1 => CacheTerrainType::Land,
             _ => {
                 godot_error!("Invalid terrain_type: {}", terrain_type_int);
-                let mut result = Dictionary::new();
-                result.set("success", false);
-                result.set("error_message", "Invalid terrain type");
-                return result;
+                return;
             }
         };
 
@@ -249,30 +420,14 @@ impl EntitySpawnBridge {
             None
         };
 
-        let spawn_result = spawn_entity(
+        // Queue the spawn request (worker thread will process it)
+        queue_spawn_request(
             entity_type_str,
             terrain_type,
             preferred_location,
             search_radius,
         );
-
-        // Convert actual terrain type back to int for GDScript
-        let actual_terrain_int = match spawn_result.terrain_type {
-            CacheTerrainType::Water => 0,
-            CacheTerrainType::Land => 1,
-            CacheTerrainType::Obstacle => 2,
-        };
-
-        let mut result = Dictionary::new();
-        result.set("success", spawn_result.success);
-        result.set("ulid", PackedByteArray::from(spawn_result.ulid.as_slice()));
-        result.set("entity_type", spawn_result.entity_type.clone());
-        result.set("position_q", spawn_result.position.0);
-        result.set("position_r", spawn_result.position.1);
-        result.set("terrain_type", actual_terrain_int);  // Return ACTUAL terrain found, not requested
-        result.set("error_message", spawn_result.error_message);
-
-        result
+        // Result will be emitted via spawn_completed signal
     }
 
     /// Check if a location is valid for spawning

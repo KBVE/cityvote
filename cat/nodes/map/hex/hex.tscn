@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://nodes/map/hex/hex.gd" id="1_hex"]
 [ext_resource type="Script" path="res://nodes/map/hex/custom_tile_renderer.gd" id="2_renderer"]
-[ext_resource type="Texture2D" uid="uid://crbtmtl4kw8ik" path="res://nodes/map/hex/grassland0/grassland0.png" id="3_highlight_texture"]
+[ext_resource type="Texture2D" uid="uid://dtpbgbppdcyak" path="res://nodes/map/hex/grassland0/grassland0.png" id="3_highlight_texture"]
 [ext_resource type="Material" uid="uid://dg7h8i9j0k1l2" path="res://shader/hexoutline_material.tres" id="4_shader_material"]
 
 [node name="Hex" type="Node2D"]

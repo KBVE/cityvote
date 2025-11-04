@@ -490,9 +490,9 @@ func _validate_joker_terrain(tile_coords: Vector2i, card_id: int) -> bool:
 				push_warning("Hex: Viking joker requires water tile! Tile (%d, %d) is land." % [tile_coords.x, tile_coords.y])
 				Toast.show_toast(I18n.translate("ui.hand.joker_requires_water"), 3.0)
 				return false
-		53:  # Dino Special (Jezza) - requires land
+		53, 54, 55, 56, 57:  # Dino (Jezza), Baron, Skull Wizard, Warrior, Fireworm - all require land
 			if not is_land:
-				push_warning("Hex: Jezza joker requires land tile! Tile (%d, %d) is water." % [tile_coords.x, tile_coords.y])
+				push_warning("Hex: Land joker (card_id %d) requires land tile! Tile (%d, %d) is water." % [card_id, tile_coords.x, tile_coords.y])
 				Toast.show_toast(I18n.translate("ui.hand.joker_requires_land"), 3.0)
 				return false
 		_:

@@ -21,7 +21,23 @@ impl INode for ResourceLedgerBridge {
     }
 
     fn ready(&mut self) {
-        // Ready - worker thread started
+        // Emit initial resource values to GDScript
+        let resources = [
+            resource_ledger::ResourceType::Gold,
+            resource_ledger::ResourceType::Food,
+            resource_ledger::ResourceType::Labor,
+            resource_ledger::ResourceType::Faith,
+        ];
+
+        for rt in resources {
+            let current = resource_ledger::get_current(rt);
+            let cap = resource_ledger::get_cap(rt);
+            let rate = resource_ledger::get_rate(rt);
+            self.base_mut().emit_signal(
+                "resource_changed",
+                &[(rt as i32).to_variant(), current.to_variant(), cap.to_variant(), rate.to_variant()],
+            );
+        }
     }
 
     fn process(&mut self, _delta: f64) {
@@ -232,6 +248,30 @@ impl ResourceLedgerBridge {
     fn remove_consumer(&mut self, ulid: PackedByteArray) {
         let ulid_bytes: Vec<u8> = ulid.to_vec();
         resource_ledger::remove_consumer(&ulid_bytes);
+    }
+
+    /// Reset all resources to their initial values (1000 each)
+    #[func]
+    fn reset_resources(&mut self) {
+        resource_ledger::reset_resources_to_default();
+
+        // Emit change signals for all resources
+        let resources = [
+            resource_ledger::ResourceType::Gold,
+            resource_ledger::ResourceType::Food,
+            resource_ledger::ResourceType::Labor,
+            resource_ledger::ResourceType::Faith,
+        ];
+
+        for rt in resources {
+            let current = resource_ledger::get_current(rt);
+            let cap = resource_ledger::get_cap(rt);
+            let rate = resource_ledger::get_rate(rt);
+            self.base_mut().emit_signal(
+                "resource_changed",
+                &[(rt as i32).to_variant(), current.to_variant(), cap.to_variant(), rate.to_variant()],
+            );
+        }
     }
 
     /// Print statistics (debugging)
