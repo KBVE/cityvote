@@ -112,9 +112,12 @@ func _initialize() -> void:
 		ComboPopup.combo_accepted_by_player.connect(_on_combo_accepted_by_player)
 		ComboPopup.combo_declined_by_player.connect(_on_combo_declined_by_player)
 
-	# Connect to CardComboBridge signal for combo detection results
-	if CardComboBridge:
-		CardComboBridge.combo_detected.connect(_on_combo_result)
+	# Connect to UnifiedEventBridge signal for combo detection results from Actor
+	var event_bridge = get_node("/root/UnifiedEventBridge")
+	if event_bridge:
+		event_bridge.combo_detected.connect(_on_combo_result)
+	else:
+		push_error("PlayHand: UnifiedEventBridge not found! Cannot connect to combo_detected signal.")
 
 	# Create swap indicator UI (await since it's async)
 	await _create_swap_indicator()
@@ -872,62 +875,41 @@ func _on_timer_reset() -> void:
 
 ## Check for card combos on the hex grid (ASYNC - runs on worker thread)
 ## Only checks cards near the last placed card for performance and relevance
+## NOW USES ACTOR'S CARDREGISTRY AS SINGLE SOURCE OF TRUTH
 func _check_for_combos() -> void:
-	if not hex_map or not CardComboBridge:
+	if not hex_map:
 		return
 
 	# If no last placed card position, can't filter
 	if last_placed_card_pos == Vector2i(-1, -1):
 		return
 
-	# Collect placed cards ONLY within COMBO_CHECK_RADIUS of last placed card
-	var placed_cards: Array[Dictionary] = []
-	var filtered_out_count: int = 0
+	# Request combo detection from Actor (SINGLE SOURCE OF TRUTH)
+	# Actor will query its CardRegistry directly - no need to serialize cards from GDScript!
+	# This fixes the dictionary ordering bug that caused wrong cards to be highlighted
+	var event_bridge = get_node("/root/UnifiedEventBridge")
+	if event_bridge:
+		print("DEBUG: Requesting combo detection at (%d, %d) with radius %d" % [last_placed_card_pos.x, last_placed_card_pos.y, COMBO_CHECK_RADIUS])
+		event_bridge.detect_combo(last_placed_card_pos.x, last_placed_card_pos.y, COMBO_CHECK_RADIUS)
+	else:
+		push_error("PlayHand: UnifiedEventBridge not found! Cannot request combo detection from Actor.")
 
-	# Get all card data from hex_map
-	for tile_coords in hex_map.card_data.keys():
-		# Calculate hex distance from last placed card
-		var distance = _hex_distance(last_placed_card_pos, tile_coords)
+## Signal handler when combo detection completes (from Actor via UnifiedEventBridge)
+func _on_combo_result(hand_rank: int, hand_name: String, positions: Array, bonuses: Array) -> void:
+	# Calculate bonus multiplier from hand rank
+	var bonus_multiplier = CardComboBridge.get_bonus_multiplier(hand_rank)
 
-		# Skip cards too far away (not relevant to current combo)
-		if distance > COMBO_CHECK_RADIUS:
-			filtered_out_count += 1
-			continue
+	# Build result dictionary for compatibility with existing code
+	var result = {
+		"hand_rank": hand_rank,
+		"hand_name": hand_name,
+		"bonus_multiplier": bonus_multiplier,  # For popup display
+		"positions": positions,  # Array of {x, y} dictionaries
+		"bonuses": bonuses,      # For accept handler (keep original key)
+		"resource_bonuses": bonuses  # For popup display (expects this key)
+	}
 
-		var card_info = hex_map.card_data[tile_coords]
-		var card_sprite = card_info.get("sprite")
-
-		# Create card dictionary for combo detection
-		var card_dict: Dictionary = CardComboBridge.create_card_dict(
-			card_info.get("ulid"),
-			card_info.get("suit", 0),
-			card_info.get("value", 0),
-			card_info.get("card_id", 0),
-			tile_coords.x,
-			tile_coords.y,
-			card_sprite.is_custom if card_sprite is PooledCard else false
-		)
-
-		placed_cards.append(card_dict)
-
-	# Need at least 5 cards for a combo
-	if placed_cards.size() < 5:
-		return
-
-	# Request combo detection (async - result via signal)
-	CardComboBridge.request_combo_detection(placed_cards)
-
-## Signal handler when combo detection completes
-func _on_combo_result(request_id: int, result: Dictionary) -> void:
-	# Check if a combo was found
-	if not result.has("hand_name") or not result.has("card_indices"):
-		return
-
-	# Get hand rank (0 = High Card, which we don't want to show)
-	var hand_rank = result.get("hand_rank", 0)
-	if hand_rank == 0:
-		# High Card - not a real combo, don't show popup
-		return
+	print("DEBUG: Combo detected! Rank: %d, Name: %s, Multiplier: %.1fx, Positions: %d" % [hand_rank, hand_name, bonus_multiplier, positions.size()])
 
 	# Highlight cards in the combo with outline shader
 	_highlight_combo_cards(result)
@@ -970,29 +952,62 @@ func _get_suit_name(suit: int) -> String:
 ## Highlight combo cards with outline shader
 func _highlight_combo_cards(combo_data: Dictionary) -> void:
 	var positions = combo_data.get("positions", [])
+	print("DEBUG: Highlighting combo cards, positions count: ", positions.size())
+
+	if positions.size() == 0:
+		push_warning("PlayHand: No positions in combo_data!")
+		print("DEBUG: combo_data keys: ", combo_data.keys())
+		return
+
 	var combo_shader = load("res://view/hand/combo/combo.gdshader")
+	if not combo_shader:
+		push_error("PlayHand: Failed to load combo shader!")
+		return
 
 	for pos in positions:
 		# pos is a Dictionary with "x" and "y" keys from Rust
 		var tile_coords = Vector2i(pos["x"], pos["y"])
+		print("DEBUG: Looking for card at tile: ", tile_coords)
 		var card_info = hex_map.card_data.get(tile_coords)
 
 		if card_info:
 			var card_sprite = card_info.get("sprite")
+			print("DEBUG: Found card_info, sprite type: ", card_sprite.get_class() if card_sprite else "null")
 
 			if card_sprite is PooledCard:
-				# Apply combo highlight shader
+				# Apply combo highlight shader with bright glow effect
 				var shader_material = ShaderMaterial.new()
 				shader_material.shader = combo_shader
-				shader_material.set_shader_parameter("outline_color", Color(0.2, 1.0, 0.3, 1.0))  # Bright green
-				shader_material.set_shader_parameter("outline_width", 3.0)
+				shader_material.set_shader_parameter("highlight_color", Color(0.3, 1.0, 0.3, 1.0))  # Bright green
 				shader_material.set_shader_parameter("pulse_speed", 3.0)
-				shader_material.set_shader_parameter("pulse_intensity", 0.4)
+				shader_material.set_shader_parameter("pulse_intensity", 0.5)
+				shader_material.set_shader_parameter("glow_strength", 0.6)
 
 				card_sprite.material = shader_material
+				print("DEBUG: Applied combo shader to card at ", tile_coords)
+				print("DEBUG: Card has texture: ", card_sprite.texture != null)
+				print("DEBUG: Card z_index: ", card_sprite.z_index)
+				print("DEBUG: Card visible: ", card_sprite.visible)
+			else:
+				push_warning("PlayHand: Card sprite is not a PooledCard at ", tile_coords)
+		else:
+			push_warning("PlayHand: No card_info found at tile ", tile_coords)
 
 ## Called when player accepts the combo
 func _on_combo_accepted_by_player(combo_data: Dictionary) -> void:
+	# Apply resources via Actor (SECURE - Actor authoritative)
+	var bonuses = combo_data.get("bonuses", [])
+	var event_bridge = get_node("/root/UnifiedEventBridge")
+
+	if event_bridge and bonuses.size() > 0:
+		print("DEBUG: Applying combo resources:")
+		for bonus in bonuses:
+			var resource_type = bonus.get("resource_type", 0)
+			var amount = bonus.get("amount", 0.0)
+			print("  - Resource %d: +%.1f" % [resource_type, amount])
+			event_bridge.add_resources(resource_type, amount)
+
+	# Clear combo cards from board
 	_clear_combo_cards(combo_data)
 
 ## Called when player declines the combo
@@ -1029,21 +1044,93 @@ func _clear_combo_cards(combo_data: Dictionary) -> void:
 		if card_info:
 			var card_sprite = card_info.get("sprite")
 
-			# Remove from hex_map
+			# Check if this is a joker card (custom card) - spawn its entity before removing!
+			if card_sprite is PooledCard and card_sprite.is_custom:
+				_spawn_joker_entity(card_sprite.card_id, tile_coords)
+
+			# Remove from hex_map visual state
 			hex_map.card_data.erase(tile_coords)
 
-			# Remove from Rust CardRegistry
-			var card_registry = get_node("/root/CardRegistryBridge")
-			if card_registry:
-				card_registry.remove_card_at(tile_coords.x, tile_coords.y)
+			# Remove from Actor's CardRegistry (SINGLE SOURCE OF TRUTH)
+			var event_bridge = get_node("/root/UnifiedEventBridge")
+			if event_bridge:
+				event_bridge.remove_card_at(tile_coords.x, tile_coords.y)
+			else:
+				push_error("PlayHand: UnifiedEventBridge not found! Cannot remove card from Actor.")
 
-				# Return card to pool (not queue_free - reuse for performance!)
-				if card_sprite and is_instance_valid(card_sprite):
-					if card_sprite is PooledCard and Cluster:
-						Cluster.release("playing_card", card_sprite)
-					else:
-						# Fallback: free if not a pooled card
-						card_sprite.queue_free()
+			# Return card to pool (not queue_free - reuse for performance!)
+			if card_sprite and is_instance_valid(card_sprite):
+				if card_sprite is PooledCard and Cluster:
+					Cluster.release("playing_card", card_sprite)
+				else:
+					# Fallback: free if not a pooled card
+					card_sprite.queue_free()
+
+## Spawn entity from joker card activation
+## Each joker card spawns 3 entities
+func _spawn_joker_entity(card_id: int, tile_coords: Vector2i) -> void:
+	var entity_manager = get_node("/root/EntityManager")
+	if not entity_manager:
+		push_error("PlayHand: Cannot spawn joker entity - EntityManager not found!")
+		return
+
+	# Get player ULID from Main
+	var main_node = get_node("/root/Main")
+	var player_ulid = main_node.player_ulid if main_node else PackedByteArray()
+
+	# Determine terrain type from tile
+	var tile_index = hex_map.get_tile_type_at_coords(tile_coords)
+	var is_water = (tile_index == 4)
+	var terrain_type = 0 if is_water else 1  # 0 = WATER, 1 = LAND (matches bridge.rs mapping)
+
+	var entity_type: String = ""
+
+	# Map card_id to entity type
+	match card_id:
+		52:  # CARD_VIKINGS - spawn viking ship
+			entity_type = "viking"
+		53:  # CARD_DINO (Jezza) - spawn dino
+			entity_type = "jezza"
+		54:  # CARD_BARON - spawn baron
+			entity_type = "baron"
+		55:  # CARD_SKULL_WIZARD - spawn skull wizard
+			entity_type = "skull_wizard"
+		56:  # CARD_WARRIOR - spawn warrior
+			entity_type = "warrior"
+		57:  # CARD_FIREWORM - spawn fireworm
+			entity_type = "fireworm"
+		_:
+			push_warning("PlayHand: Unknown joker card_id %d - no entity spawned" % card_id)
+			return
+
+	print("DEBUG: Spawning 3x %s from joker card %d at (%d, %d)" % [entity_type, card_id, tile_coords.x, tile_coords.y])
+
+	# Create empty storage array - EntityManager stores entities in its own unified registry
+	var storage_array: Array = []
+
+	# Spawn 3 entities per joker card
+	var event_bridge = get_node("/root/UnifiedEventBridge")
+	if not event_bridge:
+		push_error("PlayHand: UnifiedEventBridge not found!")
+		return
+
+	for i in range(3):
+		# Register spawn context BEFORE spawning (EntityManager expects this)
+		if not entity_manager.pending_spawn_contexts.has(entity_type):
+			entity_manager.pending_spawn_contexts[entity_type] = []
+
+		var context = {
+			"pool_key": entity_type,
+			"hex_map": hex_map,
+			"tile_map": hex_map.tile_map if hex_map else null,
+			"storage_array": storage_array,
+			"player_ulid": player_ulid
+		}
+		entity_manager.pending_spawn_contexts[entity_type].append(context)
+
+		# Spawn via UnifiedEventBridge (search_radius=5 allows spawning in nearby tiles if exact position occupied)
+		event_bridge.spawn_entity(entity_type, terrain_type, tile_coords.x, tile_coords.y, 5)
+		print("PlayHand: Spawned %s entity #%d at (%d, %d) for player %s" % [entity_type, i + 1, tile_coords.x, tile_coords.y, UlidManager.to_hex(player_ulid) if player_ulid.size() > 0 else "AI"])
 
 # ===================================================================
 # MULLIGAN SYSTEM

@@ -140,11 +140,8 @@ func _ready():
 		return
 
 	# Register entity stats with UnifiedEventBridge Actor (replaces old StatsManager)
+	# Combat registration happens automatically through stats - no separate call needed
 	call_deferred("_register_stats")
-
-	# Register with combat system (deferred to ensure CombatManager is ready)
-	if CombatManager:
-		call_deferred("_register_combat")
 
 	# Initialize current angle based on initial direction
 	current_angle = direction_to_godot_angle(direction)
@@ -408,8 +405,6 @@ func request_pathfinding(target_tile: Vector2i, tile_map):
 	var entity_id = ulid  # PackedByteArray for both water and land entities
 	var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
 
-	print("NPC %s (%s): Requesting path from %s to %s (terrain_type=%d, expected=%s)" % [ulid_hex, get_class(), current_tile, target_tile, terrain_type, "WATER" if terrain_type == 0 else "LAND"])
-
 	# CRITICAL: Prevent signal connection leaks
 	# Disconnect first to ensure we don't accumulate duplicate connections when entity is pooled/reused
 	if bridge.path_found.is_connected(_on_path_found):
@@ -458,7 +453,6 @@ func _on_path_found(entity_ulid: PackedByteArray, path: Array, cost: float) -> v
 
 	# Handle path internally
 	if success:
-		print("NPC %s: Path SUCCESS - %d waypoints, starting movement (cost: %.2f)" % [ulid_hex, typed_path.size(), cost])
 		follow_path(typed_path, Cache.get_tile_map())
 	else:
 		add_state(State.BLOCKED)
@@ -568,6 +562,12 @@ func _process(delta):
 
 	# Pause movement if in combat
 	if current_state & State.IN_COMBAT:
+		# Stop any ongoing movement
+		if is_moving:
+			is_moving = false
+			move_progress = 0.0
+		if is_rotating_to_target:
+			is_rotating_to_target = false
 		return
 
 	# Handle rotation phase (before moving) - water entities only
@@ -701,8 +701,8 @@ func _register_stats() -> void:
 	else:
 		hex_pos = Vector2i(int(position.x / 128.0), int(position.y / 128.0))
 
-	# Register entity stats with Actor
-	bridge.register_entity_stats(ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y)
+	# Register entity stats with Actor (including player_ulid for team detection)
+	bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y)
 
 	# Connect to stat change signals to update health bar
 	if not bridge.stat_changed.is_connected(_on_stat_changed):
@@ -714,34 +714,13 @@ func _register_stats() -> void:
 	if not bridge.entity_healed.is_connected(_on_entity_healed):
 		bridge.entity_healed.connect(_on_entity_healed)
 
-# Helper function to register with combat system (called deferred to ensure CombatManager is ready)
-func _register_combat() -> void:
-	if not CombatManager or not CombatManager.combat_bridge:
-		push_warning("NPC: CombatManager not ready for combat registration")
-		return
-
-	if ulid.is_empty():
-		push_error("NPC: Cannot register for combat without ULID")
-		return
-
-	# Get current hex position from global position
-	var hex_pos: Vector2i = Vector2i(0, 0)
-	if Cache.tile_map:
-		hex_pos = Cache.tile_map.local_to_map(global_position)
-
-	# Register as combatant with configured attack interval
-	CombatManager.combat_bridge.register_combatant(
-		ulid,
-		player_ulid,  # Team affiliation
-		hex_pos,
-		attack_interval  # Attack interval (set by child class, default 3.0 seconds)
-	)
+# NOTE: Combat registration removed - now automatic through stats registration
+# The UnifiedEventBridge Actor tracks combat-relevant entities automatically
+# when RegisterEntityStats is called in _register_stats()
+# No separate combat registration needed!
 
 # Update combat system with current position (called when entity moves)
 func _update_combat_position() -> void:
-	if not CombatManager or not CombatManager.combat_bridge:
-		return
-
 	if ulid.is_empty():
 		return
 
@@ -750,7 +729,13 @@ func _update_combat_position() -> void:
 		return
 
 	var hex_coords = Cache.tile_map.local_to_map(global_position)
-	CombatManager.combat_bridge.update_position(ulid, hex_coords)
+
+	# Update position in UnifiedEventBridge Actor
+	var bridge = Cache.get_unified_event_bridge()
+	if bridge:
+		bridge.update_entity_position(ulid, hex_coords.x, hex_coords.y)
+	else:
+		push_warning("NPC: UnifiedEventBridge not available for position update")
 
 # Set up health bar (called deferred to ensure Cluster is ready)
 func _setup_health_bar() -> void:
@@ -867,11 +852,7 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 	# Cleanup entity from UnifiedEventBridge Actor state
 	var bridge = get_node_or_null("/root/UnifiedEventBridge")
 	if bridge:
-		bridge.remove_entity(ulid)
-
-	# Unregister from combat system
-	if CombatManager and CombatManager.combat_bridge:
-		CombatManager.combat_bridge.unregister_combatant(ulid)
+		bridge.remove_entity(ulid)  # NOTE: This handles combat unregistration in Actor
 
 	# Unregister from ULID manager
 	UlidManager.unregister_entity(ulid)
@@ -943,9 +924,8 @@ func _exit_tree() -> void:
 		path_visualizer.queue_free()
 		path_visualizer = null
 
-	# Unregister from combat system
-	if CombatManager and CombatManager.combat_bridge and not ulid.is_empty():
-		CombatManager.combat_bridge.unregister_combatant(ulid)
+	# NOTE: Combat unregistration handled by bridge.remove_entity() in cleanup()
+	# No separate call needed
 
 ## Reset entity state for pool reuse (called by Pool.release())
 ## CRITICAL: Clears ALL internal state to prevent stale data across pool reuse

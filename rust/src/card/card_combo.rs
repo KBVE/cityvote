@@ -337,16 +337,387 @@ impl ComboDetector {
 
     /// Select the best 5 cards from a group for a specific poker hand
     /// This is a simplified implementation - just takes first 5 standard cards
-    /// TODO: Implement proper selection logic for each hand type
+    /// Select the best 5 cards for a specific poker hand
+    /// Returns the indices of cards that form the BEST version of that hand
     fn select_best_5_for_hand(
         indices: &[usize],
-        _cards: &[&CardData],
-        _all_cards: &[PositionedCard],
-        _hand: PokerHand
+        cards: &[&CardData],
+        all_cards: &[PositionedCard],
+        hand: PokerHand
     ) -> Vec<usize> {
-        // For now, just return the first 5 indices
-        // In the future, this should select the best 5 cards for the specific hand type
-        indices.iter().take(5).copied().collect()
+        // Return early if we have exactly 5 or fewer cards
+        if indices.len() <= 5 {
+            return indices.to_vec();
+        }
+
+        // Use hand-specific selection logic
+        match hand {
+            PokerHand::FullHouse => Self::select_best_full_house(indices, cards, all_cards),
+            PokerHand::FourOfAKind => Self::select_best_four_of_a_kind(indices, cards, all_cards),
+            PokerHand::ThreeOfAKind => Self::select_best_three_of_a_kind(indices, cards, all_cards),
+            PokerHand::TwoPair => Self::select_best_two_pair(indices, cards, all_cards),
+            PokerHand::OnePair => Self::select_best_one_pair(indices, cards, all_cards),
+            PokerHand::Flush => Self::select_best_flush(indices, cards, all_cards),
+            PokerHand::Straight => Self::select_best_straight(indices, cards, all_cards),
+            PokerHand::StraightFlush => Self::select_best_straight_flush(indices, cards, all_cards),
+            PokerHand::RoyalFlush => Self::select_best_royal_flush(indices, cards, all_cards),
+            _ => Self::select_best_generic(indices, all_cards),
+        }
+    }
+
+    /// Generic selection - just pick highest value cards with deterministic tiebreaking
+    fn select_best_generic(indices: &[usize], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut sortable: Vec<(usize, u8, i32, i32)> = indices
+            .iter()
+            .filter_map(|&idx| {
+                all_cards.iter()
+                    .find(|c| c.index == idx)
+                    .map(|c| (idx, c.card.value, c.x, c.y))
+            })
+            .collect();
+
+        sortable.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.3.cmp(&b.3))
+        });
+
+        sortable.iter().take(5).map(|&(idx, _, _, _)| idx).collect()
+    }
+
+    /// Select best Full House (best three-of-a-kind + best pair)
+    fn select_best_full_house(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        // Group cards by value
+        let mut by_value: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_value.entry(card.card.value).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        // Find best three-of-a-kind (highest value)
+        let mut trips: Vec<(u8, Vec<usize>)> = by_value.iter()
+            .filter(|(_, indices)| indices.len() >= 3)
+            .map(|(&val, indices)| (val, indices.clone()))
+            .collect();
+        trips.sort_by(|a, b| b.0.cmp(&a.0));
+
+        // Find best pair (highest value, excluding the trips)
+        let mut pairs: Vec<(u8, Vec<usize>)> = by_value.iter()
+            .filter(|(_, indices)| indices.len() >= 2)
+            .map(|(&val, indices)| (val, indices.clone()))
+            .collect();
+        pairs.sort_by(|a, b| b.0.cmp(&a.0));
+
+        if let Some((trips_val, trips_indices)) = trips.first() {
+            if let Some((pair_val, pair_indices)) = pairs.iter().find(|(val, _)| val != trips_val) {
+                let mut result = Vec::new();
+                result.extend(Self::pick_n_deterministic(&trips_indices, 3, all_cards));
+                result.extend(Self::pick_n_deterministic(&pair_indices, 2, all_cards));
+                return result;
+            }
+        }
+
+        // Fallback to generic selection
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Four of a Kind (best four + highest kicker)
+    fn select_best_four_of_a_kind(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut by_value: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_value.entry(card.card.value).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        // Find best four-of-a-kind
+        let mut quads: Vec<(u8, Vec<usize>)> = by_value.iter()
+            .filter(|(_, indices)| indices.len() >= 4)
+            .map(|(&val, indices)| (val, indices.clone()))
+            .collect();
+        quads.sort_by(|a, b| b.0.cmp(&a.0));
+
+        if let Some((quad_val, quad_indices)) = quads.first() {
+            let mut result = Self::pick_n_deterministic(&quad_indices, 4, all_cards);
+
+            // Find highest kicker
+            let kicker_indices: Vec<usize> = indices.iter()
+                .filter(|&&idx| {
+                    if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                        card.card.value != *quad_val
+                    } else {
+                        false
+                    }
+                })
+                .copied()
+                .collect();
+
+            if !kicker_indices.is_empty() {
+                result.extend(Self::pick_n_deterministic(&kicker_indices, 1, all_cards));
+            }
+            return result;
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Three of a Kind (best three + two highest kickers)
+    fn select_best_three_of_a_kind(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut by_value: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_value.entry(card.card.value).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        let mut trips: Vec<(u8, Vec<usize>)> = by_value.iter()
+            .filter(|(_, indices)| indices.len() >= 3)
+            .map(|(&val, indices)| (val, indices.clone()))
+            .collect();
+        trips.sort_by(|a, b| b.0.cmp(&a.0));
+
+        if let Some((trips_val, trips_indices)) = trips.first() {
+            let mut result = Self::pick_n_deterministic(&trips_indices, 3, all_cards);
+
+            let kicker_indices: Vec<usize> = indices.iter()
+                .filter(|&&idx| {
+                    if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                        card.card.value != *trips_val
+                    } else {
+                        false
+                    }
+                })
+                .copied()
+                .collect();
+
+            result.extend(Self::pick_n_deterministic(&kicker_indices, 2, all_cards));
+            return result;
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Two Pair (two highest pairs + highest kicker)
+    fn select_best_two_pair(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut by_value: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_value.entry(card.card.value).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        let mut pairs: Vec<(u8, Vec<usize>)> = by_value.iter()
+            .filter(|(_, indices)| indices.len() >= 2)
+            .map(|(&val, indices)| (val, indices.clone()))
+            .collect();
+        pairs.sort_by(|a, b| b.0.cmp(&a.0));
+
+        if pairs.len() >= 2 {
+            let mut result = Vec::new();
+            result.extend(Self::pick_n_deterministic(&pairs[0].1, 2, all_cards));
+            result.extend(Self::pick_n_deterministic(&pairs[1].1, 2, all_cards));
+
+            let used_values = vec![pairs[0].0, pairs[1].0];
+            let kicker_indices: Vec<usize> = indices.iter()
+                .filter(|&&idx| {
+                    if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                        !used_values.contains(&card.card.value)
+                    } else {
+                        false
+                    }
+                })
+                .copied()
+                .collect();
+
+            result.extend(Self::pick_n_deterministic(&kicker_indices, 1, all_cards));
+            return result;
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best One Pair (highest pair + three highest kickers)
+    fn select_best_one_pair(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut by_value: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_value.entry(card.card.value).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        let mut pairs: Vec<(u8, Vec<usize>)> = by_value.iter()
+            .filter(|(_, indices)| indices.len() >= 2)
+            .map(|(&val, indices)| (val, indices.clone()))
+            .collect();
+        pairs.sort_by(|a, b| b.0.cmp(&a.0));
+
+        if let Some((pair_val, pair_indices)) = pairs.first() {
+            let mut result = Self::pick_n_deterministic(&pair_indices, 2, all_cards);
+
+            let kicker_indices: Vec<usize> = indices.iter()
+                .filter(|&&idx| {
+                    if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                        card.card.value != *pair_val
+                    } else {
+                        false
+                    }
+                })
+                .copied()
+                .collect();
+
+            result.extend(Self::pick_n_deterministic(&kicker_indices, 3, all_cards));
+            return result;
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Flush (5 highest cards of same suit)
+    fn select_best_flush(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut by_suit: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_suit.entry(card.card.suit).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        // Find suit with 5+ cards
+        for (_, suit_indices) in by_suit.iter() {
+            if suit_indices.len() >= 5 {
+                return Self::pick_n_deterministic(suit_indices, 5, all_cards);
+            }
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Straight (highest straight)
+    fn select_best_straight(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        // Group cards by value
+        let mut by_value: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_value.entry(card.card.value).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        let mut values: Vec<u8> = by_value.keys().copied().collect();
+        values.sort_by(|a, b| b.cmp(a)); // Sort descending
+
+        // Try to find highest straight
+        for i in 0..=values.len().saturating_sub(5) {
+            let window = &values[i..i+5];
+            let mut is_straight = true;
+            for j in 0..4 {
+                if window[j] != window[j+1] + 1 {
+                    is_straight = false;
+                    break;
+                }
+            }
+            if is_straight {
+                let mut result = Vec::new();
+                for &val in window {
+                    if let Some(card_indices) = by_value.get(&val) {
+                        result.extend(Self::pick_n_deterministic(card_indices, 1, all_cards));
+                    }
+                }
+                return result;
+            }
+        }
+
+        // Check for A-2-3-4-5 (wheel)
+        if values.contains(&1) && values.contains(&2) && values.contains(&3)
+           && values.contains(&4) && values.contains(&5) {
+            let mut result = Vec::new();
+            for &val in &[5, 4, 3, 2, 1] {
+                if let Some(card_indices) = by_value.get(&val) {
+                    result.extend(Self::pick_n_deterministic(card_indices, 1, all_cards));
+                }
+            }
+            return result;
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Straight Flush
+    fn select_best_straight_flush(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        // Group by suit first
+        let mut by_suit: HashMap<u8, Vec<usize>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_suit.entry(card.card.suit).or_insert_with(Vec::new).push(idx);
+            }
+        }
+
+        // For each suit with 5+ cards, try to find a straight
+        for (_, suit_indices) in by_suit.iter() {
+            if suit_indices.len() >= 5 {
+                // Collect cards for this suit
+                let suit_cards: Vec<&CardData> = suit_indices.iter()
+                    .filter_map(|&idx| all_cards.iter().find(|c| c.index == idx).map(|c| &c.card))
+                    .collect();
+
+                // Use straight selection logic on this suit
+                return Self::select_best_straight(suit_indices, &suit_cards, all_cards);
+            }
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Select best Royal Flush
+    fn select_best_royal_flush(indices: &[usize], _cards: &[&CardData], all_cards: &[PositionedCard]) -> Vec<usize> {
+        let royal_values = vec![1, 10, 11, 12, 13]; // A, 10, J, Q, K
+
+        let mut by_suit: HashMap<u8, HashMap<u8, Vec<usize>>> = HashMap::new();
+        for &idx in indices {
+            if let Some(card) = all_cards.iter().find(|c| c.index == idx) {
+                by_suit.entry(card.card.suit)
+                    .or_insert_with(HashMap::new)
+                    .entry(card.card.value)
+                    .or_insert_with(Vec::new)
+                    .push(idx);
+            }
+        }
+
+        // Find suit that has all royal values
+        for (_, values_map) in by_suit.iter() {
+            let has_all_royal = royal_values.iter().all(|&val| values_map.contains_key(&val));
+            if has_all_royal {
+                let mut result = Vec::new();
+                for &val in &royal_values {
+                    if let Some(card_indices) = values_map.get(&val) {
+                        result.extend(Self::pick_n_deterministic(card_indices, 1, all_cards));
+                    }
+                }
+                return result;
+            }
+        }
+
+        Self::select_best_generic(indices, all_cards)
+    }
+
+    /// Pick N cards deterministically from a set of indices
+    /// Sorts by value (desc), then position for tiebreaking
+    fn pick_n_deterministic(indices: &[usize], n: usize, all_cards: &[PositionedCard]) -> Vec<usize> {
+        let mut sortable: Vec<(usize, u8, i32, i32)> = indices
+            .iter()
+            .filter_map(|&idx| {
+                all_cards.iter()
+                    .find(|c| c.index == idx)
+                    .map(|c| (idx, c.card.value, c.x, c.y))
+            })
+            .collect();
+
+        sortable.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.3.cmp(&b.3))
+        });
+
+        sortable.iter().take(n).map(|&(idx, _, _, _)| idx).collect()
     }
 
     /// Helper to build ComboResult from original indices
@@ -820,6 +1191,11 @@ impl CardComboDetector {
             }
             dict.set("positions", positions_array);
 
+            // DEBUG: Log the positions being sent to GDScript
+            godot_print!("RUST DEBUG: Combo detected with {} cards", result.card_indices.len());
+            godot_print!("RUST DEBUG: Card indices: {:?}", result.card_indices);
+            godot_print!("RUST DEBUG: Positions: {:?}", result.positions);
+
             // Add resource bonuses (for display only - actual rewards applied when accepted)
             let mut resources_array = Array::<Dictionary>::new();
             for bonus in &result.resource_bonuses {
@@ -927,7 +1303,7 @@ impl CardComboDetector {
             }
             godot_print!("CardComboDetector: Combo integrity verified");
 
-            // Get ResourceLedgerBridge to apply rewards (this emits signals to update UI)
+            // Get UnifiedEventBridge to apply rewards (SECURE: Rust-authoritative via Actor)
             let mut tree = self.base().get_tree();
             if tree.is_none() {
                 godot_error!("CardComboDetector: No scene tree available!");
@@ -941,22 +1317,22 @@ impl CardComboDetector {
                 return false;
             }
 
-            let mut resource_ledger = root.unwrap().get_node_or_null("/root/ResourceLedger");
-            if resource_ledger.is_none() {
-                godot_error!("CardComboDetector: ResourceLedger autoload not found!");
+            let mut unified_bridge = root.unwrap().get_node_or_null("/root/UnifiedEventBridge");
+            if unified_bridge.is_none() {
+                godot_error!("CardComboDetector: UnifiedEventBridge autoload not found!");
                 return false;
             }
 
-            // Apply resource bonuses via ResourceLedgerBridge (emits signals)
-            let resource_ledger_node = resource_ledger.as_mut().unwrap();
+            // Apply resource bonuses via UnifiedEventBridge (Actor owns authoritative state)
+            let bridge_node = unified_bridge.as_mut().unwrap();
             for bonus in &result.resource_bonuses {
                 let resource_type_id = bonus.resource_type as i32;
 
-                // Call ResourceLedger.add() which will emit signals
-                // Note: add() returns void, so we get nil on success
-                resource_ledger_node.call("add", &[resource_type_id.to_variant(), bonus.amount.to_variant()]);
+                // Call UnifiedEventBridge.add_resources() which sends request to Actor
+                // Actor will emit resource_changed signal to update UI
+                bridge_node.call("add_resources", &[resource_type_id.to_variant(), bonus.amount.to_variant()]);
 
-                godot_print!("  Applied {} {} (x{})", bonus.amount, bonus.resource_name, result.bonus_multiplier);
+                godot_print!("  Applied {} {} (x{}) via Actor", bonus.amount, bonus.resource_name, result.bonus_multiplier);
             }
 
             // Detect and handle jokers (custom cards in spatial group)

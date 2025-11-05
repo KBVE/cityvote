@@ -20,6 +20,7 @@ signal resource_changed(resource_type: int, current: float, cap: float, rate: fl
 signal stat_changed(ulid: PackedByteArray, stat_type: int, new_value: float)
 signal entity_damaged(ulid: PackedByteArray, damage: float, new_hp: float)
 signal entity_healed(ulid: PackedByteArray, heal_amount: float, new_hp: float)
+signal combo_detected(hand_rank: int, hand_name: String, positions: Array, bonuses: Array)
 
 func _ready() -> void:
 	# Instantiate Rust bridge
@@ -41,6 +42,7 @@ func _ready() -> void:
 		event_bridge.stat_changed.connect(_on_stat_changed)
 		event_bridge.entity_damaged.connect(_on_entity_damaged)
 		event_bridge.entity_healed.connect(_on_entity_healed)
+		event_bridge.combo_detected.connect(_on_combo_detected)
 	else:
 		push_error("UnifiedEventBridge: Failed to instantiate Rust bridge!")
 
@@ -86,6 +88,9 @@ func _on_entity_damaged(ulid: PackedByteArray, damage: float, new_hp: float) -> 
 
 func _on_entity_healed(ulid: PackedByteArray, heal_amount: float, new_hp: float) -> void:
 	entity_healed.emit(ulid, heal_amount, new_hp)
+
+func _on_combo_detected(hand_rank: int, hand_name: String, positions: Array, bonuses: Array) -> void:
+	combo_detected.emit(hand_rank, hand_name, positions, bonuses)
 
 # ============================================================================
 # SPAWN API (Compatible with EntitySpawnBridge)
@@ -181,11 +186,11 @@ func remove_consumer(ulid: PackedByteArray) -> void:
 # ============================================================================
 
 ## Register entity stats (called when entity spawns)
-func register_entity_stats(ulid: PackedByteArray, entity_type: String, terrain_type: int, q: int, r: int) -> void:
+func register_entity_stats(ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: String, terrain_type: int, q: int, r: int) -> void:
 	if not event_bridge:
 		return
 
-	event_bridge.register_entity_stats(ulid, entity_type, terrain_type, q, r)
+	event_bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, q, r)
 
 ## Set a stat value for an entity
 func set_stat(ulid: PackedByteArray, stat_type: int, value: float) -> void:
@@ -208,6 +213,32 @@ func heal(ulid: PackedByteArray, amount: float) -> void:
 
 	event_bridge.heal(ulid, amount)
 
+# ============================================================================
+# RESOURCE API (Compatible with ResourceLedger)
+# ============================================================================
+
+## Add resources (called by combo system, building rewards, etc.)
+func add_resources(resource_type: int, amount: float) -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.add_resources(resource_type, amount)
+
+## Spend resources (called by building costs, unit spawning, etc.)
+func spend_resources(costs: Array) -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.spend_resources(costs)
+
+## Process turn-based resource consumption (called by GameTimer on turn end)
+## Consumes 1 food per active entity
+func process_turn_consumption() -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.process_turn_consumption()
+
 ## Get a single stat value for an entity (synchronous query)
 func get_stat(ulid: PackedByteArray, stat_type: int) -> float:
 	if not event_bridge:
@@ -221,3 +252,38 @@ func get_all_stats(ulid: PackedByteArray) -> Dictionary:
 		return {}
 
 	return event_bridge.get_all_stats(ulid)
+
+# ============================================================================
+# CARD API (Single Source of Truth via Actor's CardRegistry)
+# ============================================================================
+
+## Place a card on the board at specific hex coordinates
+## Actor's CardRegistry is the single source of truth for card placement
+func place_card(x: int, y: int, ulid: PackedByteArray, suit: int, value: int, card_id: int, is_custom: bool) -> void:
+	if not event_bridge:
+		push_error("UnifiedEventBridge: Rust bridge not initialized!")
+		return
+
+	event_bridge.place_card(x, y, ulid, suit, value, card_id, is_custom)
+
+## Remove a card from the board by position
+func remove_card_at(x: int, y: int) -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.remove_card_at(x, y)
+
+## Remove a card from the board by ULID
+func remove_card_by_ulid(ulid: PackedByteArray) -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.remove_card_by_ulid(ulid)
+
+## Request combo detection at a specific position
+## Actor will check cards in radius and emit combo event if found
+func detect_combo(center_x: int, center_y: int, radius: int) -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.detect_combo(center_x, center_y, radius)

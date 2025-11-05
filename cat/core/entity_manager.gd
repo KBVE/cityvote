@@ -112,10 +112,9 @@ func _on_spawn_completed_global(ulid: PackedByteArray, position_q: int, position
 
 	# CRITICAL: Manually register stats and combat since _ready() already ran during pool init
 	# The entity's _ready() returns early if _initialized is true, so we must register here
+	# Combat registration is now automatic through stats - no separate call needed
 	if entity.has_method("_register_stats"):
 		entity.call_deferred("_register_stats")
-	if entity.has_method("_register_combat"):
-		entity.call_deferred("_register_combat")
 
 	# Register entity with EntityManager
 	register_entity(entity, pool_key, position)
@@ -258,9 +257,8 @@ func register_entity(entity: Node, pool_key: String, tile: Vector2i) -> bool:
 
 	registered_entities.append(entry)
 
-	# Register with combat system if entity has ULID and player_ulid
-	if "ulid" in entity and "player_ulid" in entity:
-		_register_combat(entity, tile)
+	# NOTE: Combat registration is now automatic through stats
+	# Entity's _register_stats() call handles everything
 
 	return true
 
@@ -270,9 +268,8 @@ func register_entity(entity: Node, pool_key: String, tile: Vector2i) -> bool:
 func unregister_entity(entity: Node) -> bool:
 	for i in range(registered_entities.size()):
 		if registered_entities[i]["entity"] == entity:
-			# Unregister from combat system
-			if "ulid" in entity:
-				_unregister_combat(entity)
+			# NOTE: Combat unregistration handled automatically by UnifiedEventBridge
+			# when RemoveEntity request is sent (Actor cleans up all state)
 
 			registered_entities.remove_at(i)
 			return true
@@ -653,9 +650,11 @@ func update_entity_tile(entity: Node, new_tile: Vector2i) -> bool:
 		if entry["entity"] == entity:
 			entry["tile"] = new_tile
 
-			# Update position in combat system
-			if "ulid" in entity:
-				_update_combat_position(entity, new_tile)
+			# Update position in UnifiedEventBridge Actor (for combat targeting)
+			if "ulid" in entity and not entity.ulid.is_empty():
+				var bridge = Cache.get_unified_event_bridge()
+				if bridge:
+					bridge.update_entity_position(entity.ulid, new_tile.x, new_tile.y)
 
 			# Reveal chunk where entity moved to (for fog of war exploration)
 			if ChunkManager:
@@ -663,45 +662,6 @@ func update_entity_tile(entity: Node, new_tile: Vector2i) -> bool:
 
 			return true
 	return false
-
-## Internal: Register entity with combat system
-func _register_combat(entity: Node, tile: Vector2i) -> void:
-	if not CombatManager or not CombatManager.combat_bridge:
-		push_warning("EntityManager: CombatManager not ready, skipping combat registration")
-		return
-
-	if not "ulid" in entity or entity.ulid.is_empty():
-		push_error("EntityManager: Cannot register entity for combat - missing or invalid ULID")
-		return
-
-	var ulid: PackedByteArray = entity.ulid
-	var player_ulid: PackedByteArray = entity.player_ulid if "player_ulid" in entity else PackedByteArray()
-	var attack_interval: float = 2.5  # Default attack interval
-
-	# Register with Rust combat system
-	CombatManager.combat_bridge.register_combatant(ulid, player_ulid, tile, attack_interval)
-
-## Internal: Unregister entity from combat system
-func _unregister_combat(entity: Node) -> void:
-	if not CombatManager or not CombatManager.combat_bridge:
-		return  # Silent fail - combat system may not be initialized yet
-
-	if not "ulid" in entity or entity.ulid.is_empty():
-		return  # Silent fail - entity doesn't have ULID
-
-	var ulid: PackedByteArray = entity.ulid
-	CombatManager.combat_bridge.unregister_combatant(ulid)
-
-## Internal: Update entity position in combat system
-func _update_combat_position(entity: Node, tile: Vector2i) -> void:
-	if not CombatManager or not CombatManager.combat_bridge:
-		return  # Silent fail - combat system may not be initialized
-
-	if not "ulid" in entity or entity.ulid.is_empty():
-		return  # Silent fail - entity doesn't have ULID
-
-	var ulid: PackedByteArray = entity.ulid
-	CombatManager.combat_bridge.update_position(ulid, tile)
 
 ## ============================================================================
 ## INITIALIZATION & SIGNAL SETUP

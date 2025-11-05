@@ -1,26 +1,48 @@
 extends Node2D
+"""
+Main shell scene for camera panning, subviewport rendering, and layered overlays.
+Handles:
+ - Water background and fog atmosphere
+ - Subviewport-based world rendering
+ - Camera panning and zoom
+ - Player hand and entity stats UI
 
+Audit: main.gd - 11-05-2025
+"""
 # Main shell scene for camera panning and scene display
 
+# ────────────────────────────────
+# SubViewport & Display Layers
+# ────────────────────────────────
 @onready var subviewport: SubViewport = $SubViewport
 @onready var viewport_display: TextureRect = $ViewportDisplay
 @onready var crt_filter: ColorRect = $CRTFilter
 @onready var fog_border: ColorRect = $FogBorder
 @onready var smoke_atmosphere: ColorRect = $SmokeAtmosphere
-@onready var camera: Camera2D = $SubViewport/Camera2D
 @onready var water_background: ColorRect = $SubViewport/WaterBackground
+
+
+# ────────────────────────────────
+# Camera & World Elements
+# ────────────────────────────────
+@onready var camera: Camera2D = $SubViewport/Camera2D
 @onready var hex_map = $SubViewport/Hex
-#; TEST
 @onready var play_hand = $SubViewport/PlayHand
+
+# ────────────────────────────────
+# UI / UX Components
+# ────────────────────────────────
 @onready var tile_info = $TileInfo
 @onready var topbar_uiux = $TopbarUIUX
 @onready var entity_stats_panel = $EntityStatsPanel
-#; TEST
 
-var camera_speed = 960.0
-var zoom_speed = 0.1
-var min_zoom = 0.5
-var max_zoom = 4.0
+# ────────────────────────────────
+# Camera Configuration
+# ────────────────────────────────
+@export var camera_speed: float = 960.0  # pixels per second
+@export var zoom_speed: float   = 0.1    # zoom delta per scroll step
+@export var min_zoom: float     = 0.5
+@export var max_zoom: float     = 4.0
 
 # NOTE: Camera bounds removed for infinite world
 # Chunks are generated on-demand based on camera position
@@ -33,6 +55,11 @@ var manual_camera_panning_enabled = true  # Controlled by card signals
 
 # CRT effect toggle
 var crt_effect = false  # Set to true to enable CRT shader
+
+# Water background buffer settings (recalculated on zoom change)
+const WATER_BUFFER_SCALE = 1.5  # 50% larger than viewport
+var water_buffered_size: Vector2 = Vector2(640, 360) * WATER_BUFFER_SCALE
+var water_scale_factor: Vector2 = Vector2.ONE * WATER_BUFFER_SCALE
 
 # Player ULID (represents the current player)
 var player_ulid: PackedByteArray = PackedByteArray()
@@ -105,6 +132,10 @@ func _ready():
 
 	# Enable viewport to handle input events
 	subviewport.handle_input_locally = false
+
+	# Initialize camera zoom in Cache and water background buffer (called after camera is ready)
+	Cache.camera_zoom = camera.zoom
+	_update_water_background_for_zoom(camera.zoom)
 
 	# Defer initialization until after all children are ready
 	call_deferred("_initialize_game")
@@ -251,11 +282,10 @@ func _unhandled_input(event):
 		subviewport.push_input(cloned_event, true)
 
 func _process(delta):
-	# Keep water background centered on camera and scale it with zoom
-	# Offset by half the size to center it (ColorRect draws from top-left)
-	var zoom_scale = 1.0 / camera.zoom.x
-	water_background.position = camera.position - Vector2(640, 360) * zoom_scale
-	water_background.scale = Vector2(zoom_scale, zoom_scale)
+	# Keep water background centered on camera (position updated every frame)
+	# Size/scale only recalculated on zoom changes (see _input for zoom handlers)
+	water_background.position = camera.position - water_buffered_size
+	water_background.scale = water_scale_factor
 
 	# Handle drag panning
 	if is_dragging:
@@ -361,10 +391,14 @@ func _input(event):
 			var new_zoom = camera.zoom + Vector2(zoom_speed, zoom_speed)
 			if new_zoom.x <= max_zoom:
 				camera.zoom = new_zoom
+				Cache.camera_zoom = new_zoom
+				_update_water_background_for_zoom(new_zoom)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			var new_zoom = camera.zoom - Vector2(zoom_speed, zoom_speed)
 			if new_zoom.x >= min_zoom:
 				camera.zoom = new_zoom
+				Cache.camera_zoom = new_zoom
+				_update_water_background_for_zoom(new_zoom)
 
 	# Handle touch drag panning (for mobile/touch devices)
 	elif event is InputEventScreenTouch:
@@ -382,6 +416,8 @@ func _input(event):
 		new_zoom.x = clamp(new_zoom.x, min_zoom, max_zoom)
 		new_zoom.y = clamp(new_zoom.y, min_zoom, max_zoom)
 		camera.zoom = new_zoom
+		Cache.camera_zoom = new_zoom
+		_update_water_background_for_zoom(new_zoom)
 
 #### TEST ####
 func _spawn_test_vikings():
@@ -399,7 +435,7 @@ func _spawn_test_vikings():
 		"tile_map": hex_map.tile_map,
 		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_vikings,
-		"player_ulid": player_ulid,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
 		"near_pos": spawn_near,  # Spawn near camera where chunks are loaded
 		"entity_name": "Viking"
 	})
@@ -554,6 +590,13 @@ func _position_camera_at_city() -> void:
 func _clamp_camera_position(pos: Vector2) -> Vector2:
 	return pos  # No clamping needed for infinite world
 
+## Update water background buffer calculations based on zoom
+## Called only when zoom changes (not every frame)
+func _update_water_background_for_zoom(zoom: Vector2) -> void:
+	var zoom_scale = 1.0 / zoom.x
+	water_buffered_size = Vector2(640, 360) * WATER_BUFFER_SCALE * zoom_scale
+	water_scale_factor = Vector2(zoom_scale * WATER_BUFFER_SCALE, zoom_scale * WATER_BUFFER_SCALE)
+
 # Signal handler for entity spawned
 func _on_entity_spawned(entity: Node, pool_key: String) -> void:
 	# Apply wave shader to Vikings
@@ -588,7 +631,7 @@ func _spawn_test_jezza():
 		"tile_map": hex_map.tile_map,
 		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_jezzas,
-		"player_ulid": player_ulid,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
 		"entity_name": "Jezza"
 	})
@@ -604,7 +647,7 @@ func _spawn_test_fantasy_warriors():
 		"tile_map": hex_map.tile_map,
 		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_fantasy_warriors,
-		"player_ulid": player_ulid,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
 		"entity_name": "Fantasy Warrior"
 	})
@@ -620,7 +663,7 @@ func _spawn_test_kings():
 		"tile_map": hex_map.tile_map,
 		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_kings,
-		"player_ulid": player_ulid,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
 		"entity_name": "King"
 	})
@@ -636,7 +679,7 @@ func _spawn_test_martial_heroes():
 		"tile_map": hex_map.tile_map,
 		"occupied_tiles": EntityManager.occupied_tiles,
 		"storage_array": test_martial_heroes,
-		"player_ulid": player_ulid,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
 		"entity_name": "Martial Hero"
 	})

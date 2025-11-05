@@ -215,7 +215,6 @@ where
         let current = current_node.coord;
 
         if current == goal {
-            godot_print!("A* reached goal! came_from has {} entries", came_from.len());
             return Some(reconstruct_path(&came_from, current));
         }
 
@@ -267,7 +266,6 @@ fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoo
         current = prev;
     }
     path.reverse();
-    godot_print!("reconstruct_path: Built path with {} waypoints: {:?}", path.len(), path);
     path
 }
 
@@ -286,9 +284,6 @@ pub fn find_path_unified(request: &PathfindingRequest) -> PathfindingResult {
     // DEBUG: Verify start and goal terrain types
     let start_terrain = terrain_cache::get_terrain(request.start.0, request.start.1);
     let goal_terrain = terrain_cache::get_terrain(request.goal.0, request.goal.1);
-
-    godot_print!("find_path_unified: start={:?} (terrain={:?}), goal={:?} (terrain={:?}), requested_terrain={:?}",
-        request.start, start_terrain, request.goal, goal_terrain, request.terrain_type);
 
     // CRITICAL: Reject pathfinding if start terrain is wrong
     if start_terrain != request.terrain_type {
@@ -391,7 +386,6 @@ pub fn find_path_unified(request: &PathfindingRequest) -> PathfindingResult {
                 }
             }
 
-            godot_print!("find_path_unified: SUCCESS - found path with {} waypoints", path.len());
             PathfindingResult {
                 entity_ulid: request.entity_ulid.clone(),
                 path,
@@ -464,11 +458,6 @@ fn find_random_destination(
         }
     }
 
-    godot_print!(
-        "find_random_destination: start={:?}, terrain={:?}, range={}-{}, checked={}, distance_rejected={}, terrain_mismatch={}, occupied={}, valid={}",
-        start, terrain_type, min_distance, max_distance, checked_count, distance_reject_count, terrain_mismatch_count, occupied_count, valid_destinations.len()
-    );
-
     if valid_destinations.is_empty() {
         None
     } else {
@@ -485,7 +474,6 @@ fn find_random_destination(
             return None; // Don't return invalid destination
         }
 
-        godot_print!("find_random_destination: Selected {:?} (terrain={:?})", selected, dest_terrain);
         Some(selected)
     }
 }
@@ -560,14 +548,11 @@ pub fn start_workers(thread_count: usize) {
             .spawn(worker_thread)
             .expect("Failed to spawn pathfinding worker thread");
     }
-
-    godot_print!("UnifiedPathfinding: Started {} worker threads", count);
 }
 
 /// Stop worker threads
 pub fn stop_workers() {
     WORKERS_RUNNING.store(false, std::sync::atomic::Ordering::Relaxed);
-    godot_print!("UnifiedPathfinding: Stopping worker threads");
 }
 
 // ============================================================================
@@ -634,12 +619,10 @@ pub struct UnifiedPathfindingBridge {
 #[godot_api]
 impl INode for UnifiedPathfindingBridge {
     fn init(base: Base<Node>) -> Self {
-        godot_print!("UnifiedPathfindingBridge initialized!");
         Self { base }
     }
 
     fn ready(&mut self) {
-        godot_print!("UnifiedPathfindingBridge ready!");
         // DON'T set_process - GDScript will poll for results instead
     }
 }
@@ -828,7 +811,6 @@ impl UnifiedPathfindingBridge {
         }
 
         terrain_cache::init_terrain_cache(tile_vec);
-        godot_print!("UnifiedPathfindingBridge: Terrain cache initialized with {} tiles", tiles.len());
     }
 
     /// Load a chunk of tiles into the terrain cache (incremental)
@@ -908,7 +890,6 @@ impl UnifiedPathfindingBridge {
             0 => TerrainType::Water,
             1 => TerrainType::Land,
             _ => {
-                godot_print!("find_path_simple: Invalid terrain_type {}", terrain_type_int);
                 return Array::new();
             }
         };
@@ -921,18 +902,10 @@ impl UnifiedPathfindingBridge {
         let goal_terrain = terrain_cache::get_terrain(goal.0, goal.1);
 
         if start_terrain != terrain_type {
-            godot_print!(
-                "find_path_simple: Start {:?} has terrain {:?} but requested {:?}",
-                start, start_terrain, terrain_type
-            );
             return Array::new();
         }
 
         if goal_terrain != terrain_type {
-            godot_print!(
-                "find_path_simple: Goal {:?} has terrain {:?} but requested {:?}",
-                goal, goal_terrain, terrain_type
-            );
             return Array::new();
         }
 
@@ -952,12 +925,6 @@ impl UnifiedPathfindingBridge {
             for (q, r) in path_vec {
                 result.push(Vector2i::new(q, r));
             }
-            godot_print!(
-                "find_path_simple: Found path from {:?} to {:?} with {} waypoints",
-                start, goal, result.len()
-            );
-        } else {
-            godot_print!("find_path_simple: No path found from {:?} to {:?}", start, goal);
         }
 
         result

@@ -254,6 +254,14 @@ var translations: Dictionary = {
 		Language.SPANISH: "Turno: %d",
 		Language.FRENCH: "Tour : %d"
 	},
+	"ui.inventory.title": {
+		Language.ENGLISH: "Inventory",
+		Language.JAPANESE: "インベントリ",
+		Language.CHINESE: "库存",
+		Language.HINDI: "सूची",
+		Language.SPANISH: "Inventario",
+		Language.FRENCH: "Inventaire"
+	},
 
 	# Cards - Standard Suits
 	"card.suit.clubs": {

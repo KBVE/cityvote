@@ -53,7 +53,12 @@ func _reset_timer() -> void:
 	timer_reset.emit()
 	turn_changed.emit(current_turn)
 
-	# Emit food consumption signal (once per turn)
+	# Process turn-based resource consumption via UnifiedEventBridge
+	var bridge = Cache.get_unified_event_bridge()
+	if bridge and bridge.has_method("process_turn_consumption"):
+		bridge.call("process_turn_consumption")
+
+	# Emit food consumption signal (once per turn) - for legacy systems
 	consume_food.emit()
 
 ## Get current time remaining

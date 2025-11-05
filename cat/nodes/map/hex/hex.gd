@@ -70,8 +70,11 @@ var tile_textures = {
 	9: preload("res://nodes/map/hex/grassland_village1/grassland_village1.png")
 }
 
-# Card data - stores cards placed on tiles
-var card_data: Dictionary = {}  # tile_coords -> {sprite, suit, value}
+# Card data - stores ONLY visual sprites (Actor owns game state via CardRegistry)
+# IMPORTANT: This is NOT the source of truth for card data!
+# Actor's CardRegistry is the single source of truth.
+# This dictionary only stores sprite references for visual management.
+var card_data: Dictionary = {}  # tile_coords -> {sprite} (visual only)
 
 # Current hovered tile coordinates
 var hovered_tile: Vector2i = Vector2i(-1, -1)
@@ -416,7 +419,7 @@ func _update_highlight():
 
 # Register a card placed on a tile (accepts PooledCard which is now MeshInstance2D)
 func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, value: int) -> bool:
-	# Check if tile is already occupied (GDScript check first)
+	# Check if tile is already occupied (GDScript visual check first)
 	if card_data.has(tile_coords):
 		push_warning("Hex: Tile (%d, %d) is already occupied! Cannot place card." % [tile_coords.x, tile_coords.y])
 		return false
@@ -448,20 +451,20 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 		"position": {"x": tile_coords.x, "y": tile_coords.y}
 	})
 
-	# Register with Rust CardRegistry (double-check on Rust side)
-	var card_registry = get_node("/root/CardRegistryBridge")
-	if card_registry:
-		var success = card_registry.place_card(tile_coords.x, tile_coords.y, ulid, suit, value, is_custom, card_id)
-		if not success:
-			push_error("Hex: Failed to register card with Rust CardRegistry at (%d, %d) - tile occupied" % [tile_coords.x, tile_coords.y])
-			return false
+	# Send card placement to Actor (SINGLE SOURCE OF TRUTH)
+	# Actor's CardRegistry will perform authoritative position validation
+	var event_bridge = get_node("/root/UnifiedEventBridge")
+	if event_bridge:
+		event_bridge.place_card(tile_coords.x, tile_coords.y, ulid, suit, value, card_id, is_custom)
+	else:
+		push_error("Hex: UnifiedEventBridge not found! Cannot register card with Actor.")
+		return false
 
+	# Store ONLY the sprite reference for visual management
+	# Actor owns the actual card data
 	card_data[tile_coords] = {
 		"sprite": card_sprite,
-		"suit": suit,
-		"value": value,
-		"card_id": card_id,
-		"ulid": ulid
+		"ulid": ulid  # Keep ULID for removal operations
 	}
 
 	return true

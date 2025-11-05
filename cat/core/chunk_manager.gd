@@ -40,11 +40,13 @@ var chunk_culling_enabled: bool = true
 var culled_entities_count: int = 0
 var active_entities_count: int = 0
 
-## How many chunks around camera to render
-var render_radius: int = 5  # Render 5 chunks in each direction from camera (async loading buffer)
+## Base render radius (at zoom 1.0)
+var base_render_radius: int = 5  # Render 5 chunks at normal zoom
+var render_radius: int = 5  # Current render radius (adjusted for zoom)
 
 ## Last camera chunk position (to avoid recalculating every frame)
 var last_camera_chunk: Vector2i = Vector2i(-1, -1)
+var last_camera_zoom: Vector2 = Vector2.ONE  # Track zoom changes
 
 ## References
 var camera: Camera2D = null
@@ -68,14 +70,28 @@ func update_visible_chunks() -> void:
 	# Get camera position in world space
 	var camera_world_pos = camera.position
 
+	# Get camera zoom (smaller zoom = more zoomed out = need more chunks)
+	var camera_zoom = camera.zoom
+
+	# Adjust render radius based on zoom level (aggressive for far zoom)
+	# When zoomed out, need MORE chunks loaded ahead of time
+	# zoom = 1.0 -> radius = 5
+	# zoom = 0.5 -> radius = 15 (3x more aggressive)
+	# zoom = 0.35 -> radius = 21 (4.2x more aggressive)
+	var zoom_factor = 1.0 / camera_zoom.x
+	# Square the factor to be more aggressive at far zoom levels
+	render_radius = int(ceil(base_render_radius * (zoom_factor * zoom_factor * 0.6 + zoom_factor * 0.4)))
+
 	# Convert to chunk coordinates
 	var camera_chunk = MapConfig.world_to_chunk(camera_world_pos)
 
-	# Only recalculate if camera moved to a different chunk
-	if camera_chunk == last_camera_chunk:
+	# Recalculate if camera moved to a different chunk OR zoom changed significantly
+	var zoom_changed = abs(camera_zoom.x - last_camera_zoom.x) > 0.05
+	if camera_chunk == last_camera_chunk and not zoom_changed:
 		return
 
 	last_camera_chunk = camera_chunk
+	last_camera_zoom = camera_zoom
 
 	# Calculate visible chunks in radius (infinite world - no bounds checking)
 	var new_visible_chunks = MapConfig.get_chunks_in_radius(camera_chunk, render_radius)

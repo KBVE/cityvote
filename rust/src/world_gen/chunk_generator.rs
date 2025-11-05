@@ -142,14 +142,6 @@ impl WorldGenerator {
             result.push(&tile_dict);
         }
 
-        godot_print!(
-            "WorldGenerator: Generated chunk ({}, {}) - Water: {}, Land: {}",
-            chunk_x,
-            chunk_y,
-            water_count,
-            land_count
-        );
-
         result
     }
 
@@ -297,9 +289,6 @@ impl WorldGenerator {
 
                             tile_data.push((local_x, local_y, tile_index));
                         }
-
-                        godot_print!("WorldGenerator: Generated chunk ({}, {}) - {} tiles ({} water, {} land)",
-                            request.chunk_x, request.chunk_y, tile_data.len(), water_count, land_count);
 
                         // Send result back
                         let result = ChunkResult {

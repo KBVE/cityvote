@@ -118,6 +118,10 @@ impl UnifiedEventBridge {
     #[signal]
     fn entity_healed(ulid: PackedByteArray, heal_amount: f32, new_hp: f32);
 
+    /// Emitted when a combo is detected
+    #[signal]
+    fn combo_detected(hand_rank: i32, hand_name: GString, positions: VariantArray, bonuses: VariantArray);
+
     // ========================================================================
     // REQUEST METHODS (Unified API - All game requests)
     // ========================================================================
@@ -227,9 +231,10 @@ impl UnifiedEventBridge {
 
     /// Register entity stats (called when entity spawns)
     #[func]
-    fn register_entity_stats(&mut self, ulid: PackedByteArray, entity_type: GString, terrain_type: i32, q: i32, r: i32) {
+    fn register_entity_stats(&mut self, ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: GString, terrain_type: i32, q: i32, r: i32) {
         let _ = CHANNELS.request_tx.send(GameRequest::RegisterEntityStats {
             ulid: ulid.to_vec(),
+            player_ulid: player_ulid.to_vec(),
             entity_type: entity_type.to_string(),
             terrain_type,
             position: (q, r),
@@ -264,6 +269,92 @@ impl UnifiedEventBridge {
         });
     }
 
+    // ========================================================================
+    // RESOURCE METHODS
+    // ========================================================================
+
+    /// Add resources (called by combo system, building rewards, etc.)
+    #[func]
+    fn add_resources(&mut self, resource_type: i32, amount: f32) {
+        let _ = CHANNELS.request_tx.send(GameRequest::AddResources {
+            resource_type,
+            amount,
+        });
+    }
+
+    /// Spend resources (called by building costs, unit spawning, etc.)
+    /// Returns true if resources were spent, false if insufficient
+    /// Note: This is async - actual result comes via resource_changed signal
+    #[func]
+    fn spend_resources(&mut self, costs: Array<Dictionary>) {
+        // Convert Array<Dictionary> to Vec<(i32, f32)>
+        let mut cost_vec = Vec::new();
+        for i in 0..costs.len() {
+            if let Some(dict) = costs.get(i) {
+                if let (Some(resource_type), Some(amount)) = (dict.get("resource_type"), dict.get("amount")) {
+                    let rt: i32 = resource_type.try_to().unwrap_or(0);
+                    let amt: f32 = amount.try_to().unwrap_or(0.0);
+                    cost_vec.push((rt, amt));
+                }
+            }
+        }
+
+        let _ = CHANNELS.request_tx.send(GameRequest::SpendResources {
+            cost: cost_vec,
+        });
+    }
+
+    /// Process turn-based resource consumption (called by GameTimer on turn end)
+    /// Consumes 1 food per active entity
+    #[func]
+    fn process_turn_consumption(&mut self) {
+        let _ = CHANNELS.request_tx.send(GameRequest::ProcessTurnConsumption);
+    }
+
+    // ========================================================================
+    // CARD METHODS (Single Source of Truth via Actor)
+    // ========================================================================
+
+    /// Place a card on the board at specific hex coordinates
+    /// Actor's CardRegistry is the single source of truth for card placement
+    #[func]
+    fn place_card(&mut self, x: i32, y: i32, ulid: PackedByteArray, suit: i32, value: i32, card_id: i32, is_custom: bool) {
+        let _ = CHANNELS.request_tx.send(GameRequest::PlaceCard {
+            x,
+            y,
+            ulid: ulid.to_vec(),
+            suit: suit as u8,
+            value: value as u8,
+            card_id,
+            is_custom,
+        });
+    }
+
+    /// Remove a card from the board by position
+    #[func]
+    fn remove_card_at(&mut self, x: i32, y: i32) {
+        let _ = CHANNELS.request_tx.send(GameRequest::RemoveCardAt { x, y });
+    }
+
+    /// Remove a card from the board by ULID
+    #[func]
+    fn remove_card_by_ulid(&mut self, ulid: PackedByteArray) {
+        let _ = CHANNELS.request_tx.send(GameRequest::RemoveCardByUlid {
+            ulid: ulid.to_vec(),
+        });
+    }
+
+    /// Request combo detection at a specific position
+    /// Actor will check cards in radius and emit combo event if found
+    #[func]
+    fn detect_combo(&mut self, center_x: i32, center_y: i32, radius: i32) {
+        let _ = CHANNELS.request_tx.send(GameRequest::DetectCombo {
+            center_x,
+            center_y,
+            radius,
+        });
+    }
+
     /// Get a single stat value for an entity (synchronous query)
     #[func]
     fn get_stat(&self, ulid: PackedByteArray, stat_type: i64) -> f32 {
@@ -280,23 +371,24 @@ impl UnifiedEventBridge {
     /// Get all stats for an entity as a Dictionary (synchronous query)
     #[func]
     fn get_all_stats(&self, ulid: PackedByteArray) -> Dictionary {
-        use crate::npc::entity::{StatType, ENTITY_STATS};
+        use crate::npc::entity::StatType;
+        use super::actor::ACTOR_ENTITY_STATS;
 
         let mut dict = Dictionary::new();
 
         let ulid_vec = ulid.to_vec();
 
         // DEBUG: Only log when stats NOT found to diagnose ULID mismatch (full ULID in hex)
-        if ENTITY_STATS.get(&ulid_vec).is_none() {
+        if ACTOR_ENTITY_STATS.get(&ulid_vec).is_none() {
             godot_print!("❌ Stats query MISS for ULID: {:02x?}", &ulid_vec);
-            if let Some(first_entry) = ENTITY_STATS.iter().next() {
+            if let Some(first_entry) = ACTOR_ENTITY_STATS.iter().next() {
                 let first_ulid = first_entry.key();
-                godot_print!("   Cache has {} entries, first entry ULID: {:02x?}",
-                    ENTITY_STATS.len(), first_ulid);
+                godot_print!("   Actor stats has {} entries, first entry ULID: {:02x?}",
+                    ACTOR_ENTITY_STATS.len(), first_ulid);
             }
         }
 
-        if let Some(stats) = ENTITY_STATS.get(&ulid_vec) {
+        if let Some(stats) = ACTOR_ENTITY_STATS.get(&ulid_vec) {
             // Return all stat types as dictionary keys
             dict.insert(StatType::HP as i64, stats.get(StatType::HP));
             dict.insert(StatType::MaxHP as i64, stats.get(StatType::MaxHP));
@@ -458,6 +550,36 @@ impl UnifiedEventBridge {
                         PackedByteArray::from(&ulid[..]).to_variant(),
                         heal_amount.to_variant(),
                         new_hp.to_variant(),
+                    ],
+                );
+            }
+
+            GameEvent::ComboDetected { hand_rank, hand_name, card_positions, resource_bonuses } => {
+                // Convert positions to VariantArray
+                let mut positions = VariantArray::new();
+                for (x, y) in card_positions {
+                    let mut pos_dict = Dictionary::new();
+                    let _ = pos_dict.insert("x", x);
+                    let _ = pos_dict.insert("y", y);
+                    positions.push(&pos_dict.to_variant());
+                }
+
+                // Convert resource bonuses to VariantArray
+                let mut bonuses = VariantArray::new();
+                for (resource_type, amount) in resource_bonuses {
+                    let mut bonus_dict = Dictionary::new();
+                    let _ = bonus_dict.insert("resource_type", resource_type);
+                    let _ = bonus_dict.insert("amount", amount);
+                    bonuses.push(&bonus_dict.to_variant());
+                }
+
+                self.base_mut().emit_signal(
+                    "combo_detected",
+                    &[
+                        hand_rank.to_variant(),
+                        GString::from(&hand_name).to_variant(),
+                        positions.to_variant(),
+                        bonuses.to_variant(),
                     ],
                 );
             }

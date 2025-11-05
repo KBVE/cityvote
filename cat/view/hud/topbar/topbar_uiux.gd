@@ -16,8 +16,9 @@ class_name TopbarUIUX
 @onready var labor_name: Label = $MarginContainer/HBoxContainer/LeftSection/LaborContainer/LaborName
 @onready var faith_name: Label = $MarginContainer/HBoxContainer/LeftSection/FaithContainer/FaithName
 
-# Center section button
+# Center section buttons
 @onready var city_vote_button: Button = $MarginContainer/HBoxContainer/CenterSection/CityVoteButton
+@onready var inventory_button: Button = $MarginContainer/HBoxContainer/CenterSection/InventoryButton
 
 # Right section labels (timer and turn moved here)
 @onready var timer_label: Label = $MarginContainer/HBoxContainer/RightSection/TimerLabel
@@ -62,6 +63,10 @@ func _ready() -> void:
 	# Connect CityVote button
 	if city_vote_button:
 		city_vote_button.pressed.connect(_on_city_vote_pressed)
+
+	# Connect Inventory button
+	if inventory_button:
+		inventory_button.pressed.connect(_on_inventory_pressed)
 
 	# Connect to global timer
 	if GameTimer:
@@ -137,8 +142,9 @@ func _apply_fonts() -> void:
 	labor_value.add_theme_font_override("font", font)
 	faith_value.add_theme_font_override("font", font)
 
-	# Apply to center section
+	# Apply to center section buttons
 	city_vote_button.add_theme_font_override("font", font)
+	inventory_button.add_theme_font_override("font", font)
 
 	# Apply to right section (timer and turn)
 	timer_label.add_theme_font_override("font", font)
@@ -174,6 +180,14 @@ func _on_city_vote_pressed() -> void:
 		tween.tween_property(camera, "zoom", target_zoom, 0.5)
 
 		print("TopbarUIUX: Cycling to zoom state %d: %v" % [current_zoom_index, target_zoom])
+
+func _on_inventory_pressed() -> void:
+	# Toggle inventory panel visibility
+	var inventory_panel = get_node_or_null("/root/Main/InventoryPanel")
+	if inventory_panel:
+		inventory_panel.toggle_visibility()
+	else:
+		push_warning("TopbarUIUX: InventoryPanel not found!")
 
 func _on_timer_tick(time_left: int) -> void:
 	_update_timer_display(time_left)

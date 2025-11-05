@@ -7,6 +7,9 @@ use std::collections::HashMap;
 
 use crate::npc::terrain_cache::TerrainType;
 
+// Re-export combat types from types.rs for convenience (other modules import from workers)
+pub use super::types::{CombatEntitySnapshot, CombatWorkRequest, CombatWorkResult};
+
 // ============================================================================
 // SPAWN WORKER
 // ============================================================================
@@ -195,42 +198,7 @@ pub fn spawn_pathfinding_pool(
 // COMBAT WORKER
 // ============================================================================
 
-#[derive(Debug, Clone)]
-pub struct CombatWorkRequest {
-    pub entities_snapshot: Vec<CombatEntitySnapshot>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CombatEntitySnapshot {
-    pub ulid: Vec<u8>,
-    pub position: (i32, i32),
-    pub terrain_type: TerrainType,
-    pub hp: i32,
-    pub max_hp: i32,
-    pub attack: i32,
-    pub defense: i32,
-    pub range: i32,
-}
-
-#[derive(Debug, Clone)]
-pub enum CombatWorkResult {
-    CombatStarted {
-        attacker_ulid: Vec<u8>,
-        defender_ulid: Vec<u8>,
-    },
-    DamageDealt {
-        attacker_ulid: Vec<u8>,
-        defender_ulid: Vec<u8>,
-        damage: i32,
-    },
-    EntityDied {
-        ulid: Vec<u8>,
-    },
-    CombatEnded {
-        attacker_ulid: Vec<u8>,
-        defender_ulid: Vec<u8>,
-    },
-}
+// NOTE: Combat types moved to types.rs to avoid duplication
 
 pub fn spawn_combat_worker(
     rx: Receiver<CombatWorkRequest>,
@@ -239,16 +207,218 @@ pub fn spawn_combat_worker(
     thread::Builder::new()
         .name("combat-worker".to_string())
         .spawn(move || {
+            // Active combat instances (attacker_ulid -> combat state)
+            let mut active_combats: HashMap<Vec<u8>, CombatInstance> = HashMap::new();
+
             loop {
                 if let Ok(request) = rx.recv() {
                     // Process combat for all entities in snapshot
-                    // TODO: Implement combat tick logic
-                    // For now, just sleep to simulate work
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    process_combat_tick(&request.entities_snapshot, &mut active_combats, &tx);
                 }
             }
         })
         .expect("Failed to spawn combat worker");
+}
+
+/// Combat instance tracking for a single attacker
+struct CombatInstance {
+    defender_ulid: Vec<u8>,
+    time_since_last_attack: f32,
+    attack_interval: f32,
+}
+
+impl CombatInstance {
+    fn new(defender_ulid: Vec<u8>, attack_interval: f32) -> Self {
+        Self {
+            defender_ulid,
+            time_since_last_attack: attack_interval, // Allow immediate first attack
+            attack_interval,
+        }
+    }
+
+    fn can_attack(&self) -> bool {
+        self.time_since_last_attack >= self.attack_interval
+    }
+
+    fn reset_attack_timer(&mut self) {
+        self.time_since_last_attack = 0.0;
+    }
+
+    fn tick(&mut self, delta: f32) {
+        self.time_since_last_attack += delta;
+    }
+}
+
+/// Process one combat tick for all entities
+fn process_combat_tick(
+    entities: &[CombatEntitySnapshot],
+    active_combats: &mut HashMap<Vec<u8>, CombatInstance>,
+    tx: &Sender<CombatWorkResult>,
+) {
+    // Tick interval (should match Actor's combat tick rate of 0.5s)
+    const TICK_DELTA: f32 = 0.5;
+
+    // Tick all active combats
+    for combat in active_combats.values_mut() {
+        combat.tick(TICK_DELTA);
+    }
+
+    // Build quick lookup maps
+    let entity_map: HashMap<&Vec<u8>, &CombatEntitySnapshot> =
+        entities.iter().map(|e| (&e.ulid, e)).collect();
+
+    // Process each entity
+    for attacker in entities {
+        // Skip dead entities
+        if attacker.hp <= 0 {
+            continue;
+        }
+
+        // Check if already in combat
+        if let Some(combat) = active_combats.get_mut(&attacker.ulid) {
+            // Combat exists - check if can attack
+            if combat.can_attack() {
+                // Verify defender still valid and alive
+                let defender_alive = entity_map
+                    .get(&combat.defender_ulid)
+                    .map(|d| d.hp > 0)
+                    .unwrap_or(false);
+
+                if defender_alive {
+                    // Execute attack
+                    if let Some(defender) = entity_map.get(&combat.defender_ulid) {
+                        execute_attack(attacker, defender, tx);
+                        combat.reset_attack_timer();
+                    }
+                } else {
+                    // Defender died, end combat
+                    let _ = tx.send(CombatWorkResult::CombatEnded {
+                        attacker_ulid: attacker.ulid.clone(),
+                        defender_ulid: combat.defender_ulid.clone(),
+                    });
+                    // Remove from active combats (will happen after loop)
+                }
+            }
+        } else {
+            // Not in combat - search for targets
+            if let Some(target_ulid) = find_closest_enemy(attacker, entities) {
+                // Found enemy in range - start combat
+                let combat = CombatInstance::new(target_ulid.clone(), 1.5); // 1.5s attack interval
+                active_combats.insert(attacker.ulid.clone(), combat);
+
+                // Queue combat started event
+                let _ = tx.send(CombatWorkResult::CombatStarted {
+                    attacker_ulid: attacker.ulid.clone(),
+                    defender_ulid: target_ulid,
+                });
+            }
+        }
+    }
+
+    // Clean up combats where defender is dead
+    active_combats.retain(|_attacker_ulid, combat| {
+        entity_map
+            .get(&combat.defender_ulid)
+            .map(|d| d.hp > 0)
+            .unwrap_or(false)
+    });
+}
+
+/// Find the closest enemy within attack range
+fn find_closest_enemy(
+    attacker: &CombatEntitySnapshot,
+    entities: &[CombatEntitySnapshot],
+) -> Option<Vec<u8>> {
+    let mut closest_enemy: Option<(Vec<u8>, i32)> = None;
+
+    for defender in entities {
+        // Skip self
+        if defender.ulid == attacker.ulid {
+            continue;
+        }
+
+        // Skip dead entities
+        if defender.hp <= 0 {
+            continue;
+        }
+
+        // Team detection: Compare player_ulid
+        // - Empty player_ulid = AI team (all AI entities are allies)
+        // - Same non-empty player_ulid = same player's entities (allies)
+        // - Different player_ulids = enemies
+        let attacker_is_ai = attacker.player_ulid.is_empty();
+        let defender_is_ai = defender.player_ulid.is_empty();
+
+        // If both are AI, they're allies - skip
+        if attacker_is_ai && defender_is_ai {
+            continue;
+        }
+
+        // If both belong to the same player, they're allies - skip
+        if !attacker_is_ai && !defender_is_ai && attacker.player_ulid == defender.player_ulid {
+            continue;
+        }
+
+        // Check if in range
+        let distance = hex_distance(attacker.position, defender.position);
+        if distance > attacker.range {
+            continue;
+        }
+
+        // Update closest if this is closer
+        match &closest_enemy {
+            None => closest_enemy = Some((defender.ulid.clone(), distance)),
+            Some((_, prev_distance)) => {
+                if distance < *prev_distance {
+                    closest_enemy = Some((defender.ulid.clone(), distance));
+                }
+            }
+        }
+    }
+
+    closest_enemy.map(|(ulid, _)| ulid)
+}
+
+/// Execute an attack between two entities
+fn execute_attack(
+    attacker: &CombatEntitySnapshot,
+    defender: &CombatEntitySnapshot,
+    tx: &Sender<CombatWorkResult>,
+) {
+    // Calculate damage (simple: attack - defense, min 1)
+    let raw_damage = attacker.attack - defender.defense;
+    let damage = raw_damage.max(1);
+
+    // Queue damage event
+    let _ = tx.send(CombatWorkResult::DamageDealt {
+        attacker_ulid: attacker.ulid.clone(),
+        defender_ulid: defender.ulid.clone(),
+        damage,
+    });
+
+    // Check if defender will die
+    let new_hp = defender.hp - damage;
+    if new_hp <= 0 {
+        let _ = tx.send(CombatWorkResult::EntityDied {
+            ulid: defender.ulid.clone(),
+        });
+    }
+}
+
+/// Calculate hex distance using cube coordinates
+fn hex_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
+    let (ax, ay) = a;
+    let (bx, by) = b;
+
+    let dx = (ax - bx).abs();
+    let dy = (ay - by).abs();
+
+    // Convert axial to cube coordinates
+    let az = -ax - ay;
+    let bz = -bx - by;
+    let dz = (az - bz).abs();
+
+    dx.max(dy).max(dz)
 }
 
 // ============================================================================

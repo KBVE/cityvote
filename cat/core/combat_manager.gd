@@ -1,11 +1,8 @@
 extends Node
 
-# CombatManager - Handles combat signals from Rust bridge
+# CombatManager - Handles combat signals from UnifiedEventBridge
 # This manager listens to combat events and triggers appropriate visual/audio feedback
-# The actual combat logic runs in a Rust worker thread
-
-# Rust bridge
-var combat_bridge: CombatBridge = null
+# The actual combat logic runs in GameActor's combat worker thread
 
 # Signal for when combat starts (can be used by UI/camera)
 signal combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray)
@@ -14,16 +11,15 @@ signal combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByteA
 signal combat_ended(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray, winner_ulid: PackedByteArray)
 
 func _ready() -> void:
-	# Create Rust bridge
-	combat_bridge = CombatBridge.new()
-	add_child(combat_bridge)
-	combat_bridge.name = "RustBridge"
-
-	# Connect to combat bridge signals
-	combat_bridge.combat_started.connect(_on_combat_started)
-	combat_bridge.damage_dealt.connect(_on_damage_dealt)
-	combat_bridge.combat_ended.connect(_on_combat_ended)
-	combat_bridge.entity_died.connect(_on_entity_died)
+	# Connect to UnifiedEventBridge signals
+	var bridge = Cache.get_unified_event_bridge()
+	if bridge:
+		bridge.combat_started.connect(_on_combat_started)
+		bridge.damage_dealt.connect(_on_damage_dealt)
+		bridge.combat_ended.connect(_on_combat_ended)
+		bridge.entity_died.connect(_on_entity_died)
+	else:
+		push_error("CombatManager: UnifiedEventBridge not found!")
 
 ## Called when combat starts between two entities
 func _on_combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray) -> void:
@@ -46,19 +42,15 @@ func _on_combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByt
 func _on_damage_dealt(
 	attacker_ulid: PackedByteArray,
 	defender_ulid: PackedByteArray,
-	damage: float,
-	new_hp: float
+	damage: int  # Changed from float to int (new system)
 ) -> void:
 	if defender_ulid.is_empty():
 		push_error("CombatManager: Invalid defender ULID in damage_dealt")
 		return
 
-	# Apply damage through StatsManager to trigger signals
-	# This will emit stat_changed signal for health bars to update
-	if StatsManager:
-		var _actual_damage = StatsManager.take_damage(defender_ulid, damage)
-	else:
-		push_error("CombatManager: StatsManager not available to apply damage")
+	# NOTE: Damage is already applied by GameActor to entity_stats
+	# No need to call StatsManager.take_damage() - Actor owns HP state
+	# The entity_damaged signal (emitted separately) updates health bars
 
 	# CRITICAL: Validate entities using defensive programming helper
 	var defender = UlidManager.get_instance(defender_ulid) as Node2D
@@ -80,19 +72,17 @@ func _on_damage_dealt(
 
 	# Display damage number popup (only if visible)
 	if is_visible:
-		_show_damage_number(defender, damage)
+		_show_damage_number(defender, float(damage))
 
 	# TODO: Screen shake for critical hits
 
 ## Called when combat ends
 func _on_combat_ended(
 	attacker_ulid: PackedByteArray,
-	defender_ulid: PackedByteArray,
-	winner_ulid: PackedByteArray
+	defender_ulid: PackedByteArray
 ) -> void:
-	if winner_ulid.is_empty():
-		push_error("CombatManager: Invalid winner ULID in combat_ended")
-		return
+	# NOTE: Winner is typically the attacker (defender died)
+	var winner_ulid = attacker_ulid
 
 	# Clear IN_COMBAT flag on both entities (allow movement to resume)
 	_set_combat_flag(attacker_ulid, false)
@@ -123,11 +113,9 @@ func _on_entity_died(ulid: PackedByteArray) -> void:
 	if _is_entity_visible(entity):
 		_trigger_death_animation(entity)
 
-	# Mark entity as dead in combat system
-	if combat_bridge:
-		combat_bridge.mark_dead(ulid)
-	else:
-		push_error("CombatManager: Combat bridge not available for marking entity dead")
+	# NOTE: Entity death is already tracked by GameActor combat worker
+	# The is_alive flag is automatically updated when HP reaches 0
+	# No need to manually mark dead - Actor owns this state
 
 	# TODO: Drop loot
 	# TODO: Update player stats/quest progress

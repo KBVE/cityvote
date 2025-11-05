@@ -9,19 +9,29 @@ use crossbeam_channel::{Sender, Receiver};
 use std::collections::{HashSet, HashMap};
 use std::time::{Duration, Instant};
 use godot::prelude::*;
+use once_cell::sync::Lazy;
 
 use crate::npc::entity::{EntityData, EntityStats};
 use crate::economy::resource_ledger::ResourceType;
-use super::types::{GameEvent, GameRequest};
+use crate::card::card_registry::CardRegistry;
+use super::types::{GameEvent, GameRequest, CombatEntitySnapshot};
 use super::workers::*;
+
+// Global entity stats storage (thread-safe, shared between Actor and FFI)
+// Actor owns write access, FFI reads via get_all_stats()
+pub static ACTOR_ENTITY_STATS: Lazy<Arc<DashMap<Vec<u8>, EntityStats>>> = Lazy::new(|| {
+    Arc::new(DashMap::new())
+});
 
 /// Central coordinator that owns all shared state
 /// RUNS ON DEDICATED THREAD - No shared state, zero lock contention
 pub struct GameActor {
     // === OWNED STATE (Direct ownership, no Arc needed) ===
     entities: DashMap<Vec<u8>, EntityData>,
-    entity_stats: DashMap<Vec<u8>, EntityStats>,  // Actor OWNS stats
+    entity_stats: Arc<DashMap<Vec<u8>, EntityStats>>,  // Reference to global stats
+    entity_player_ulids: DashMap<Vec<u8>, Vec<u8>>,     // ULID -> player_ulid (for team detection)
     pending_spawns: HashSet<(i32, i32)>,
+    card_registry: CardRegistry,  // SINGLE SOURCE OF TRUTH for card placement
 
     // === COMMUNICATION (crossbeam_channel for proper Actor pattern) ===
     request_rx: Receiver<GameRequest>,  // Receive requests from Godot
@@ -59,7 +69,8 @@ impl GameActor {
 
         // Create owned state (no Arc wrapping - this thread is the only owner)
         let entities = DashMap::new();
-        let entity_stats = DashMap::new();
+        let entity_stats = Arc::clone(&ACTOR_ENTITY_STATS);  // Use global stats storage
+        let entity_player_ulids = DashMap::new();
 
         // Initialize resources with defaults
         let mut resources = HashMap::new();
@@ -90,7 +101,9 @@ impl GameActor {
         let mut actor = Self {
             entities,
             entity_stats,
+            entity_player_ulids,
             pending_spawns: HashSet::new(),
+            card_registry: CardRegistry::new(),  // Actor owns the card registry
 
             request_rx,
             event_tx: event_tx.clone(),
@@ -200,8 +213,6 @@ impl GameActor {
                     use rand::Rng;
                     let mut rng = rand::thread_rng();
 
-                    godot_print!("RandomDest: start={:?}, min={}, max={}", start, min_distance, max_distance);
-
                     // Try to find a valid destination (max 10 attempts)
                     let mut found_dest = None;
                     for attempt in 0..10 {
@@ -223,9 +234,6 @@ impl GameActor {
                         let dr = base_dr * distance - rand_offset;  // Subtract to maintain hex constraint
 
                         let dest = (start.0 + dq, start.1 + dr);
-
-                        godot_print!("  Attempt {}: distance={}, direction={}, offset={}, dest={:?}",
-                            attempt, distance, angle_index, rand_offset, dest);
 
                         // Check if destination is walkable and not occupied
                         use crate::npc::terrain_cache;
@@ -297,8 +305,11 @@ impl GameActor {
                     self.consumers.retain(|(u, _, _, _)| u != &ulid);
                 }
 
-                GameRequest::RegisterEntityStats { ulid, entity_type, terrain_type, position } => {
+                GameRequest::RegisterEntityStats { ulid, player_ulid, entity_type, terrain_type, position } => {
                     use crate::npc::entity::{EntityStats, TerrainType as EntityTerrainType, StatType, ENTITY_STATS};
+
+                    // Store player_ulid for team detection
+                    self.entity_player_ulids.insert(ulid.clone(), player_ulid);
 
                     // Determine terrain type from i32
                     let et = match terrain_type {
@@ -315,9 +326,6 @@ impl GameActor {
                     // Get initial HP values before inserting
                     let initial_hp = stats.get(StatType::HP);
                     let max_hp = stats.get(StatType::MaxHP);
-
-                    // DEBUG: Log ULID registration (full ULID in hex)
-                    godot_print!("✅ Registering stats for ULID: {:02x?} (terrain: {})", &ulid, terrain_type);
 
                     // Actor OWNS stats - store in Actor's DashMap
                     self.entity_stats.insert(ulid.clone(), stats.clone());
@@ -443,6 +451,173 @@ impl GameActor {
                     }
                 }
 
+                GameRequest::AddResources { resource_type, amount } => {
+                    // Add resources to Actor's authoritative state
+                    if let Some(resource) = self.resources.get_mut(&resource_type) {
+                        resource.0 += amount;  // Add to current amount
+                        resource.0 = resource.0.min(resource.1);  // Cap at maximum
+
+                        // Emit resource changed event to update UI
+                        let _ = self.event_tx.send(GameEvent::ResourceChanged {
+                            resource_type,
+                            current: resource.0,
+                            cap: resource.1,
+                            rate: resource.2,
+                        });
+                    } else {
+                        godot_error!("Actor: Resource type {} not found!", resource_type);
+                    }
+                }
+
+                GameRequest::SpendResources { cost } => {
+                    // Check if all resources are available
+                    let mut can_afford = true;
+                    for (resource_type, amount) in &cost {
+                        if let Some(resource) = self.resources.get(resource_type) {
+                            if resource.0 < *amount {
+                                can_afford = false;
+                                break;
+                            }
+                        } else {
+                            can_afford = false;
+                            break;
+                        }
+                    }
+
+                    if can_afford {
+                        // Spend resources and emit events
+                        for (resource_type, amount) in cost {
+                            if let Some(resource) = self.resources.get_mut(&resource_type) {
+                                resource.0 -= amount;  // Deduct from current amount
+                                resource.0 = resource.0.max(0.0);  // Floor at 0
+
+                                // Emit resource changed event
+                                let _ = self.event_tx.send(GameEvent::ResourceChanged {
+                                    resource_type,
+                                    current: resource.0,
+                                    cap: resource.1,
+                                    rate: resource.2,
+                                });
+
+                                godot_print!("Actor: Spent {} from resource {} (remaining: {}/{})",
+                                    amount, resource_type, resource.0, resource.1);
+                            }
+                        }
+                    } else {
+                        godot_warn!("Actor: Cannot afford resource cost!");
+                    }
+                }
+
+                GameRequest::ProcessTurnConsumption => {
+                    // Count ONLY player-controlled entities (non-empty player_ulid)
+                    // AI entities (empty player_ulid) do not consume food
+                    let player_entity_count = self.entity_player_ulids
+                        .iter()
+                        .filter(|entry| !entry.value().is_empty())  // Filter out AI (empty player_ulid)
+                        .count();
+
+                    if player_entity_count > 0 {
+                        // Consume 1 food per player-controlled entity
+                        let food_cost = player_entity_count as f32;
+
+                        if let Some(food) = self.resources.get_mut(&1) { // Resource type 1 = Food
+                            food.0 = (food.0 - food_cost).max(0.0);
+
+                            // Emit resource changed event
+                            let _ = self.event_tx.send(GameEvent::ResourceChanged {
+                                resource_type: 1,
+                                current: food.0,
+                                cap: food.1,
+                                rate: food.2,
+                            });
+                        }
+                    }
+                }
+
+                // === Card Requests ===
+                GameRequest::PlaceCard { x, y, ulid, suit, value, card_id, is_custom } => {
+                    use crate::card::card::CardData;
+                    let card = CardData {
+                        ulid,
+                        suit,
+                        value,
+                        card_id,
+                        is_custom,
+                        state: crate::card::card::CardState::OnBoard,
+                        position: Some((x, y)),
+                        owner_id: None,  // No owner for placed cards
+                    };
+
+                    let success = self.card_registry.place_card(x, y, card);
+                    if !success {
+                        godot_warn!("Actor: Failed to place card at ({}, {}) - position occupied", x, y);
+                    }
+                    // Note: We could emit a CardPlaced event here for GDScript to sync visuals
+                }
+
+                GameRequest::RemoveCardAt { x, y } => {
+                    let _removed = self.card_registry.remove_card_at(x, y);
+                    // Could emit CardRemoved event
+                }
+
+                GameRequest::RemoveCardByUlid { ulid } => {
+                    let _removed = self.card_registry.remove_card_by_ulid(&ulid);
+                }
+
+                GameRequest::DetectCombo { center_x, center_y, radius } => {
+                    use crate::card::card_combo::{PositionedCard, ComboDetector};
+
+                    // Get cards in radius from the Actor's card registry (SINGLE SOURCE OF TRUTH)
+                    let cards_in_radius = self.card_registry.get_cards_in_radius(center_x, center_y, radius);
+
+                    godot_print!("Actor: DetectCombo requested at ({}, {}) radius {} - found {} cards",
+                        center_x, center_y, radius, cards_in_radius.len());
+
+                    // Need at least 5 cards for a combo
+                    if cards_in_radius.len() < 5 {
+                        godot_print!("Actor: Not enough cards for combo (need 5, have {})", cards_in_radius.len());
+                        // Could emit a "no combo" event here
+                        continue;
+                    }
+
+                    // Convert to PositionedCard structs
+                    let positioned_cards: Vec<PositionedCard> = cards_in_radius
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (x, y, card))| PositionedCard {
+                            card: card.clone(),
+                            x: *x,
+                            y: *y,
+                            index,
+                        })
+                        .collect();
+
+                    // Detect combo using the spatial poker hand detection
+                    let combo_result = ComboDetector::detect_combo(&positioned_cards);
+
+                    godot_print!("Actor: Combo detection result: {:?} (rank: {:?})",
+                        combo_result.hand.to_string(), combo_result.hand as i32);
+
+                    // Skip "High Card" (rank 0) - not a real combo
+                    if combo_result.hand as i32 == 0 {
+                        continue;
+                    }
+
+                    // Convert resource bonuses to (resource_type, amount) tuples
+                    let resource_bonuses: Vec<(i32, f32)> = combo_result.resource_bonuses
+                        .iter()
+                        .map(|bonus| (bonus.resource_type as i32, bonus.amount))
+                        .collect();
+
+                    // Emit ComboDetected event
+                    let _ = self.event_tx.send(GameEvent::ComboDetected {
+                        hand_rank: combo_result.hand as i32,
+                        hand_name: combo_result.hand.to_string(),
+                        card_positions: combo_result.positions.clone(),
+                        resource_bonuses,
+                    });
+                }
+
                 _ => {
                     // Unhandled requests (e.g., GetStat which needs synchronous response)
                 }
@@ -532,6 +707,22 @@ impl GameActor {
                     });
                 }
                 CombatWorkResult::DamageDealt { attacker_ulid, defender_ulid, damage } => {
+                    // CRITICAL: Apply damage to entity_stats (Actor owns this state)
+                    if let Some(mut stats) = self.entity_stats.get_mut(&defender_ulid) {
+                        use crate::npc::entity::StatType;
+                        let current_hp = stats.value().get(StatType::HP);
+                        let new_hp = (current_hp - damage as f32).max(0.0);
+                        stats.value_mut().set(StatType::HP, new_hp);
+
+                        // Emit event with updated HP
+                        let _ = self.event_tx.send(GameEvent::EntityDamaged {
+                            ulid: defender_ulid.clone(),
+                            damage: damage as f32,
+                            new_hp,
+                        });
+                    }
+
+                    // Also emit combat event for visual feedback
                     let _ = self.event_tx.send(GameEvent::DamageDealt {
                         attacker_ulid,
                         defender_ulid,
@@ -539,6 +730,12 @@ impl GameActor {
                     });
                 }
                 CombatWorkResult::EntityDied { ulid } => {
+                    // Set HP to 0 to ensure consistency
+                    if let Some(mut stats) = self.entity_stats.get_mut(&ulid) {
+                        use crate::npc::entity::StatType;
+                        stats.value_mut().set(StatType::HP, 0.0);
+                    }
+
                     let _ = self.event_tx.send(GameEvent::EntityDied {
                         ulid,
                     });
@@ -633,8 +830,14 @@ impl GameActor {
                         EntityTerrainType::Land => CacheTerrainType::Land,
                     };
 
+                    // Get player_ulid for team detection (empty = AI team)
+                    let player_ulid = self.entity_player_ulids.get(ulid)
+                        .map(|r| r.value().clone())
+                        .unwrap_or_else(Vec::new);
+
                     Some(CombatEntitySnapshot {
                         ulid: ulid.clone(),
+                        player_ulid,
                         position: entity.position,
                         terrain_type: cache_terrain,
                         hp: stats.value().get(StatType::HP) as i32,

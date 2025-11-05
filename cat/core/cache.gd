@@ -34,6 +34,9 @@ var main_scene = null  # Reference to Main scene (set once on load)
 var spinner_scene = null  # Cached spinner scene for reuse
 var ui_references: Dictionary = {}  # Cache for UI references (topbar, etc.)
 
+# Camera state (updated by main.gd)
+var camera_zoom: Vector2 = Vector2.ONE  # Current camera zoom level
+
 # Rust bridges (autoload singletons - cached for performance)
 var unified_event_bridge = null  # UnifiedEventBridge singleton
 

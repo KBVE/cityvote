@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://b0v1xvyqj8y3h"]
+[gd_scene load_steps=24 format=3 uid="uid://b0v1xvyqj8y3h"]
 
 [ext_resource type="Script" uid="uid://dm4b85w81o2cn" path="res://view/main/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://c8n2x3nak4p1j" path="res://nodes/map/hex/hex.tscn" id="2_hex"]
@@ -11,6 +11,7 @@
 [ext_resource type="Shader" uid="uid://d0a4k1ojjfv43" path="res://shader/water.gdshader" id="7_water"]
 [ext_resource type="PackedScene" uid="uid://c8oam0p1q2r5u" path="res://view/hud/topbar/topbar_uiux.tscn" id="8_topbar"]
 [ext_resource type="PackedScene" path="res://view/hud/entity_stats_panel.tscn" id="9_stats_panel"]
+[ext_resource type="PackedScene" uid="uid://c8n9m0p1q2r5v" path="res://view/hud/inventory/inventory_panel.tscn" id="10_inventory"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
 shader = ExtResource("7_water")
@@ -130,7 +131,7 @@ texture = SubResource("GradientTexture2D_godrays")
 
 [node name="Camera2D" type="Camera2D" parent="SubViewport"]
 position = Vector2(640, 540)
-zoom = Vector2(0.375, 0.375)
+zoom = Vector2(1.25, 1.25)
 
 [node name="PlayHand" parent="SubViewport" instance=ExtResource("6_hand")]
 
@@ -198,4 +199,7 @@ stretch_mode = 5
 z_index = 102
 
 [node name="EntityStatsPanel" parent="." instance=ExtResource("9_stats_panel")]
+z_index = 103
+
+[node name="InventoryPanel" parent="." instance=ExtResource("10_inventory")]
 z_index = 103
