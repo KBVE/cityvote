@@ -393,11 +393,22 @@ impl GameActor {
 
                     if let Some(mut stats) = self.entity_stats.get_mut(&ulid) {
                         let actual_damage = stats.take_damage(damage);
-                        let new_hp = stats.get(StatType::HP);
+                        let mut new_hp = stats.get(StatType::HP);
+
+                        // CRITICAL: If HP would be fractional and < 1.0, set to 0.0 (entity should die)
+                        if new_hp > 0.0 && new_hp < 1.0 {
+                            new_hp = 0.0;
+                            stats.set(StatType::HP, new_hp);
+                        }
 
                         // Sync to global cache
                         if let Some(mut cache) = ENTITY_STATS.get_mut(&ulid) {
                             cache.take_damage(damage);
+                            // Also apply the < 1.0 fix to cache
+                            let cache_hp = cache.get(StatType::HP);
+                            if cache_hp > 0.0 && cache_hp < 1.0 {
+                                cache.set(StatType::HP, 0.0);
+                            }
                         }
 
                         // Emit damage event
@@ -709,10 +720,22 @@ impl GameActor {
                 CombatWorkResult::DamageDealt { attacker_ulid, defender_ulid, damage } => {
                     // CRITICAL: Apply damage to entity_stats (Actor owns this state)
                     if let Some(mut stats) = self.entity_stats.get_mut(&defender_ulid) {
-                        use crate::npc::entity::StatType;
+                        use crate::npc::entity::{StatType, ENTITY_STATS};
                         let current_hp = stats.value().get(StatType::HP);
-                        let new_hp = (current_hp - damage as f32).max(0.0);
+                        let mut new_hp = (current_hp - damage as f32).max(0.0);
+
+                        // CRITICAL: If HP would be fractional and < 1.0, set to 0.0 (entity should die)
+                        // This prevents "zombie" entities with 0.1-0.9 HP
+                        if new_hp > 0.0 && new_hp < 1.0 {
+                            new_hp = 0.0;
+                        }
+
                         stats.value_mut().set(StatType::HP, new_hp);
+
+                        // CRITICAL: Sync to global cache so GDScript sees updated HP
+                        if let Some(mut cache) = ENTITY_STATS.get_mut(&defender_ulid) {
+                            cache.set(StatType::HP, new_hp);
+                        }
 
                         // Emit event with updated HP
                         let _ = self.event_tx.send(GameEvent::EntityDamaged {
@@ -720,6 +743,14 @@ impl GameActor {
                             damage: damage as f32,
                             new_hp,
                         });
+
+                        // CRITICAL: Check for death immediately after applying damage
+                        // This ensures entities die even if combat worker's prediction was wrong
+                        if new_hp <= 0.0 {
+                            let _ = self.event_tx.send(GameEvent::EntityDied {
+                                ulid: defender_ulid.clone(),
+                            });
+                        }
                     }
 
                     // Also emit combat event for visual feedback
@@ -732,8 +763,13 @@ impl GameActor {
                 CombatWorkResult::EntityDied { ulid } => {
                     // Set HP to 0 to ensure consistency
                     if let Some(mut stats) = self.entity_stats.get_mut(&ulid) {
-                        use crate::npc::entity::StatType;
+                        use crate::npc::entity::{StatType, ENTITY_STATS};
                         stats.value_mut().set(StatType::HP, 0.0);
+
+                        // CRITICAL: Sync to global cache so GDScript sees updated HP
+                        if let Some(mut cache) = ENTITY_STATS.get_mut(&ulid) {
+                            cache.set(StatType::HP, 0.0);
+                        }
                     }
 
                     let _ = self.event_tx.send(GameEvent::EntityDied {
@@ -835,12 +871,17 @@ impl GameActor {
                         .map(|r| r.value().clone())
                         .unwrap_or_else(Vec::new);
 
+                    // Use ceil() for HP to ensure entities with fractional HP (0.1-0.9) are still alive
+                    // This prevents entities from appearing dead (hp=0) when they still have <1.0 HP
+                    let hp_f32 = stats.value().get(StatType::HP);
+                    let hp_ceiled = if hp_f32 > 0.0 { hp_f32.ceil() as i32 } else { 0 };
+
                     Some(CombatEntitySnapshot {
                         ulid: ulid.clone(),
                         player_ulid,
                         position: entity.position,
                         terrain_type: cache_terrain,
-                        hp: stats.value().get(StatType::HP) as i32,
+                        hp: hp_ceiled,
                         max_hp: stats.value().get(StatType::MaxHP) as i32,
                         attack: stats.value().get(StatType::Attack) as i32,
                         defense: stats.value().get(StatType::Defense) as i32,
