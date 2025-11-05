@@ -333,6 +333,7 @@ func _input(event):
 
 				# Show stats panel
 				if entity_stats_panel and "ulid" in entity:
+					print("🖱️ Clicked entity with ULID: ", entity.ulid.hex_encode())
 					entity_stats_panel.show_entity_stats(entity, entity.ulid, entity_name)
 					get_viewport().set_input_as_handled()
 
@@ -387,7 +388,7 @@ func _spawn_test_vikings():
 	# Get spawn position near camera
 	var spawn_near = hex_map.tile_renderer.world_to_tile(camera.position)
 
-	# Spawn 10 vikings using EntityManager (which uses EntitySpawnBridge internally)
+	# Spawn 10 vikings using EntityManager (which uses UnifiedEventBridge internally)
 	# NOTE: Vikings spawn on water near camera position (where chunks are loaded)
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
@@ -421,12 +422,6 @@ func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vec
 	# Free up current tile (we'll put it back if pathfinding fails)
 	EntityManager.occupied_tiles.erase(current_tile)
 
-	# Get pathfinding bridge
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if not pathfinding_bridge:
-		EntityManager.occupied_tiles[current_tile] = entity  # Put it back
-		return
-
 	# Request pathfinding - connect to entity's signal to update occupied_tiles
 	# The NPC will emit pathfinding_completed signal when done
 	if entity.has_method("request_pathfinding"):
@@ -446,15 +441,11 @@ func _on_entity_pathfinding_completed(path: Array[Vector2i], success: bool, enti
 		EntityManager.occupied_tiles[original_tile] = entity if entity else null
 		return
 
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-
 	if success and path.size() > 0:
 		var final_destination = path[path.size() - 1]
 
-		# Validate final destination terrain
-		if pathfinding_bridge and not pathfinding_bridge.is_tile_walkable(entity.terrain_type, final_destination):
-			EntityManager.occupied_tiles[original_tile] = entity  # Keep at current tile
-			return
+		# NOTE: Path validation is handled by UnifiedEventBridge's Rust Actor
+		# All paths are pre-validated before being sent to GDScript
 
 		# Update occupied tiles
 		EntityManager.occupied_tiles[final_destination] = entity
@@ -512,26 +503,9 @@ func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: Str
 		push_error("_handle_entity_movement: Entity %s has empty ULID!" % pool_key)
 		return
 
-	# Defensive: Get pathfinding bridge with null check
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if not pathfinding_bridge:
-		push_error("_handle_entity_movement: UnifiedPathfindingBridge not found!")
-		return
-
-	# Unified pathfinding for ALL entity types (water and land)
-	# Determine random destination distance based on entity type
-	var min_distance = 2 if pool_key == "viking" else 3
-	var max_distance = 5 if pool_key == "viking" else 8
-
-	# Request random destination (ASYNC - uses signals)
-	# Result will be handled by _on_random_destination_found signal handler
-	pathfinding_bridge.request_random_destination(
-		entity.ulid,
-		entity.terrain_type,
-		current_tile,
-		min_distance,
-		max_distance
-	)
+	# NOTE: NPC entities handle their own movement through request_random_movement
+	# which uses UnifiedEventBridge internally. This code is only for non-NPC entities.
+	# For NPC entities, movement is handled by the NPC class itself.
 
 # NOTE: All old manual movement functions removed (_handle_viking_movement, _move_test_vikings, etc.)
 # EntityManager now handles movement for ALL entity types through unified _handle_entity_movement()
@@ -604,7 +578,7 @@ func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 			sprite.material = shader_material
 
 func _spawn_test_jezza():
-	# Spawn 3 Jezzas using EntityManager (which uses EntitySpawnBridge internally)
+	# Spawn 3 Jezzas using EntityManager (which uses UnifiedEventBridge internally)
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "jezza",
@@ -620,7 +594,7 @@ func _spawn_test_jezza():
 	})
 
 func _spawn_test_fantasy_warriors():
-	# Spawn 3 Fantasy Warriors using EntityManager (which uses EntitySpawnBridge internally)
+	# Spawn 3 Fantasy Warriors using EntityManager (which uses UnifiedEventBridge internally)
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "fantasywarrior",
@@ -636,7 +610,7 @@ func _spawn_test_fantasy_warriors():
 	})
 
 func _spawn_test_kings():
-	# Spawn 3 Kings using EntityManager (which uses EntitySpawnBridge internally)
+	# Spawn 3 Kings using EntityManager (which uses UnifiedEventBridge internally)
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "king",
@@ -652,7 +626,7 @@ func _spawn_test_kings():
 	})
 
 func _spawn_test_martial_heroes():
-	# Spawn 10 Martial Heroes using EntityManager (which uses EntitySpawnBridge internally)
+	# Spawn 10 Martial Heroes using EntityManager (which uses UnifiedEventBridge internally)
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "martialhero",

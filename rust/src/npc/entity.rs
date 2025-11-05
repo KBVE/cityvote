@@ -516,154 +516,70 @@ impl EntityManagerBridge {
             type_str.clone(),
         );
 
-        // Insert into both storages
-        ENTITY_STATS.insert(ulid_bytes.clone(), stats);
-        ENTITY_DATA.insert(ulid_bytes, entity_data);
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Use UnifiedEventBridge instead for all entity state management
+        // ENTITY_STATS.insert(ulid_bytes.clone(), stats);
+        // ENTITY_DATA.insert(ulid_bytes, entity_data);
     }
 
     /// Unregister entity
     #[func]
-    fn unregister_entity(&mut self, ulid: PackedByteArray) -> bool {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        let removed_stats = ENTITY_STATS.remove(&ulid_bytes).is_some();
-        let removed_data = ENTITY_DATA.remove(&ulid_bytes).is_some();
-        removed_stats || removed_data
+    fn unregister_entity(&mut self, _ulid: PackedByteArray) -> bool {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Use UnifiedEventBridge.remove_entity() instead
+        false
     }
 
     /// Get stat value for an entity
     #[func]
-    fn get_stat(&self, ulid: PackedByteArray, stat_type: i64) -> f32 {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(st) = StatType::from_i64(stat_type) {
-            ENTITY_STATS.get(&ulid_bytes).map(|stats| stats.get(st)).unwrap_or(0.0)
-        } else {
-            0.0
-        }
+    fn get_stat(&self, _ulid: PackedByteArray, _stat_type: i64) -> f32 {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Stats should be managed through UnifiedEventBridge Actor
+        0.0
     }
 
     /// Set stat value for an entity (emits signal if successful)
     #[func]
-    fn set_stat(&mut self, ulid: PackedByteArray, stat_type: i64, value: f32) -> bool {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(st) = StatType::from_i64(stat_type) {
-            let success = ENTITY_STATS.get_mut(&ulid_bytes).map(|mut stats| {
-                stats.set(st, value);
-            }).is_some();
-
-            if success {
-                self.base_mut().emit_signal(
-                    "stat_changed",
-                    &[ulid.to_variant(), stat_type.to_variant(), value.to_variant()],
-                );
-            }
-
-            success
-        } else {
-            false
-        }
+    fn set_stat(&mut self, _ulid: PackedByteArray, _stat_type: i64, _value: f32) -> bool {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Stats should be managed through UnifiedEventBridge Actor
+        false
     }
 
     /// Add to stat value for an entity (emits signal if successful)
     #[func]
-    fn add_stat(&mut self, ulid: PackedByteArray, stat_type: i64, amount: f32) -> bool {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(st) = StatType::from_i64(stat_type) {
-            let mut new_value = 0.0;
-            let success = ENTITY_STATS.get_mut(&ulid_bytes).map(|mut stats| {
-                stats.add(st, amount);
-                new_value = stats.get(st);
-            }).is_some();
-
-            if success {
-                self.base_mut().emit_signal(
-                    "stat_changed",
-                    &[ulid.to_variant(), stat_type.to_variant(), new_value.to_variant()],
-                );
-            }
-
-            success
-        } else {
-            false
-        }
+    fn add_stat(&mut self, _ulid: PackedByteArray, _stat_type: i64, _amount: f32) -> bool {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        false
     }
 
     /// Get all stats for an entity as Dictionary
     #[func]
-    fn get_all_stats(&self, ulid: PackedByteArray) -> Dictionary {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        let mut dict = Dictionary::new();
-
-        if let Some(stats) = ENTITY_STATS.get(&ulid_bytes) {
-            for (stat_type, value) in stats.get_all() {
-                dict.set(stat_type as i64, value);
-            }
-        }
-
-        dict
+    fn get_all_stats(&self, _ulid: PackedByteArray) -> Dictionary {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        Dictionary::new()
     }
 
     /// Entity takes damage (returns actual damage dealt)
     #[func]
-    fn take_damage(&mut self, ulid: PackedByteArray, damage: f32) -> f32 {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut stats_ref) = ENTITY_STATS.get_mut(&ulid_bytes) {
-            let actual_damage = stats_ref.take_damage(damage);
-            let new_hp = stats_ref.get(StatType::HP);
-
-            self.base_mut().emit_signal(
-                "entity_damaged",
-                &[ulid.to_variant(), actual_damage.to_variant(), new_hp.to_variant()],
-            );
-
-            self.base_mut().emit_signal(
-                "stat_changed",
-                &[(ulid.to_variant()), (StatType::HP as i64).to_variant(), new_hp.to_variant()],
-            );
-
-            if new_hp <= 0.0 {
-                self.base_mut().emit_signal("entity_died", &[ulid.to_variant()]);
-            }
-
-            actual_damage
-        } else {
-            0.0
-        }
+    fn take_damage(&mut self, _ulid: PackedByteArray, _damage: f32) -> f32 {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Combat should be managed through UnifiedEventBridge Actor
+        0.0
     }
 
     /// Heal entity (returns actual amount healed)
     #[func]
-    fn heal(&mut self, ulid: PackedByteArray, amount: f32) -> f32 {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut stats_ref) = ENTITY_STATS.get_mut(&ulid_bytes) {
-            let actual_heal = stats_ref.heal(amount);
-            let new_hp = stats_ref.get(StatType::HP);
-
-            self.base_mut().emit_signal(
-                "entity_healed",
-                &[ulid.to_variant(), actual_heal.to_variant(), new_hp.to_variant()],
-            );
-
-            self.base_mut().emit_signal(
-                "stat_changed",
-                &[ulid.to_variant(), (StatType::HP as i64).to_variant(), new_hp.to_variant()],
-            );
-
-            actual_heal
-        } else {
-            0.0
-        }
+    fn heal(&mut self, _ulid: PackedByteArray, _amount: f32) -> f32 {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        0.0
     }
 
     /// Check if entity is alive
     #[func]
-    fn is_alive(&self, ulid: PackedByteArray) -> bool {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        ENTITY_STATS.get(&ulid_bytes).map(|stats| stats.is_alive()).unwrap_or(false)
+    fn is_alive(&self, _ulid: PackedByteArray) -> bool {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        false
     }
 
     // ============================================================
@@ -672,199 +588,81 @@ impl EntityManagerBridge {
 
     /// Get entity state flags
     #[func]
-    fn get_entity_state(&self, ulid: PackedByteArray) -> i64 {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        ENTITY_DATA.get(&ulid_bytes)
-            .map(|entity| entity.state)
-            .unwrap_or(entity_state_flags::IDLE)
+    fn get_entity_state(&self, _ulid: PackedByteArray) -> i64 {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        entity_state_flags::IDLE
     }
 
     /// Get entity position
     #[func]
-    fn get_entity_position(&self, ulid: PackedByteArray) -> Dictionary {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        let mut dict = Dictionary::new();
-
-        if let Some(entity) = ENTITY_DATA.get(&ulid_bytes) {
-            dict.set("q", entity.position.0);
-            dict.set("r", entity.position.1);
-        }
-
-        dict
+    fn get_entity_position(&self, _ulid: PackedByteArray) -> Dictionary {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        Dictionary::new()
     }
 
     /// Get entity destination (returns empty dict if no destination)
     #[func]
-    fn get_entity_destination(&self, ulid: PackedByteArray) -> Dictionary {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        let mut dict = Dictionary::new();
-
-        if let Some(entity) = ENTITY_DATA.get(&ulid_bytes) {
-            if let Some(dest) = entity.destination {
-                dict.set("q", dest.0);
-                dict.set("r", dest.1);
-                dict.set("has_destination", true);
-            } else {
-                dict.set("has_destination", false);
-            }
-        } else {
-            dict.set("has_destination", false);
-        }
-
-        dict
+    fn get_entity_destination(&self, _ulid: PackedByteArray) -> Dictionary {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        Dictionary::new()
     }
 
     /// Get complete entity data as Dictionary
     #[func]
-    fn get_entity_data(&self, ulid: PackedByteArray) -> Dictionary {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-        let mut dict = Dictionary::new();
-
-        if let Some(entity) = ENTITY_DATA.get(&ulid_bytes) {
-            dict.set("position_q", entity.position.0);
-            dict.set("position_r", entity.position.1);
-            dict.set("state", entity.state);
-            dict.set("terrain_type", entity.terrain_type as i32);
-            dict.set("entity_type", entity.entity_type.clone());
-            dict.set("speed", entity.speed);
-
-            if let Some(dest) = entity.destination {
-                dict.set("destination_q", dest.0);
-                dict.set("destination_r", dest.1);
-                dict.set("has_destination", true);
-            } else {
-                dict.set("has_destination", false);
-            }
-
-            if let Some(owner) = entity.owner_id {
-                dict.set("owner_id", owner);
-            }
-        }
-
-        dict
+    fn get_entity_data(&self, _ulid: PackedByteArray) -> Dictionary {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        Dictionary::new()
     }
 
     /// Notify that entity started moving (GDScript -> Rust)
     #[func]
-    fn notify_movement_started(&mut self, ulid: PackedByteArray, start_q: i32, start_r: i32, target_q: i32, target_r: i32) {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid_bytes) {
-            entity.position = (start_q, start_r);
-            entity.destination = Some((target_q, target_r));
-            entity.state = (entity.state & !entity_state_flags::IDLE) | entity_state_flags::MOVING;
-
-            let new_state = entity.state;
-            drop(entity);
-
-            // Emit signals
-            self.base_mut().emit_signal("entity_state_changed", &[ulid.to_variant(), new_state.to_variant()]);
-            self.base_mut().emit_signal("entity_destination_changed", &[ulid.to_variant(), target_q.to_variant(), target_r.to_variant(), true.to_variant()]);
-        }
+    fn notify_movement_started(&mut self, _ulid: PackedByteArray, _start_q: i32, _start_r: i32, _target_q: i32, _target_r: i32) {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
     }
 
     /// Notify that entity completed movement (GDScript -> Rust)
     #[func]
-    fn notify_movement_completed(&mut self, ulid: PackedByteArray, final_q: i32, final_r: i32) {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid_bytes) {
-            entity.position = (final_q, final_r);
-            entity.destination = None;
-            entity.state = (entity.state & !entity_state_flags::MOVING) | entity_state_flags::IDLE;
-
-            let new_state = entity.state;
-            drop(entity);
-
-            // Emit signals
-            self.base_mut().emit_signal("entity_state_changed", &[ulid.to_variant(), new_state.to_variant()]);
-            self.base_mut().emit_signal("entity_position_changed", &[ulid.to_variant(), final_q.to_variant(), final_r.to_variant()]);
-            self.base_mut().emit_signal("entity_destination_changed", &[ulid.to_variant(), 0.to_variant(), 0.to_variant(), false.to_variant()]);
-        }
+    fn notify_movement_completed(&mut self, _ulid: PackedByteArray, _final_q: i32, _final_r: i32) {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
     }
 
     /// Notify that pathfinding started (GDScript -> Rust)
     #[func]
-    fn notify_pathfinding_started(&mut self, ulid: PackedByteArray, target_q: i32, target_r: i32) {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid_bytes) {
-            entity.destination = Some((target_q, target_r));
-            entity.state = (entity.state & !entity_state_flags::IDLE) | entity_state_flags::PATHFINDING;
-
-            let new_state = entity.state;
-            drop(entity);
-
-            self.base_mut().emit_signal("entity_state_changed", &[ulid.to_variant(), new_state.to_variant()]);
-        }
+    fn notify_pathfinding_started(&mut self, _ulid: PackedByteArray, _target_q: i32, _target_r: i32) {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
     }
 
     /// Notify that pathfinding completed (GDScript -> Rust)
     #[func]
-    fn notify_pathfinding_completed(&mut self, ulid: PackedByteArray) {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid_bytes) {
-            entity.state = entity.state & !entity_state_flags::PATHFINDING;
-
-            let new_state = entity.state;
-            drop(entity);
-
-            self.base_mut().emit_signal("entity_state_changed", &[ulid.to_variant(), new_state.to_variant()]);
-        }
+    fn notify_pathfinding_completed(&mut self, _ulid: PackedByteArray) {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
     }
 
     /// Update entity position (called frequently during movement)
     #[func]
-    fn update_position(&mut self, ulid: PackedByteArray, q: i32, r: i32) {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid_bytes) {
-            entity.position = (q, r);
-            drop(entity);
-
-            self.base_mut().emit_signal("entity_position_changed", &[ulid.to_variant(), q.to_variant(), r.to_variant()]);
-        }
+    fn update_position(&mut self, _ulid: PackedByteArray, _q: i32, _r: i32) {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Use UnifiedEventBridge.update_entity_position() instead
     }
 
     /// Set entity state directly (use notification methods instead when possible)
     #[func]
-    fn set_entity_state(&mut self, ulid: PackedByteArray, new_state: i64) {
-        let ulid_bytes: Vec<u8> = ulid.to_vec();
-
-        if let Some(mut entity) = ENTITY_DATA.get_mut(&ulid_bytes) {
-            entity.state = new_state;
-            drop(entity);
-
-            self.base_mut().emit_signal("entity_state_changed", &[ulid.to_variant(), new_state.to_variant()]);
-        }
+    fn set_entity_state(&mut self, _ulid: PackedByteArray, _new_state: i64) {
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        // Use UnifiedEventBridge.set_entity_state() instead
     }
 
     /// Get count of registered entities
     #[func]
     fn count(&self) -> i32 {
-        ENTITY_STATS.len() as i32
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        0
     }
 
     /// Print statistics (debugging)
     #[func]
     fn print_stats(&self) {
-        let mut summary = String::from("=== Entity Stats Summary ===\n");
-        summary.push_str(&format!("Total entities: {}\n", ENTITY_STATS.len()));
-
-        for entry in ENTITY_STATS.iter() {
-            let ulid_hex = entry.key().iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>();
-
-            summary.push_str(&format!("\nEntity {}:\n", &ulid_hex[..8]));
-
-            let stats = entry.value();
-            for (stat_type, value) in stats.get_all() {
-                summary.push_str(&format!("  {:?}: {:.1}\n", stat_type, value));
-            }
-        }
-
-        godot_print!("{}", summary);
+        // DISABLED: Global DashMaps cause lock contention with UnifiedEventBridge Actor
+        godot_print!("EntityManagerBridge: DISABLED - Stats now managed by UnifiedEventBridge Actor");
     }
 }

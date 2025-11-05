@@ -24,6 +24,7 @@ mod combat;
 mod world_gen;
 mod structures;
 mod loot;
+mod events;  // Unified event system (actor-coordinator pattern)
 
 struct Godo;
 
@@ -57,8 +58,8 @@ unsafe impl ExtensionLibrary for Godo {
 
             debug_log!("Godo v0.1.1 - Bevy GDExtension loaded successfully!");
 
-            // Start entity worker thread (hybrid lock-free architecture)
-            npc::start_entity_worker();
+            // DISABLED: Old entity worker (replaced by UnifiedEventBridge Actor)
+            // npc::start_entity_worker();
         }
     }
 }

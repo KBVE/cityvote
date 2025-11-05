@@ -33,7 +33,9 @@ var tile_map = null  # TileMapCompat wrapper for coordinate conversion
 var main_scene = null  # Reference to Main scene (set once on load)
 var spinner_scene = null  # Cached spinner scene for reuse
 var ui_references: Dictionary = {}  # Cache for UI references (topbar, etc.)
-var entity_spawn_bridge = null  # Reference to EntitySpawnBridge singleton (Rust-authoritative spawning)
+
+# Rust bridges (autoload singletons - cached for performance)
+var unified_event_bridge = null  # UnifiedEventBridge singleton
 
 # ===== Z-INDEX CONSTANTS =====
 # Centralized z-index values for proper rendering order
@@ -61,7 +63,14 @@ func _ready():
 	_load_shaders()
 	_load_strings()
 	_load_spinner_scene()
-	_init_entity_spawn_bridge()
+	_cache_autoload_singletons()
+
+# Cache autoload singleton references for performance
+func _cache_autoload_singletons() -> void:
+	# UnifiedEventBridge (Rust Actor system)
+	unified_event_bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if not unified_event_bridge:
+		push_warning("Cache: UnifiedEventBridge autoload not found")
 
 # ===== SCENE REFERENCES MANAGEMENT =====
 
@@ -104,19 +113,6 @@ func _load_spinner_scene() -> void:
 func get_spinner_scene() -> PackedScene:
 	return spinner_scene
 
-## Initialize EntitySpawnBridge reference (called in _ready)
-func _init_entity_spawn_bridge() -> void:
-	entity_spawn_bridge = get_node("/root/EntitySpawnBridge")
-	if entity_spawn_bridge == null:
-		push_error("Cache: Failed to get EntitySpawnBridge autoload reference")
-	else:
-		print("Cache: EntitySpawnBridge reference initialized")
-
-## Get EntitySpawnBridge reference
-func get_entity_spawn_bridge() -> Node:
-	if entity_spawn_bridge == null:
-		push_error("Cache: entity_spawn_bridge not initialized")
-	return entity_spawn_bridge
 
 # Set tile_map reference (called by main.gd after hex_map initializes)
 func set_tile_map(tmap) -> void:
@@ -130,6 +126,15 @@ func get_tile_map():
 	if tile_map == null:
 		push_error("Cache: tile_map not initialized - call set_tile_map() first")
 	return tile_map
+
+# Get UnifiedEventBridge reference (cached autoload)
+func get_unified_event_bridge() -> Node:
+	if unified_event_bridge == null:
+		# Try to cache it now if it wasn't available at startup
+		unified_event_bridge = get_node_or_null("/root/UnifiedEventBridge")
+		if unified_event_bridge == null:
+			push_error("Cache: UnifiedEventBridge not available")
+	return unified_event_bridge
 
 # Load all fonts
 func _load_fonts():

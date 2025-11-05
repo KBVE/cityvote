@@ -103,6 +103,7 @@ var player_ulid: PackedByteArray = PackedByteArray()
 
 # Health bar reference (acquired from pool)
 var health_bar: HealthBar = null
+var cached_max_hp: float = 100.0  # Cache for health bar updates
 
 # Energy system for movement
 var energy: int = 100
@@ -131,19 +132,15 @@ func _ready():
 	# Note: EntityManagerBridge is created as StatsManager.rust_bridge
 	call_deferred("_initialize_entity_manager")
 
-	# Register with ULID system (use terrain-specific type for backwards compatibility)
+	# ULID is set by Rust (UnifiedEventBridge) before EntityManager calls add_child()
+	# During pool initialization, ULID will be empty - this is expected
+	# Only register stats/combat if ULID is set (i.e., entity is actually spawned)
 	if ulid.is_empty():
-		var ulid_type = UlidManager.TYPE_SHIP if terrain_type == TerrainType.WATER else UlidManager.TYPE_NPC
-		ulid = UlidManager.register_entity(self, ulid_type, {
-			"entity_type": get_class(),
-			"position": position,
-			"state": current_state,
-			"terrain_type": terrain_type
-		})
+		# Pool initialization - skip registration, will be done on actual spawn
+		return
 
-	# Register with stats system (deferred to ensure StatsManager is ready)
-	if StatsManager:
-		call_deferred("_register_stats")
+	# Register entity stats with UnifiedEventBridge Actor (replaces old StatsManager)
+	call_deferred("_register_stats")
 
 	# Register with combat system (deferred to ensure CombatManager is ready)
 	if CombatManager:
@@ -160,18 +157,14 @@ func _ready():
 
 # === State Management (Rust as Source of Truth) ===
 
-## Initialize entity manager reference (deferred to ensure StatsManager is ready)
+## Initialize entity manager reference (deferred to ensure UnifiedEventBridge is ready)
 func _initialize_entity_manager() -> void:
-	if StatsManager and StatsManager.rust_bridge:
-		entity_manager = StatsManager.rust_bridge
-		# Connect to Rust state change signal
-		entity_manager.entity_state_changed.connect(_on_rust_state_changed)
-	else:
-		# Retry after a short delay if StatsManager isn't ready yet
+	# Use cached UnifiedEventBridge reference for performance
+	entity_manager = Cache.get_unified_event_bridge()
+	if not entity_manager:
+		# Retry after a short delay if UnifiedEventBridge isn't ready yet
 		await get_tree().create_timer(0.1).timeout
-		if StatsManager and StatsManager.rust_bridge:
-			entity_manager = StatsManager.rust_bridge
-			entity_manager.entity_state_changed.connect(_on_rust_state_changed)
+		entity_manager = Cache.get_unified_event_bridge()
 		# If still not ready, it's a real error - but don't spam, just fail silently
 		# State management won't work but entity can still function
 
@@ -316,16 +309,8 @@ func move_to(target_pos: Vector2):
 		# Get tile positions for Rust notification (use Cache singleton)
 		var tile_map = Cache.get_tile_map()
 		if tile_map:
-			var start_tile = tile_map.local_to_map(move_start_pos)
-			var target_tile = tile_map.local_to_map(move_target_pos)
-
-			# Notify Rust: movement started (do this BEFORE setting is_moving for proper state sync)
-			if entity_manager:
-				entity_manager.notify_movement_started(ulid, start_tile.x, start_tile.y, target_tile.x, target_tile.y)
-			else:
-				# Warning: State won't sync to Rust without entity_manager
-				var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
-				push_warning("NPC %s: entity_manager is null, state won't sync to Rust!" % ulid_hex)
+			# State will be set to MOVING later in _process() when rotation completes (for water)
+			# or immediately for land entities (no rotation phase)
 
 			# Water entities rotate before moving (ships/vikings)
 			if terrain_type == TerrainType.WATER:
@@ -343,36 +328,16 @@ func move_to(target_pos: Vector2):
 				is_moving = true
 
 func follow_path(path: Array[Vector2i], tile_map):
-	if path.size() < 2:
+	if path.size() == 0:
 		return
 
-	# DEBUG: Verify path terrain types match entity terrain_type
-	var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if bridge:
-		var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
-		var terrain_name = "WATER" if terrain_type == 0 else "LAND"
-
-		# Check each waypoint for terrain validity
-		var mismatches: Array = []
-		for i in range(path.size()):
-			var tile = path[i]
-			var is_walkable = bridge.is_tile_walkable(terrain_type, tile)
-
-			# Also get the actual terrain at this tile for comparison
-			var tile_terrain = "UNKNOWN"
-			if bridge.is_tile_walkable(0, tile):
-				tile_terrain = "WATER"
-			elif bridge.is_tile_walkable(1, tile):
-				tile_terrain = "LAND"
-
-			if not is_walkable:
-				mismatches.append("%s(actual:%s)" % [str(tile), tile_terrain])
-
-		if mismatches.size() > 0:
-			push_error("NPC %s (terrain=%s): Path contains %d UNWALKABLE tiles: %s" % [ulid_hex, terrain_name, mismatches.size(), ", ".join(mismatches)])
+	# NOTE: Path validation is now handled by UnifiedEventBridge's Rust Actor
+	# The Actor ensures all paths are valid before sending them to GDScript
 
 	current_path = path
-	path_index = 1  # Start at index 1 (0 is current position)
+	# If path has only 1 element, it's just the destination
+	# If path has 2+ elements, index 0 is current position, so start at 1
+	path_index = 1 if path.size() > 1 else 0
 
 	# Create path visualizer
 	_create_path_visualizer(path, tile_map)
@@ -393,27 +358,25 @@ func request_random_movement(tile_map, min_distance: int, max_distance: int) -> 
 	# Get current tile position
 	var current_tile = tile_map.local_to_map(position)
 
-	# Get unified pathfinding bridge
-	var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	# Get unified event bridge
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
 	if not bridge:
-		push_error("request_random_movement: UnifiedPathfindingBridge not found!")
+		push_error("request_random_movement: UnifiedEventBridge not found!")
 		return
 
-	# Find random destination
-	var destination = bridge.find_random_destination(
+	# Connect to random_dest_found signal if not already connected
+	if not bridge.random_dest_found.is_connected(_on_random_dest_found):
+		bridge.random_dest_found.connect(_on_random_dest_found)
+
+	# Request random destination (ASYNC - result via signal)
+	bridge.request_random_destination(
 		ulid,
 		terrain_type,
-		current_tile,
+		current_tile.x,
+		current_tile.y,
 		min_distance,
 		max_distance
 	)
-
-	# If no destination found, stay put
-	if destination == current_tile:
-		return
-
-	# Request pathfinding to that destination
-	request_pathfinding(destination, tile_map)
 
 ## Request pathfinding to a target tile (uses unified pathfinding bridge)
 func request_pathfinding(target_tile: Vector2i, tile_map):
@@ -434,10 +397,10 @@ func request_pathfinding(target_tile: Vector2i, tile_map):
 	add_state(State.PATHFINDING)
 	pathfinding_timer = 0.0  # Reset timeout timer
 
-	# Get unified pathfinding bridge
-	var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
+	# Get unified event bridge
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
 	if not bridge:
-		push_error("request_pathfinding: UnifiedPathfindingBridge not found! Make sure it's added as an autoload.")
+		push_error("request_pathfinding: UnifiedEventBridge not found! Make sure it's added as an autoload.")
 		remove_state(State.PATHFINDING)
 		return
 
@@ -445,35 +408,24 @@ func request_pathfinding(target_tile: Vector2i, tile_map):
 	var entity_id = ulid  # PackedByteArray for both water and land entities
 	var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
 
-	# Defensive: Check if target tile is walkable for this terrain type
-	if not bridge.is_tile_walkable(terrain_type, target_tile):
-		push_error("NPC %s: Target tile %s is NOT walkable for terrain_type=%d! Aborting pathfinding." % [ulid_hex, target_tile, terrain_type])
-		remove_state(State.PATHFINDING)
-		add_state(State.BLOCKED)
-		pathfinding_result.emit([] as Array[Vector2i], false)
-		return
-
-	# DIAGNOSTIC: Check if start tile is also walkable
-	if not bridge.is_tile_walkable(terrain_type, current_tile):
-		push_error("NPC %s: START tile %s is NOT walkable for terrain_type=%d! Current position is invalid!" % [ulid_hex, current_tile, terrain_type])
-		remove_state(State.PATHFINDING)
-		add_state(State.BLOCKED)
-		pathfinding_result.emit([] as Array[Vector2i], false)
-		return
-
 	print("NPC %s (%s): Requesting path from %s to %s (terrain_type=%d, expected=%s)" % [ulid_hex, get_class(), current_tile, target_tile, terrain_type, "WATER" if terrain_type == 0 else "LAND"])
 
 	# CRITICAL: Prevent signal connection leaks
 	# Disconnect first to ensure we don't accumulate duplicate connections when entity is pooled/reused
 	if bridge.path_found.is_connected(_on_path_found):
 		bridge.path_found.disconnect(_on_path_found)
+	if bridge.path_failed.is_connected(_on_path_failed):
+		bridge.path_failed.disconnect(_on_path_failed)
+
 	bridge.path_found.connect(_on_path_found)
+	bridge.path_failed.connect(_on_path_failed)
 
 	# Request path through unified bridge (result comes via signal)
-	bridge.request_path(entity_id, terrain_type, current_tile, target_tile)
+	# UnifiedEventBridge expects: request_path(ulid, terrain_type, start_q, start_r, goal_q, goal_r, avoid_entities)
+	bridge.request_path(entity_id, terrain_type, current_tile.x, current_tile.y, target_tile.x, target_tile.y, true)
 
-## Handle path_found signal from pathfinding bridge
-func _on_path_found(entity_ulid: PackedByteArray, path: Array[Vector2i], success: bool, cost: float) -> void:
+## Handle path_found signal from UnifiedEventBridge
+func _on_path_found(entity_ulid: PackedByteArray, path: Array, cost: float) -> void:
 	var ulid_hex = UlidManager.to_hex(entity_ulid)
 
 	# Check if this path is for this entity
@@ -489,22 +441,75 @@ func _on_path_found(entity_ulid: PackedByteArray, path: Array[Vector2i], success
 	# Remove pathfinding state
 	remove_state(State.PATHFINDING)
 
+	# Convert Array to Array[Vector2i] for type safety
+	var typed_path: Array[Vector2i] = []
+	for point in path:
+		if point is Vector2i:
+			typed_path.append(point)
+		elif point is Dictionary:
+			# Handle case where path might be serialized as {x, y}
+			typed_path.append(Vector2i(point.get("x", 0), point.get("y", 0)))
+
+	var success = typed_path.size() > 0
+
 	# Emit signals for external listeners
-	pathfinding_completed.emit(path, success)
-	pathfinding_result.emit(path, success)
+	pathfinding_completed.emit(typed_path, success)
+	pathfinding_result.emit(typed_path, success)
 
 	# Handle path internally
-	if success and path.size() > 0:
-		print("NPC %s: Path SUCCESS - %d waypoints, starting movement" % [ulid_hex, path.size()])
-		follow_path(path, Cache.get_tile_map())
+	if success:
+		print("NPC %s: Path SUCCESS - %d waypoints, starting movement (cost: %.2f)" % [ulid_hex, typed_path.size(), cost])
+		follow_path(typed_path, Cache.get_tile_map())
 	else:
 		add_state(State.BLOCKED)
-		var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-		if bridge:
-			var current_tile = Cache.get_tile_map().local_to_map(position)
-			var start_walkable = bridge.is_tile_walkable(terrain_type, current_tile)
-			push_error("NPC %s: Path FAILED (success=%s, path_size=%d, start_walkable=%s)" %
-				[ulid_hex, success, path.size(), start_walkable])
+		push_error("NPC %s: Path FAILED - empty path returned" % [ulid_hex])
+
+## Handle path_failed signal from UnifiedEventBridge
+func _on_path_failed(entity_ulid: PackedByteArray) -> void:
+	var ulid_hex = UlidManager.to_hex(entity_ulid)
+
+	# Check if this path is for this entity
+	if entity_ulid != ulid:
+		return  # Not for this entity
+
+	# CRITICAL: Validate entity is still valid before proceeding
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# Remove pathfinding state
+	remove_state(State.PATHFINDING)
+	add_state(State.BLOCKED)
+
+	# Emit signals for external listeners
+	var empty_path: Array[Vector2i] = []
+	pathfinding_completed.emit(empty_path, false)
+	pathfinding_result.emit(empty_path, false)
+
+	push_error("NPC %s: Pathfinding FAILED - no path found" % [ulid_hex])
+
+## Handle random_dest_found signal from UnifiedEventBridge
+func _on_random_dest_found(entity_ulid: PackedByteArray, destination_q: int, destination_r: int, found: bool) -> void:
+	# Check if this is for this entity
+	if entity_ulid != ulid:
+		return
+
+	# CRITICAL: Validate entity is still valid before proceeding
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# If no destination found, do nothing
+	if not found:
+		return
+
+	var destination = Vector2i(destination_q, destination_r)
+	var current_tile = Cache.get_tile_map().local_to_map(position)
+
+	# If destination is same as current position, do nothing
+	if destination == current_tile:
+		return
+
+	# Request pathfinding to the random destination
+	request_pathfinding(destination, Cache.get_tile_map())
 
 func _create_path_visualizer(path: Array[Vector2i], tile_map) -> void:
 	# Remove old visualizer if exists
@@ -534,25 +539,8 @@ func _advance_to_next_waypoint():
 	var next_tile = current_path[path_index]
 	var tile_map = Cache.get_tile_map()
 	if tile_map:
-		# CRITICAL: Check if this waypoint is walkable for our terrain type
-		var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-		if bridge and not bridge.is_tile_walkable(terrain_type, next_tile):
-			var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
-			push_error("NPC %s (terrain_type=%d): BLOCKING movement to UNWALKABLE tile %s! Canceling path." % [ulid_hex, terrain_type, next_tile])
-
-			# STOP the path immediately - don't move to invalid tile!
-			current_path.clear()
-			path_index = 0
-			is_moving = false
-			remove_state(State.MOVING)
-			add_state(State.BLOCKED)
-
-			# Clean up path visualizer
-			if path_visualizer:
-				path_visualizer.queue_free()
-				path_visualizer = null
-			return
-
+		# NOTE: Path validation is handled by UnifiedEventBridge's Rust Actor
+		# All waypoints in the path are pre-validated for the entity's terrain type
 		var next_pos = tile_map.map_to_local(next_tile)
 		move_to(next_pos)
 
@@ -589,8 +577,8 @@ func _process(delta):
 			# Rotation complete, start moving
 			is_rotating_to_target = false
 			is_moving = true
-			add_state(State.MOVING)
-			remove_state(State.IDLE)
+			# Atomic state transition: IDLE -> MOVING (single Rust call)
+			set_state((current_state & ~State.IDLE) | State.MOVING)
 
 	# Smooth movement interpolation
 	if is_moving:
@@ -634,20 +622,12 @@ func _process(delta):
 					else:
 						final_tile = tile_map.local_to_map(position)
 
-					# CRITICAL: Validate final tile is walkable for our terrain type
-					var bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-					if bridge and is_instance_valid(bridge):
-						if not bridge.is_tile_walkable(terrain_type, final_tile):
-							var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
-							push_error("NPC %s (terrain_type=%d): Movement completed at UNWALKABLE tile %s! This should never happen!" % [ulid_hex, terrain_type, final_tile])
-							# Don't notify Rust of invalid position
-							current_path.clear()
-							path_index = 0
-							return
-
-						# Update entity position in Rust's ENTITY_DATA (critical for collision detection)
-						if not ulid.is_empty():
-							bridge.update_entity_position(ulid, final_tile, terrain_type)
+					# Update entity position in Rust's Actor state (critical for collision detection)
+					# NOTE: Path validation is handled by UnifiedEventBridge's Rust Actor
+					if not ulid.is_empty():
+						var bridge = get_node_or_null("/root/UnifiedEventBridge")
+						if bridge:
+							bridge.update_entity_position(ulid, final_tile.x, final_tile.y)
 
 				var was_following_path = current_path.size() > 0
 				current_path.clear()
@@ -655,8 +635,8 @@ func _process(delta):
 
 				# Clear movement state
 				is_moving = false
-				remove_state(State.MOVING)
-				add_state(State.IDLE)
+				# Atomic state transition: MOVING -> IDLE (single Rust call)
+				set_state((current_state & ~State.MOVING) | State.IDLE)
 
 				# Clean up visualizer
 				if path_visualizer:
@@ -700,18 +680,39 @@ func _process(delta):
 	# Inertial angular steering with damping
 	_update_angular_motion(delta)
 
-# Helper function to register stats (called deferred to ensure StatsManager is ready)
+# Helper function to register stats (called deferred to ensure UnifiedEventBridge is ready)
 func _register_stats() -> void:
-	if StatsManager:
-		var entity_type = "ship" if terrain_type == TerrainType.WATER else "npc"
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if not bridge:
+		push_error("_register_stats: UnifiedEventBridge not found!")
+		return
 
-		# Register with StatsManager (this will call Rust EntityManagerBridge internally)
-		# StatsManager.register_entity() now handles both ENTITY_DATA and ENTITY_STATS creation
-		StatsManager.register_entity(self, entity_type)
+	if ulid.is_empty():
+		push_warning("_register_stats: Entity has no ULID, skipping stats registration")
+		return
 
-		# Connect to stat changes to update health bar
-		StatsManager.stat_changed.connect(_on_stat_changed)
-		StatsManager.entity_died.connect(_on_entity_died)
+	# Determine entity type based on terrain
+	var entity_type = "ship" if terrain_type == TerrainType.WATER else "npc"
+
+	# Get current hex position
+	var hex_pos: Vector2i
+	if Cache and Cache.tile_map:
+		hex_pos = Cache.tile_map.local_to_map(position)
+	else:
+		hex_pos = Vector2i(int(position.x / 128.0), int(position.y / 128.0))
+
+	# Register entity stats with Actor
+	bridge.register_entity_stats(ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y)
+
+	# Connect to stat change signals to update health bar
+	if not bridge.stat_changed.is_connected(_on_stat_changed):
+		bridge.stat_changed.connect(_on_stat_changed)
+	if not bridge.entity_died.is_connected(_on_entity_died):
+		bridge.entity_died.connect(_on_entity_died)
+	if not bridge.entity_damaged.is_connected(_on_entity_damaged):
+		bridge.entity_damaged.connect(_on_entity_damaged)
+	if not bridge.entity_healed.is_connected(_on_entity_healed):
+		bridge.entity_healed.connect(_on_entity_healed)
 
 # Helper function to register with combat system (called deferred to ensure CombatManager is ready)
 func _register_combat() -> void:
@@ -766,14 +767,12 @@ func _setup_health_bar() -> void:
 	# Add as child so it follows the NPC
 	add_child(health_bar)
 
-	# Get current health values from StatsManager
-	if StatsManager and not ulid.is_empty():
-		var current_hp = StatsManager.get_stat(ulid, StatsManager.STAT.HP)
-		var max_hp = StatsManager.get_stat(ulid, StatsManager.STAT.MAX_HP)
-		health_bar.initialize(current_hp, max_hp, energy, max_energy)
-	else:
-		# Default values if no stats available yet
-		health_bar.initialize(100.0, 100.0, energy, max_energy)
+	# Initialize health bar with default values based on terrain type
+	# Stats will be updated via signals from UnifiedEventBridge Actor
+	var default_hp = 100.0 if terrain_type == TerrainType.WATER else 50.0
+	var default_max_hp = 100.0 if terrain_type == TerrainType.WATER else 50.0
+	cached_max_hp = default_max_hp  # Cache for health bar updates
+	health_bar.initialize(default_hp, default_max_hp, energy, max_energy)
 
 	# Configure appearance (optional - adjust as needed)
 	health_bar.set_bar_offset(Vector2(0, -30))  # Position above NPC
@@ -819,7 +818,7 @@ func _update_health_bar_flag() -> void:
 
 # Handle stat changes from StatsManager
 func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: float) -> void:
-	# Only update if this is our entity and the stat is HP or MAX_HP
+	# Only update if this is our entity
 	if entity_ulid != ulid:
 		return
 
@@ -827,18 +826,21 @@ func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: f
 	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
 		return
 
-	# If health bar doesn't exist yet, defer this update
-	if not health_bar or not is_instance_valid(health_bar):
-		call_deferred("_on_stat_changed", entity_ulid, stat_type, new_value)
-		return
+	# Handle HP stat changes (includes initial registration values)
+	# StatType enum from Rust: HP = 0, MaxHP = 1
+	const STAT_HP = 0
+	const STAT_MAX_HP = 1
 
-	# Update health bar based on stat type
-	if stat_type == StatsManager.STAT.HP:
-		var max_hp = StatsManager.get_stat(ulid, StatsManager.STAT.MAX_HP)
-		health_bar.set_health_values(new_value, max_hp)
-	elif stat_type == StatsManager.STAT.MAX_HP:
-		var current_hp = StatsManager.get_stat(ulid, StatsManager.STAT.HP)
-		health_bar.set_health_values(current_hp, new_value)
+	if stat_type == STAT_MAX_HP:
+		# Update cached max HP for health bar
+		cached_max_hp = new_value
+		# Update health bar if it exists
+		if health_bar and is_instance_valid(health_bar):
+			health_bar.max_health = new_value
+	elif stat_type == STAT_HP:
+		# Update current HP in health bar
+		if health_bar and is_instance_valid(health_bar):
+			health_bar.set_health_values(new_value, cached_max_hp)
 
 # Handle entity death
 func _on_entity_died(entity_ulid: PackedByteArray) -> void:
@@ -862,23 +864,20 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 		path_visualizer.queue_free()
 		path_visualizer = null
 
-	# Cleanup pathfinding using unified bridge (all entities use ULID)
-	var pathfinding = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if pathfinding:
-		pathfinding.remove_entity(ulid, terrain_type)
+	# Cleanup entity from UnifiedEventBridge Actor state
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if bridge:
+		bridge.remove_entity(ulid)
 
 	# Unregister from combat system
 	if CombatManager and CombatManager.combat_bridge:
 		CombatManager.combat_bridge.unregister_combatant(ulid)
 
-	# Unregister from stats system
-	if StatsManager:
-		StatsManager.unregister_entity(ulid)
-
 	# Unregister from ULID manager
 	UlidManager.unregister_entity(ulid)
 
 	# CRITICAL: Clear ULID before returning to pool to prevent stale references
+	var old_ulid = ulid
 	ulid = PackedByteArray()
 
 	# Return entity to pool or despawn
@@ -891,18 +890,50 @@ func _on_entity_died(entity_ulid: PackedByteArray) -> void:
 		# Entity not pooled - queue free
 		queue_free()
 
+# Handle entity taking damage
+func _on_entity_damaged(entity_ulid: PackedByteArray, damage: float, new_hp: float) -> void:
+	if entity_ulid != ulid:
+		return
+
+	# CRITICAL: Validate entity still valid
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# Update health bar if it exists
+	if health_bar and is_instance_valid(health_bar):
+		health_bar.set_health_values(new_hp, cached_max_hp)
+
+# Handle entity being healed
+func _on_entity_healed(entity_ulid: PackedByteArray, heal_amount: float, new_hp: float) -> void:
+	if entity_ulid != ulid:
+		return
+
+	# CRITICAL: Validate entity still valid
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# Update health bar if it exists
+	if health_bar and is_instance_valid(health_bar):
+		health_bar.set_health_values(new_hp, cached_max_hp)
+
 # Override _exit_tree to ensure cleanup
 func _exit_tree() -> void:
 	# CRITICAL: Disconnect all signals first to prevent signal leaks
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if pathfinding_bridge and pathfinding_bridge.path_found.is_connected(_on_path_found):
-		pathfinding_bridge.path_found.disconnect(_on_path_found)
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if bridge:
+		if bridge.path_found.is_connected(_on_path_found):
+			bridge.path_found.disconnect(_on_path_found)
+		if bridge.path_failed.is_connected(_on_path_failed):
+			bridge.path_failed.disconnect(_on_path_failed)
+		if bridge.random_dest_found.is_connected(_on_random_dest_found):
+			bridge.random_dest_found.disconnect(_on_random_dest_found)
 
-	if StatsManager:
-		if StatsManager.stat_changed.is_connected(_on_stat_changed):
-			StatsManager.stat_changed.disconnect(_on_stat_changed)
-		if StatsManager.entity_died.is_connected(_on_entity_died):
-			StatsManager.entity_died.disconnect(_on_entity_died)
+	# DISABLED: StatsManager causes lock contention with UnifiedEventBridge Actor
+	# if StatsManager:
+	# 	if StatsManager.stat_changed.is_connected(_on_stat_changed):
+	# 		StatsManager.stat_changed.disconnect(_on_stat_changed)
+	# 	if StatsManager.entity_died.is_connected(_on_entity_died):
+	# 		StatsManager.entity_died.disconnect(_on_entity_died)
 
 	# Release health bar
 	_release_health_bar()

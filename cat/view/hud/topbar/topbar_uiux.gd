@@ -72,24 +72,19 @@ func _ready() -> void:
 		_update_timer_display(GameTimer.get_time_left())
 		_update_turn_display(GameTimer.get_current_turn())
 
-	# Connect to resource ledger
-	if ResourceLedger:
-		ResourceLedger.resource_changed.connect(_on_resource_changed)
-		# Initialize resource displays with current values (no animation on startup)
-		displayed_gold = ResourceLedger.get_current(ResourceLedger.R.GOLD)
-		displayed_food = ResourceLedger.get_current(ResourceLedger.R.FOOD)
-		displayed_labor = ResourceLedger.get_current(ResourceLedger.R.LABOR)
-		displayed_faith = ResourceLedger.get_current(ResourceLedger.R.FAITH)
+	# Connect to UnifiedEventBridge for resource changes
+	if UnifiedEventBridge:
+		UnifiedEventBridge.resource_changed.connect(_on_resource_changed)
+		# Initialize to 1000 to match Actor's initial values (no animation needed)
+		displayed_gold = 1000.0
+		displayed_food = 1000.0
+		displayed_labor = 1000.0
+		displayed_faith = 1000.0
 
-		target_gold = displayed_gold
-		target_food = displayed_food
-		target_labor = displayed_labor
-		target_faith = displayed_faith
-
-		_update_resource_display(ResourceLedger.R.GOLD, ResourceLedger.get_current(ResourceLedger.R.GOLD), ResourceLedger.get_cap(ResourceLedger.R.GOLD), ResourceLedger.get_rate(ResourceLedger.R.GOLD))
-		_update_resource_display(ResourceLedger.R.FOOD, ResourceLedger.get_current(ResourceLedger.R.FOOD), ResourceLedger.get_cap(ResourceLedger.R.FOOD), ResourceLedger.get_rate(ResourceLedger.R.FOOD))
-		_update_resource_display(ResourceLedger.R.LABOR, ResourceLedger.get_current(ResourceLedger.R.LABOR), ResourceLedger.get_cap(ResourceLedger.R.LABOR), ResourceLedger.get_rate(ResourceLedger.R.LABOR))
-		_update_resource_display(ResourceLedger.R.FAITH, ResourceLedger.get_current(ResourceLedger.R.FAITH), ResourceLedger.get_cap(ResourceLedger.R.FAITH), ResourceLedger.get_rate(ResourceLedger.R.FAITH))
+		target_gold = 1000.0
+		target_food = 1000.0
+		target_labor = 1000.0
+		target_faith = 1000.0
 
 func _process(delta: float) -> void:
 	# Animate resource numbers smoothly
@@ -204,13 +199,14 @@ func _on_resource_changed(kind: int, current: float, cap: float, rate: float) ->
 	_update_resource_display(kind, current, cap, rate)
 
 func _update_resource_display(kind: int, current: float, cap: float, rate: float) -> void:
+	# ResourceType enum: GOLD=0, FOOD=1, LABOR=2, FAITH=3 (matches Rust)
 	# Update target values - the _process loop will animate the numbers
 	match kind:
-		ResourceLedger.R.GOLD:
+		0:  # GOLD
 			target_gold = current
-		ResourceLedger.R.FOOD:
+		1:  # FOOD
 			target_food = current
-		ResourceLedger.R.LABOR:
+		2:  # LABOR
 			target_labor = current
-		ResourceLedger.R.FAITH:
+		3:  # FAITH
 			target_faith = current

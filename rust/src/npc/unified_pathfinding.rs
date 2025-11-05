@@ -1,5 +1,4 @@
 use godot::prelude::*;
-use dashmap::DashMap;
 use crossbeam_queue::SegQueue;
 use std::sync::Arc;
 use std::thread;
@@ -38,10 +37,10 @@ pub struct PathfindingResult {
     pub cost: f32,
 }
 
-// Global unified entity storage
-static ENTITY_DATA: Lazy<Arc<DashMap<Vec<u8>, EntityData>>> = Lazy::new(|| {
-    Arc::new(DashMap::new())
-});
+// NOTE: UnifiedPathfindingBridge is now DEPRECATED for pathfinding
+// Only kept alive for terrain cache functionality (hex.gd uses set_world_seed/load_chunk)
+// All pathfinding now goes through UnifiedEventBridge Actor
+// ENTITY_DATA import REMOVED to avoid lock contention
 
 // Global unified request/result queues
 static PATH_REQUESTS: Lazy<Arc<SegQueue<PathfindingRequest>>> = Lazy::new(|| {
@@ -118,6 +117,25 @@ fn hex_neighbors(coord: HexCoord) -> Vec<HexCoord> {
         (q + 1, r - 1), // Northeast
         (q - 1, r + 1), // Southwest
     ]
+}
+
+/// Get the two flanking tiles between two neighboring hex coordinates
+/// Used to prevent "corner-cutting" in pathfinding
+/// Returns None if the coordinates are not neighbors
+fn get_flankers(from: HexCoord, to: HexCoord) -> Option<[HexCoord; 2]> {
+    let (q, r) = from;
+    let dq = to.0 - q;
+    let dr = to.1 - r;
+
+    match (dq, dr) {
+        ( 1,  0) => Some([(q + 1, r - 1), (q,     r + 1)]), // E:  flankers are NE & SE
+        (-1,  0) => Some([(q,     r - 1), (q - 1, r + 1)]), // W:  flankers are NW & SW
+        ( 0,  1) => Some([(q + 1, r    ), (q,     r + 1)]), // SE: flankers are E  & SE (axis)
+        ( 0, -1) => Some([(q,     r - 1), (q + 1, r    )]), // NW: flankers are NW & E  (axis)
+        ( 1, -1) => Some([(q + 1, r    ), (q,     r - 1)]), // NE: flankers are E  & NW
+        (-1,  1) => Some([(q - 1, r    ), (q,     r + 1)]), // SW: flankers are W  & SE
+        _ => None, // Not neighbors
+    }
 }
 
 /// Check if coordinate is within reasonable bounds
@@ -197,6 +215,7 @@ where
         let current = current_node.coord;
 
         if current == goal {
+            godot_print!("A* reached goal! came_from has {} entries", came_from.len());
             return Some(reconstruct_path(&came_from, current));
         }
 
@@ -209,6 +228,18 @@ where
         for neighbor in hex_neighbors(current) {
             if closed_set.contains(&neighbor) || !is_walkable(neighbor) {
                 continue;
+            }
+
+            // NO CORNER-CUTTING: Check flanking tiles to prevent diagonal squeezes
+            // Require at least one flanker to be walkable
+            if let Some(flankers) = get_flankers(current, neighbor) {
+                let flanker1_walkable = is_walkable(flankers[0]);
+                let flanker2_walkable = is_walkable(flankers[1]);
+
+                // If BOTH flankers are blocked, disallow this diagonal move
+                if !flanker1_walkable && !flanker2_walkable {
+                    continue; // Skip this neighbor - would squeeze through corner
+                }
             }
 
             let tentative_g_score = g_score.get(&current).unwrap_or(&f32::MAX) + 1.0;
@@ -236,6 +267,7 @@ fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoo
         current = prev;
     }
     path.reverse();
+    godot_print!("reconstruct_path: Built path with {} waypoints: {:?}", path.len(), path);
     path
 }
 
@@ -244,16 +276,13 @@ fn reconstruct_path(came_from: &HashMap<HexCoord, HexCoord>, mut current: HexCoo
 // ============================================================================
 
 /// Check if an entity occupies a coordinate (for collision avoidance)
-fn is_entity_at(coord: HexCoord, requesting_ulid: &[u8]) -> bool {
-    ENTITY_DATA.iter().any(|entry| {
-        let ulid = entry.key();
-        let entity = entry.value();
-        ulid != requesting_ulid && entity.position == coord
-    })
+/// DEPRECATED: Always returns false since UnifiedEventBridge handles collision now
+fn is_entity_at(_coord: HexCoord, _requesting_ulid: &[u8]) -> bool {
+    false
 }
 
 /// Unified pathfinding function - works for both water and land entities
-fn find_path_unified(request: &PathfindingRequest) -> PathfindingResult {
+pub fn find_path_unified(request: &PathfindingRequest) -> PathfindingResult {
     // DEBUG: Verify start and goal terrain types
     let start_terrain = terrain_cache::get_terrain(request.start.0, request.start.1);
     let goal_terrain = terrain_cache::get_terrain(request.goal.0, request.goal.1);
@@ -428,18 +457,9 @@ fn find_random_destination(
                     continue;
                 }
 
-                // Check not occupied by another entity
-                let occupied = ENTITY_DATA.iter().any(|entry| {
-                    let ulid = entry.key();
-                    let data = entry.value();
-                    ulid != entity_ulid && data.position == candidate
-                });
-
-                if !occupied {
-                    valid_destinations.push(candidate);
-                } else {
-                    occupied_count += 1;
-                }
+                // DEPRECATED: Collision check removed (UnifiedEventBridge handles this now)
+                // Always consider tiles as not occupied
+                valid_destinations.push(candidate);
             }
         }
     }
@@ -592,8 +612,9 @@ pub fn get_result() -> Option<PathfindingResult> {
 }
 
 /// Get statistics
+/// DEPRECATED: entity_count always returns 0 (UnifiedEventBridge tracks entities now)
 pub fn get_stats() -> (usize, usize, usize) {
-    let entity_count = ENTITY_DATA.len();
+    let entity_count = 0; // ENTITY_DATA removed
     let pending_requests = PATH_REQUESTS.len();
     let pending_results = PATH_RESULTS.len();
     (entity_count, pending_requests, pending_results)

@@ -949,6 +949,7 @@ dependencies = [
  "bevy",
  "bincode",
  "bitflags",
+ "crossbeam-channel",
  "crossbeam-queue",
  "dashmap",
  "fastnoise-lite",

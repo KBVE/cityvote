@@ -6,6 +6,21 @@ class_name EntityStatsPanel
 ## Fully agnostic - works with ULID only, no entity type dependencies
 ## Closeable with ESC key or X button
 
+# StatType enum (must match Rust enum values)
+const STAT_HP = 0
+const STAT_MAX_HP = 1
+const STAT_ATTACK = 2
+const STAT_DEFENSE = 3
+const STAT_SPEED = 4
+const STAT_ENERGY = 5
+const STAT_MAX_ENERGY = 6
+const STAT_RANGE = 7
+const STAT_MORALE = 8
+const STAT_EXPERIENCE = 9
+const STAT_LEVEL = 10
+const STAT_PRODUCTION_RATE = 11
+const STAT_STORAGE_CAPACITY = 12
+
 # Currently displayed entity
 var current_entity_ulid: PackedByteArray = PackedByteArray()
 var current_entity_node: Node = null  # Optional reference for future use
@@ -52,10 +67,11 @@ func _ready() -> void:
 	if I18n:
 		I18n.language_changed.connect(_on_language_changed)
 
-	# Connect to StatsManager signals for live updates
-	if StatsManager:
-		StatsManager.stat_changed.connect(_on_stat_changed)
-		StatsManager.entity_died.connect(_on_entity_died)
+	# Connect to UnifiedEventBridge signals for live updates
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if bridge:
+		bridge.stat_changed.connect(_on_stat_changed)
+		bridge.entity_died.connect(_on_entity_died)
 
 func _input(event: InputEvent) -> void:
 	# Close on ESC key
@@ -101,8 +117,15 @@ func show_entity_stats_by_ulid(ulid: PackedByteArray, entity_name: String = "Ent
 
 ## Internal helper to display stats from ULID
 func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
-	# Get all stats from StatsManager
-	var all_stats = StatsManager.get_all_stats(ulid)
+	# Get all stats from UnifiedEventBridge
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if not bridge:
+		push_error("EntityStatsPanel: UnifiedEventBridge not found!")
+		return
+
+	print("📊 Stats panel querying ULID: ", ulid.hex_encode())
+	var all_stats = bridge.get_all_stats(ulid)
+	print("📊 Stats panel got ", all_stats.size(), " stats")
 
 	# Display ULID (full hex string)
 	if ulid.size() > 0:
@@ -123,26 +146,26 @@ func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
 		_update_stat_text("Player ID", player_id_hex, Color(0.6, 0.8, 0.9))
 
 	# Update stat displays (creates labels on first call, reuses thereafter)
-	_update_stat(I18n.translate("stat.health") + " (HP)", all_stats.get(StatsManager.STAT.HP, 0), all_stats.get(StatsManager.STAT.MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
-	_update_stat(I18n.translate("ui.stats.energy") + " (EP)", all_stats.get(StatsManager.STAT.ENERGY, 0), all_stats.get(StatsManager.STAT.MAX_ENERGY, 0), Color(0.2, 0.6, 0.9))  # Blue
-	_update_stat(I18n.translate("stat.attack") + " (ATK)", all_stats.get(StatsManager.STAT.ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
-	_update_stat(I18n.translate("stat.defense") + " (DEF)", all_stats.get(StatsManager.STAT.DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Blue
-	_update_stat(I18n.translate("stat.speed") + " (SPD)", all_stats.get(StatsManager.STAT.SPEED, 0), -1, Color(0.5, 1.0, 0.5))  # Green
-	_update_stat(I18n.translate("stat.range") + " (RNG)", all_stats.get(StatsManager.STAT.RANGE, 0), -1, Color(0.9, 0.9, 0.5))  # Yellow
-	_update_stat(I18n.translate("stat.morale") + " (MOR)", all_stats.get(StatsManager.STAT.MORALE, 0), -1, Color(0.8, 0.5, 1.0))  # Purple
-	_update_stat(I18n.translate("stat.level") + " (LVL)", all_stats.get(StatsManager.STAT.LEVEL, 0), -1, Color(1.0, 0.8, 0.3))  # Gold
+	_update_stat(I18n.translate("stat.health") + " (HP)", all_stats.get(STAT_HP, 0), all_stats.get(STAT_MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
+	_update_stat(I18n.translate("ui.stats.energy") + " (EP)", all_stats.get(STAT_ENERGY, 0), all_stats.get(STAT_MAX_ENERGY, 0), Color(0.2, 0.6, 0.9))  # Blue
+	_update_stat(I18n.translate("stat.attack") + " (ATK)", all_stats.get(STAT_ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
+	_update_stat(I18n.translate("stat.defense") + " (DEF)", all_stats.get(STAT_DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Blue
+	_update_stat(I18n.translate("stat.speed") + " (SPD)", all_stats.get(STAT_SPEED, 0), -1, Color(0.5, 1.0, 0.5))  # Green
+	_update_stat(I18n.translate("stat.range") + " (RNG)", all_stats.get(STAT_RANGE, 0), -1, Color(0.9, 0.9, 0.5))  # Yellow
+	_update_stat(I18n.translate("stat.morale") + " (MOR)", all_stats.get(STAT_MORALE, 0), -1, Color(0.8, 0.5, 1.0))  # Purple
+	_update_stat(I18n.translate("stat.level") + " (LVL)", all_stats.get(STAT_LEVEL, 0), -1, Color(1.0, 0.8, 0.3))  # Gold
 
 	# Check for experience
-	var exp = all_stats.get(StatsManager.STAT.EXPERIENCE, -1)
+	var exp = all_stats.get(STAT_EXPERIENCE, -1)
 	if exp >= 0:
 		_update_stat(I18n.translate("stat.experience") + " (EXP)", exp, -1, Color(0.6, 0.9, 1.0))  # Cyan
 
 	# Check for building stats
-	var prod_rate = all_stats.get(StatsManager.STAT.PRODUCTION_RATE, -1)
+	var prod_rate = all_stats.get(STAT_PRODUCTION_RATE, -1)
 	if prod_rate >= 0:
 		_update_stat(I18n.translate("stat.production_rate") + " (PROD)", prod_rate, -1, Color(0.9, 0.7, 0.4))  # Tan
 
-	var storage = all_stats.get(StatsManager.STAT.STORAGE_CAPACITY, -1)
+	var storage = all_stats.get(STAT_STORAGE_CAPACITY, -1)
 	if storage >= 0:
 		_update_stat(I18n.translate("stat.storage_capacity") + " (STOR)", storage, -1, Color(0.7, 0.6, 0.5))  # Brown
 

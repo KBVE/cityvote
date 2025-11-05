@@ -38,13 +38,13 @@ const MOVEMENT_UPDATE_INTERVAL: float = 0.5  # Update every 0.5 seconds (2 updat
 
 ## Batch processing for entities (spread work across frames)
 var entity_process_index: int = 0
-const ENTITIES_PER_UPDATE: int = 10  # Process max 10 entities per update cycle
+const ENTITIES_PER_UPDATE: int = 30  # Process max 30 entities per update cycle (increased to handle all entities)
 
 ## Global handler for all spawn completions (called by signal)
-func _on_spawn_completed_global(success: bool, ulid: PackedByteArray, position: Vector2i, terrain_type: int, entity_type: String, error_message: String):
-	if not success:
-		push_warning("EntityManager: Spawn failed for %s: %s" % [entity_type, error_message])
-		return
+## Handle successful entity spawn from UnifiedEventBridge
+func _on_spawn_completed_global(ulid: PackedByteArray, position_q: int, position_r: int, terrain_type: int, entity_type: String):
+	# Convert position from q/r to Vector2i
+	var position = Vector2i(position_q, position_r)
 
 	# Get spawn context for this entity_type
 	if not pending_spawn_contexts.has(entity_type):
@@ -87,13 +87,10 @@ func _on_spawn_completed_global(success: bool, ulid: PackedByteArray, position: 
 		push_error("EntityManager: Failed to acquire %s from pool after successful Rust spawn!" % pool_key)
 		return
 
-	# Set ULID from Rust
+	# CRITICAL: Set ULID from Rust BEFORE adding to scene tree
+	# This prevents _ready() from generating a new ULID
 	if "ulid" in entity:
 		entity.ulid = ulid
-		# Register with StatsManager if entity has terrain_type
-		if StatsManager and "terrain_type" in entity:
-			var etype = "ship" if entity.terrain_type == 0 else "npc"
-			StatsManager.register_entity(entity, etype)
 
 	# Convert tile position to world position
 	var world_pos = p_tile_map.map_to_local(position)
@@ -105,13 +102,20 @@ func _on_spawn_completed_global(success: bool, ulid: PackedByteArray, position: 
 		"occupied_tiles": occupied_tiles
 	}
 
-	# Spawn entity in scene
+	# Spawn entity in scene (this triggers _ready() which will see the ULID we just set)
 	var spawned = spawn_entity(entity, p_hex_map, world_pos, entity_config)
 	if not spawned:
 		push_error("EntityManager: Failed to spawn entity %s at %s" % [entity_type, position])
 		# Return entity to pool
 		Cluster.release(pool_key, entity)
 		return
+
+	# CRITICAL: Manually register stats and combat since _ready() already ran during pool init
+	# The entity's _ready() returns early if _initialized is true, so we must register here
+	if entity.has_method("_register_stats"):
+		entity.call_deferred("_register_stats")
+	if entity.has_method("_register_combat"):
+		entity.call_deferred("_register_combat")
 
 	# Register entity with EntityManager
 	register_entity(entity, pool_key, position)
@@ -130,8 +134,6 @@ func _on_spawn_completed_global(success: bool, ulid: PackedByteArray, position: 
 
 	# Emit signal
 	entity_spawned.emit(entity, pool_key)
-
-	print("EntityManager: Spawned %s at %s (ulid: %02x%02x...)" % [entity_type, position, ulid[0], ulid[1]])
 
 ## Entity type configurations (movement intervals, etc.)
 const ENTITY_CONFIGS = {
@@ -318,7 +320,6 @@ func despawn_entity(entity: Node, pool_key: String) -> void:
 	# Return to pool
 	if Cluster:
 		Cluster.release(pool_key, entity)
-		print("EntityManager: Despawned %s, returned to pool '%s'" % [entity.name, pool_key])
 	else:
 		push_error("EntityManager: Cluster not available for despawn!")
 
@@ -382,7 +383,7 @@ func _cleanup_entity_health_bar(entity: Node) -> void:
 	entity.health_bar = null
 
 ## Generic function to spawn multiple entities of a specific type
-## Uses Rust-authoritative EntitySpawnBridge for all spawning
+## Uses Rust-authoritative UnifiedEventBridge for all spawning
 ## @param spawn_config: Dictionary with required fields:
 ##   - pool_key: String - Pool key to acquire from (e.g., "jezza", "viking")
 ##   - count: int - Number of entities to spawn
@@ -445,13 +446,18 @@ func spawn_multiple(spawn_config: Dictionary) -> void:
 		}
 		pending_spawn_contexts[pool_key].append(context)
 
-		# Queue spawn request to Rust
-		Cache.entity_spawn_bridge.spawn_entity(
-			pool_key,
-			terrain_type,
-			preferred_location,
-			50  # search_radius (larger for card spawns)
-		)
+		# Queue spawn request to Rust via UnifiedEventBridge
+		var bridge = get_node("/root/UnifiedEventBridge")
+		if bridge:
+			bridge.spawn_entity(
+				pool_key,
+				terrain_type,
+				preferred_location.x,
+				preferred_location.y,
+				50  # search_radius (larger for card spawns)
+			)
+		else:
+			push_error("EntityManager: UnifiedEventBridge not found at /root/UnifiedEventBridge")
 
 	# That's it! Results handled by _on_spawn_completed_global
 
@@ -705,29 +711,23 @@ func _ready() -> void:
 	# Wait for Cache to initialize
 	await get_tree().process_frame
 
-	# Connect to spawn bridge signal once for all spawns
-	if Cache.entity_spawn_bridge:
-		Cache.entity_spawn_bridge.spawn_completed.connect(_on_spawn_completed_global)
-		print("EntityManager: Connected to spawn bridge")
+	# Connect to UnifiedEventBridge signals
+	var bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if bridge:
+		bridge.entity_spawned.connect(_on_spawn_completed_global)
+		bridge.spawn_failed.connect(_on_spawn_failed)
+		bridge.random_dest_found.connect(_on_random_destination_found)
+	else:
+		push_error("EntityManager: UnifiedEventBridge not found!")
 
 	# Connect to game timer for turn-based updates
 	if GameTimer:
 		GameTimer.turn_changed.connect(_on_turn_changed)
-		print("EntityManager: Connected to GameTimer for turn-based updates")
-
-	# Connect to pathfinding bridge signals
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if pathfinding_bridge:
-		pathfinding_bridge.random_destination_found.connect(_on_random_destination_found)
-		print("EntityManager: Connected to UnifiedPathfindingBridge signals")
-	else:
-		push_error("EntityManager: UnifiedPathfindingBridge not found!")
 
 ## Initialize EntityManager with game references (called by main.gd)
 func initialize(p_hex_map: Node, p_tile_map) -> void:
 	hex_map = p_hex_map
 	tile_map = p_tile_map
-	print("EntityManager: Initialized with hex_map and tile_map references")
 
 ## ============================================================================
 ## REAL-TIME ENTITY UPDATES (per-frame with throttling)
@@ -806,11 +806,22 @@ func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: Str
 	if not entity or not is_instance_valid(entity):
 		return
 
-	# Get pathfinding bridge
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if not pathfinding_bridge:
-		push_error("_handle_entity_movement: UnifiedPathfindingBridge not found!")
-		return
+	# CRITICAL: Don't request new movement if entity is already moving or pathfinding
+	# Use state flags as single source of truth (no redundant is_moving boolean)
+	if "current_state" in entity and entity.has_method("has_state"):
+		# Use the NPC's State enum constants directly (not hardcoded hex values)
+		const State = preload("res://nodes/npc/npc.gd").State
+
+		# Don't interrupt if entity is moving, pathfinding, or blocked
+		if entity.has_state(State.MOVING) or \
+		   entity.has_state(State.PATHFINDING) or \
+		   entity.has_state(State.BLOCKED):
+			return
+
+	# Double-check: if entity has waypoints remaining in path, don't interrupt
+	if "current_path" in entity and "path_index" in entity:
+		if entity.current_path.size() > 0 and entity.path_index < entity.current_path.size():
+			return  # Entity still has waypoints to follow
 
 	# Unified pathfinding for ALL entity types (water and land)
 	# Determine random destination distance based on entity type
@@ -818,19 +829,33 @@ func _handle_entity_movement(entity: Node, current_tile: Vector2i, pool_key: Str
 	var max_distance = 5 if pool_key == "viking" else 8
 
 	# Request random destination (ASYNC - uses signals)
-	# Result will be handled by _on_random_destination_found signal handler
-	pathfinding_bridge.request_random_destination(
-		entity.ulid,
-		entity.terrain_type,
-		current_tile,
-		min_distance,
-		max_distance
-	)
+	# Result will be handled by _on_random_destination_found signal handler via UnifiedEventBridge
+	var bridge = Cache.get_unified_event_bridge()
+	if bridge:
+		bridge.request_random_destination(
+			entity.ulid,
+			entity.terrain_type,
+			current_tile.x,
+			current_tile.y,
+			min_distance,
+			max_distance
+		)
 
 ## Handle random destination found signal from pathfinding bridge
-func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vector2i, found: bool) -> void:
+## Handle spawn failure from UnifiedEventBridge
+func _on_spawn_failed(entity_type: String, error: String) -> void:
+	push_warning("EntityManager: Spawn failed for %s: %s" % [entity_type, error])
+	# Remove pending context
+	if pending_spawn_contexts.has(entity_type) and not pending_spawn_contexts[entity_type].is_empty():
+		pending_spawn_contexts[entity_type].pop_front()
+
+## Handle random destination found from UnifiedEventBridge
+func _on_random_destination_found(entity_ulid: PackedByteArray, destination_q: int, destination_r: int, found: bool) -> void:
 	if not found:
 		return  # No valid destination found
+
+	# Convert destination from q/r to Vector2i
+	var destination = Vector2i(destination_q, destination_r)
 
 	# Find the entity by ULID
 	var entity = _find_entity_by_ulid(entity_ulid)
@@ -848,12 +873,6 @@ func _on_random_destination_found(entity_ulid: PackedByteArray, destination: Vec
 
 	# Free up current tile (we'll put it back if pathfinding fails)
 	occupied_tiles.erase(current_tile)
-
-	# Get pathfinding bridge
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-	if not pathfinding_bridge:
-		occupied_tiles[current_tile] = entity  # Put it back
-		return
 
 	# Request pathfinding - connect to entity's signal to update occupied_tiles
 	# The NPC will emit pathfinding_completed signal when done
@@ -881,20 +900,11 @@ func _on_entity_pathfinding_completed(path: Array[Vector2i], success: bool, enti
 		occupied_tiles.erase(original_tile)
 		return
 
-	var pathfinding_bridge = get_node_or_null("/root/UnifiedPathfindingBridge")
-
-	# CRITICAL: Sync Rust state immediately to prevent desync
-	# Update Rust with current position before pathfinding starts
-	if pathfinding_bridge and "ulid" in entity and not entity.ulid.is_empty():
-		pathfinding_bridge.update_entity_position(entity.ulid, original_tile, entity.terrain_type)
+	# NOTE: Position syncing is handled by the NPC class when movement completes
+	# Path validation is handled by UnifiedEventBridge's Rust Actor
 
 	if success and path.size() > 0:
 		var final_destination = path[path.size() - 1]
-
-		# Validate final destination terrain
-		if pathfinding_bridge and not pathfinding_bridge.is_tile_walkable(entity.terrain_type, final_destination):
-			occupied_tiles[original_tile] = entity  # Keep at current tile
-			return
 
 		# Update occupied tiles
 		occupied_tiles[final_destination] = entity
