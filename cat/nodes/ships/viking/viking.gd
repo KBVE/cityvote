@@ -12,6 +12,11 @@ func _ready():
 	# Set pool name for proper cleanup
 	pool_name = "viking"
 
+	# Combat configuration - Ranged bow attacker
+	combat_type = CombatType.BOW
+	projectile_type = ProjectileType.SPEAR
+	combat_range = 5  # Bow range (5 hexes)
+
 	# Configure attack speed (slower = more visible projectiles)
 	attack_interval = 2.5  # Attack every 2.5 seconds
 	# Use Sprite2D region mode with wave shader

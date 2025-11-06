@@ -44,11 +44,11 @@ const ANIMATION_SPEEDS = {
 	AnimType.DEATH: 5.0,     # Slow death animation
 }
 
-# Current animation state
-var current_animation: int = AnimType.IDLE
-var current_frame: float = 0.0  # Float for smooth interpolation
-var animation_playing: bool = true
-var animation_loop: bool = true
+# Current shader animation state (separate from parent's UV-baked animation system)
+var shader_animation: int = AnimType.IDLE
+var shader_frame: float = 0.0  # Float for smooth interpolation
+var shader_animation_playing: bool = true
+var shader_animation_loop: bool = true
 
 # Shader material reference
 var shader_material: ShaderMaterial = null
@@ -57,6 +57,11 @@ func _ready():
 	# Configure terrain type for land pathfinding
 	terrain_type = TerrainType.LAND
 	print("King._ready(): Setting terrain_type to LAND (%d), class=%s" % [terrain_type, get_class()])
+
+	# Combat configuration
+	combat_type = CombatType.MELEE
+	projectile_type = ProjectileType.NONE
+	combat_range = 1  # Melee range (1 hex)
 
 	super._ready()  # Call parent NPC _ready
 
@@ -124,59 +129,59 @@ func _process(delta):
 	_update_sprite_flip()
 
 	# Handle animation state based on movement
-	if is_moving and current_animation == AnimType.IDLE:
+	if has_state(State.MOVING) and shader_animation == AnimType.IDLE:
 		play_animation(AnimType.RUN, true)
-	elif not is_moving and current_animation == AnimType.RUN:
+	elif not has_state(State.MOVING) and shader_animation == AnimType.RUN:
 		play_animation(AnimType.IDLE, true)
 
 	# Update animation frame
-	if animation_playing:
-		_update_animation(delta)
+	if shader_animation_playing:
+		_update_king_animation(delta)
 
-func _update_animation(delta: float):
+func _update_king_animation(delta: float):
 	if not shader_material:
 		return
 
-	var frame_count = ANIMATION_FRAME_COUNTS.get(current_animation, 1)
-	var speed = ANIMATION_SPEEDS.get(current_animation, 10.0)
+	var frame_count = ANIMATION_FRAME_COUNTS.get(shader_animation, 1)
+	var speed = ANIMATION_SPEEDS.get(shader_animation, 10.0)
 
 	# Advance frame
-	current_frame += speed * delta
+	shader_frame += speed * delta
 
 	# Handle looping or stop
-	if current_frame >= frame_count:
-		if animation_loop:
-			current_frame = fmod(current_frame, frame_count)
+	if shader_frame >= frame_count:
+		if shader_animation_loop:
+			shader_frame = fmod(shader_frame, frame_count)
 		else:
-			current_frame = frame_count - 1
-			animation_playing = false
+			shader_frame = frame_count - 1
+			shader_animation_playing = false
 
 	# Update shader parameters
-	var frame_int = int(current_frame)
-	shader_material.set_shader_parameter("animation_row", current_animation)
+	var frame_int = int(shader_frame)
+	shader_material.set_shader_parameter("animation_row", shader_animation)
 	shader_material.set_shader_parameter("frame_index", frame_int)
 
 ## Play an animation
 func play_animation(anim_type: int, loop: bool = true):
-	if anim_type == current_animation and animation_playing:
+	if anim_type == shader_animation and shader_animation_playing:
 		return  # Already playing this animation
 
-	current_animation = anim_type
-	current_frame = 0.0
-	animation_playing = true
-	animation_loop = loop
+	shader_animation = anim_type
+	shader_frame = 0.0
+	shader_animation_playing = true
+	shader_animation_loop = loop
 
 ## Get current animation type
 func get_current_animation() -> int:
-	return current_animation
+	return shader_animation
 
 ## Check if animation is finished
 func is_animation_finished() -> bool:
-	return not animation_playing
+	return not shader_animation_playing
 
 func _update_sprite_flip():
 	# Flip sprite based on movement direction
-	if is_moving and sprite:
+	if has_state(State.MOVING) and sprite:
 		# Use the movement vector from parent class
 		var movement_vec = move_target_pos - move_start_pos
 		if movement_vec.length_squared() > 0.01:

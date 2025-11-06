@@ -305,8 +305,8 @@ impl GameActor {
                     self.consumers.retain(|(u, _, _, _)| u != &ulid);
                 }
 
-                GameRequest::RegisterEntityStats { ulid, player_ulid, entity_type, terrain_type, position } => {
-                    use crate::npc::entity::{EntityStats, TerrainType as EntityTerrainType, StatType, ENTITY_STATS};
+                GameRequest::RegisterEntityStats { ulid, player_ulid, entity_type, terrain_type, position, combat_type, projectile_type, combat_range } => {
+                    use crate::npc::entity::{EntityStats, TerrainType as EntityTerrainType, StatType, ENTITY_STATS, CombatType, ProjectileType};
 
                     // Store player_ulid for team detection
                     self.entity_player_ulids.insert(ulid.clone(), player_ulid);
@@ -361,7 +361,16 @@ impl GameActor {
 
                     // Also create entity data if it doesn't exist
                     if !self.entities.contains_key(&ulid) {
-                        let entity_data = EntityData::new(ulid, position, et, entity_type);
+                        // Parse combat type and projectile type
+                        let ct = CombatType::from_u8(combat_type).unwrap_or(CombatType::Melee);
+                        let pt = ProjectileType::from_u8(projectile_type).unwrap_or(ProjectileType::None);
+
+                        // Create entity data with combat info
+                        let mut entity_data = EntityData::new(ulid.clone(), position, et, entity_type);
+                        entity_data.combat_type = ct;
+                        entity_data.projectile_type = pt;
+                        entity_data.combat_range = combat_range;
+
                         self.entities.insert(entity_data.ulid.clone(), entity_data);
                     }
                 }
@@ -459,6 +468,54 @@ impl GameActor {
                             stat_type: StatType::HP as i64,
                             new_value: new_hp,
                         });
+                    }
+                }
+
+                GameRequest::ProjectileHit { attacker_ulid, defender_ulid, damage, projectile_type } => {
+                    // Apply damage from projectile hit (called by GDScript after collision)
+                    use crate::npc::entity::{StatType, ENTITY_STATS};
+
+                    if let Some(mut stats) = self.entity_stats.get_mut(&defender_ulid) {
+                        let current_hp = stats.value().get(StatType::HP);
+                        let mut new_hp = (current_hp - damage as f32).max(0.0);
+
+                        // CRITICAL: If HP would be fractional and < 1.0, set to 0.0
+                        if new_hp > 0.0 && new_hp < 1.0 {
+                            new_hp = 0.0;
+                            stats.value_mut().set(StatType::HP, new_hp);
+                        } else {
+                            stats.value_mut().set(StatType::HP, new_hp);
+                        }
+
+                        // Sync to global cache
+                        if let Some(mut cache) = ENTITY_STATS.get_mut(&defender_ulid) {
+                            cache.take_damage(damage as f32);
+                            let cache_hp = cache.get(StatType::HP);
+                            if cache_hp > 0.0 && cache_hp < 1.0 {
+                                cache.set(StatType::HP, 0.0);
+                            }
+                        }
+
+                        // Emit damage dealt event
+                        let _ = self.event_tx.send(GameEvent::DamageDealt {
+                            attacker_ulid: attacker_ulid.clone(),
+                            defender_ulid: defender_ulid.clone(),
+                            damage,
+                        });
+
+                        // Emit entity damaged event (for health bars)
+                        let _ = self.event_tx.send(GameEvent::EntityDamaged {
+                            ulid: defender_ulid.clone(),
+                            damage: damage as f32,
+                            new_hp,
+                        });
+
+                        // Check if entity should die
+                        if new_hp <= 0.0 {
+                            let _ = self.event_tx.send(GameEvent::EntityDied {
+                                ulid: defender_ulid.clone(),
+                            });
+                        }
                     }
                 }
 
@@ -782,6 +839,24 @@ impl GameActor {
                         defender_ulid,
                     });
                 }
+                CombatWorkResult::SpawnProjectile {
+                    attacker_ulid,
+                    attacker_position,
+                    target_ulid,
+                    target_position,
+                    projectile_type,
+                    damage,
+                } => {
+                    // Emit projectile spawn event for GDScript to handle visual
+                    let _ = self.event_tx.send(GameEvent::SpawnProjectile {
+                        attacker_ulid,
+                        attacker_position,
+                        target_ulid,
+                        target_position,
+                        projectile_type,
+                        damage,
+                    });
+                }
             }
         }
     }
@@ -886,6 +961,9 @@ impl GameActor {
                         attack: stats.value().get(StatType::Attack) as i32,
                         defense: stats.value().get(StatType::Defense) as i32,
                         range: stats.value().get(StatType::Range) as i32,
+                        combat_type: entity.combat_type.to_u8(),
+                        projectile_type: entity.projectile_type.to_u8(),
+                        combat_range: entity.combat_range,
                     })
                 } else {
                     None

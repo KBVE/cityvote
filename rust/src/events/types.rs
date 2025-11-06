@@ -49,6 +49,15 @@ pub enum GameEvent {
         attacker_ulid: Vec<u8>,
         defender_ulid: Vec<u8>,
     },
+    /// Spawn a projectile for ranged/bow/magic combat
+    SpawnProjectile {
+        attacker_ulid: Vec<u8>,
+        attacker_position: (i32, i32),
+        target_ulid: Vec<u8>,
+        target_position: (i32, i32),
+        projectile_type: u8,
+        damage: i32,
+    },
 
     // === Economy Events ===
     ResourceChanged {
@@ -161,6 +170,9 @@ pub enum GameRequest {
         entity_type: String,
         terrain_type: i32,
         position: (i32, i32),
+        combat_type: u8,       // CombatType bitwise flags
+        projectile_type: u8,   // ProjectileType enum value
+        combat_range: i32,     // Attack range in hexes
     },
     GetStat {
         ulid: Vec<u8>,
@@ -178,6 +190,16 @@ pub enum GameRequest {
     Heal {
         ulid: Vec<u8>,
         amount: f32,
+    },
+
+    // === Combat Requests ===
+    /// Called by GDScript when a projectile hits its target
+    /// This is when damage is actually applied for ranged/bow/magic combat
+    ProjectileHit {
+        attacker_ulid: Vec<u8>,
+        defender_ulid: Vec<u8>,
+        damage: i32,
+        projectile_type: u8,
     },
 
     // === Card Requests ===
@@ -222,6 +244,9 @@ pub struct CombatEntitySnapshot {
     pub attack: i32,
     pub defense: i32,
     pub range: i32,
+    pub combat_type: u8,       // CombatType bitwise flags
+    pub projectile_type: u8,   // ProjectileType enum value
+    pub combat_range: i32,     // Attack range in hexes
 }
 
 /// Work request sent from Actor to Combat Worker
@@ -248,5 +273,14 @@ pub enum CombatWorkResult {
     CombatEnded {
         attacker_ulid: Vec<u8>,
         defender_ulid: Vec<u8>,
+    },
+    /// Spawn a projectile for ranged/bow/magic combat
+    SpawnProjectile {
+        attacker_ulid: Vec<u8>,
+        attacker_position: (i32, i32),
+        target_ulid: Vec<u8>,
+        target_position: (i32, i32),
+        projectile_type: u8,  // ProjectileType enum value
+        damage: i32,          // Pre-calculated damage
     },
 }

@@ -355,6 +355,36 @@ func _setup_entity_health_bar(entity: Node) -> void:
 	health_bar.set_bar_offset(Vector2(0, -25))  # Position above entity (5px closer than before)
 	health_bar.set_auto_hide(false)  # Always visible
 
+	# Set flag based on player ownership
+	_setup_health_bar_flag(entity, health_bar)
+
+## Setup health bar flag based on entity ownership
+func _setup_health_bar_flag(entity: Node, health_bar: Node) -> void:
+	if not health_bar or not health_bar.has_method("set_flag"):
+		return
+
+	# Check if entity has player_ulid property
+	if not "player_ulid" in entity:
+		return
+
+	# Determine flag based on player ownership
+	var flag_name: String
+	if entity.player_ulid.is_empty():
+		# AI-controlled NPC - use Bavaria flag
+		flag_name = "bavaria"
+	else:
+		# Player-controlled NPC - get player's selected language/flag
+		if I18n:
+			var current_language = I18n.get_current_language()
+			var flag_info = I18n.get_flag_info(current_language)
+			flag_name = flag_info["flag"]
+		else:
+			# Fallback to British flag if I18n not available
+			flag_name = "british"
+
+	# Set the flag on the health bar
+	health_bar.set_flag(flag_name)
+
 ## Cleanup health bar when despawning entity (returns to pool)
 func _cleanup_entity_health_bar(entity: Node) -> void:
 	if not "health_bar" in entity:

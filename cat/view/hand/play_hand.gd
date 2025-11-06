@@ -1095,8 +1095,8 @@ func _spawn_joker_entity(card_id: int, tile_coords: Vector2i) -> void:
 			entity_type = "baron"
 		55:  # CARD_SKULL_WIZARD - spawn skull wizard
 			entity_type = "skull_wizard"
-		56:  # CARD_WARRIOR - spawn warrior
-			entity_type = "warrior"
+		56:  # CARD_WARRIOR - spawn fantasy warrior
+			entity_type = "fantasywarrior"
 		57:  # CARD_FIREWORM - spawn fireworm
 			entity_type = "fireworm"
 		_:

@@ -62,11 +62,11 @@ const ANIMATION_SPEEDS = {
 	AnimType.FALLING: 6.0,
 }
 
-# Current animation state
-var current_animation: int = AnimType.IDLE
-var current_frame: float = 0.0  # Float for smooth interpolation
-var animation_playing: bool = true
-var animation_loop: bool = true
+# Current shader animation state (separate from parent's UV-baked animation system)
+var shader_animation: int = AnimType.SCANNING  # Jezza starts with scanning
+var shader_frame: float = 0.0  # Float for smooth interpolation
+var shader_animation_playing: bool = true
+var shader_animation_loop: bool = true
 
 # Shader material reference
 var shader_material: ShaderMaterial = null
@@ -74,6 +74,11 @@ var shader_material: ShaderMaterial = null
 func _ready():
 	# Configure terrain type for land pathfinding
 	terrain_type = TerrainType.LAND
+
+	# Combat configuration
+	combat_type = CombatType.MELEE
+	projectile_type = ProjectileType.NONE
+	combat_range = 1  # Melee range (1 hex) - bites and pounces
 
 	super._ready()  # Call parent NPC _ready
 
@@ -128,13 +133,13 @@ func _setup_shader():
 
 ## Play an animation
 func play_animation(animation: int, loop: bool = true):
-	if animation == current_animation and animation_playing:
+	if animation == shader_animation and shader_animation_playing:
 		return  # Already playing this animation
 
-	current_animation = animation
-	current_frame = 0.0
-	animation_playing = true
-	animation_loop = loop
+	shader_animation = animation
+	shader_frame = 0.0
+	shader_animation_playing = true
+	shader_animation_loop = loop
 
 	# Update shader parameter
 	if shader_material:
@@ -142,19 +147,19 @@ func play_animation(animation: int, loop: bool = true):
 
 ## Stop current animation
 func stop_animation():
-	animation_playing = false
+	shader_animation_playing = false
 
 ## Resume animation
 func resume_animation():
-	animation_playing = true
+	shader_animation_playing = true
 
 ## Get current animation
 func get_current_animation() -> int:
-	return current_animation
+	return shader_animation
 
 ## Check if animation is playing
 func is_animation_playing() -> bool:
-	return animation_playing
+	return shader_animation_playing
 
 func _process(delta):
 	super._process(delta)  # Call parent NPC _process for movement
@@ -163,52 +168,52 @@ func _process(delta):
 	_update_sprite_flip()
 
 	# Update animation frame
-	if animation_playing:
-		_update_animation(delta)
+	if shader_animation_playing:
+		_update_jezza_animation(delta)
 
 	# Auto-play animations based on state
 	_auto_select_animation()
 
-func _update_animation(delta: float):
+func _update_jezza_animation(delta: float):
 	# Get animation properties
-	var frame_count = ANIMATION_FRAME_COUNTS.get(current_animation, 1)
-	var fps = ANIMATION_SPEEDS.get(current_animation, 8.0)
+	var frame_count = ANIMATION_FRAME_COUNTS.get(shader_animation, 1)
+	var fps = ANIMATION_SPEEDS.get(shader_animation, 8.0)
 
 	# Advance frame
-	current_frame += fps * delta
+	shader_frame += fps * delta
 
 	# Handle looping
-	if current_frame >= frame_count:
-		if animation_loop:
-			current_frame = fmod(current_frame, frame_count)
+	if shader_frame >= frame_count:
+		if shader_animation_loop:
+			shader_frame = fmod(shader_frame, frame_count)
 		else:
-			current_frame = frame_count - 1
-			animation_playing = false
+			shader_frame = frame_count - 1
+			shader_animation_playing = false
 
 	# Update shader
 	if shader_material:
-		var frame_idx = int(current_frame)
+		var frame_idx = int(shader_frame)
 		# Clamp frame to valid range
 		frame_idx = clamp(frame_idx, 0, frame_count - 1)
 
 		shader_material.set_shader_parameter("frame_index", frame_idx)
-		shader_material.set_shader_parameter("animation_row", current_animation)
+		shader_material.set_shader_parameter("animation_row", shader_animation)
 
 func _auto_select_animation():
 	# Automatically select animation based on NPC state
-	if has_state(State.DEAD) or current_animation == AnimType.DEAD:
-		if current_animation != AnimType.DEAD:
+	if has_state(State.DEAD) or shader_animation == AnimType.DEAD:
+		if shader_animation != AnimType.DEAD:
 			play_animation(AnimType.DEAD, false)
 	elif has_state(State.INTERACTING):
 		# Could be roaring, biting, etc.
 		pass  # Manual control
-	elif is_moving:
+	elif has_state(State.MOVING):
 		# Use run when moving
-		if current_animation != AnimType.RUN and current_animation != AnimType.WALK:
+		if shader_animation != AnimType.RUN and shader_animation != AnimType.WALK:
 			play_animation(AnimType.RUN, true)
 	elif has_state(State.IDLE):
 		# Scanning animation when idle (looking around)
-		if current_animation != AnimType.SCANNING:
+		if shader_animation != AnimType.SCANNING:
 			play_animation(AnimType.SCANNING, true)
 
 ## Trigger specific animations (for combat, interactions, etc.)
@@ -236,7 +241,7 @@ func die():
 
 func _update_sprite_flip():
 	# Flip sprite based on movement direction
-	if is_moving:
+	if has_state(State.MOVING):
 		# Use the movement vector from parent class
 		var movement_vec = move_target_pos - move_start_pos
 		if movement_vec.length_squared() > 0.01:

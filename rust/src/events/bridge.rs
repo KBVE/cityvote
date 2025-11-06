@@ -102,6 +102,19 @@ impl UnifiedEventBridge {
     #[signal]
     fn combat_ended(attacker: PackedByteArray, defender: PackedByteArray);
 
+    /// Emitted when a projectile should be spawned (ranged/bow/magic combat)
+    #[signal]
+    fn spawn_projectile(
+        attacker_ulid: PackedByteArray,
+        attacker_pos_q: i32,
+        attacker_pos_r: i32,
+        target_ulid: PackedByteArray,
+        target_pos_q: i32,
+        target_pos_r: i32,
+        projectile_type: i32,
+        damage: i32
+    );
+
     /// Emitted when a resource changes
     #[signal]
     fn resource_changed(resource_type: i32, current: f32, cap: f32, rate: f32);
@@ -231,13 +244,16 @@ impl UnifiedEventBridge {
 
     /// Register entity stats (called when entity spawns)
     #[func]
-    fn register_entity_stats(&mut self, ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: GString, terrain_type: i32, q: i32, r: i32) {
+    fn register_entity_stats(&mut self, ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: GString, terrain_type: i32, q: i32, r: i32, combat_type: i32, projectile_type: i32, combat_range: i32) {
         let _ = CHANNELS.request_tx.send(GameRequest::RegisterEntityStats {
             ulid: ulid.to_vec(),
             player_ulid: player_ulid.to_vec(),
             entity_type: entity_type.to_string(),
             terrain_type,
             position: (q, r),
+            combat_type: combat_type as u8,
+            projectile_type: projectile_type as u8,
+            combat_range,
         });
     }
 
@@ -266,6 +282,18 @@ impl UnifiedEventBridge {
         let _ = CHANNELS.request_tx.send(GameRequest::Heal {
             ulid: ulid.to_vec(),
             amount,
+        });
+    }
+
+    /// Called by GDScript when a projectile hits its target
+    /// This applies the damage for ranged/bow/magic combat
+    #[func]
+    fn projectile_hit(&mut self, attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray, damage: i32, projectile_type: i32) {
+        let _ = CHANNELS.request_tx.send(GameRequest::ProjectileHit {
+            attacker_ulid: attacker_ulid.to_vec(),
+            defender_ulid: defender_ulid.to_vec(),
+            damage,
+            projectile_type: projectile_type as u8,
         });
     }
 
@@ -505,6 +533,29 @@ impl UnifiedEventBridge {
                     &[
                         PackedByteArray::from(&attacker_ulid[..]).to_variant(),
                         PackedByteArray::from(&defender_ulid[..]).to_variant(),
+                    ],
+                );
+            }
+
+            GameEvent::SpawnProjectile {
+                attacker_ulid,
+                attacker_position,
+                target_ulid,
+                target_position,
+                projectile_type,
+                damage,
+            } => {
+                self.base_mut().emit_signal(
+                    "spawn_projectile",
+                    &[
+                        PackedByteArray::from(&attacker_ulid[..]).to_variant(),
+                        attacker_position.0.to_variant(),
+                        attacker_position.1.to_variant(),
+                        PackedByteArray::from(&target_ulid[..]).to_variant(),
+                        target_position.0.to_variant(),
+                        target_position.1.to_variant(),
+                        projectile_type.to_variant(),
+                        damage.to_variant(),
                     ],
                 );
             }

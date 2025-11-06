@@ -16,6 +16,7 @@ signal combat_started(attacker: PackedByteArray, defender: PackedByteArray)
 signal damage_dealt(attacker: PackedByteArray, defender: PackedByteArray, damage: int)
 signal entity_died(ulid: PackedByteArray)
 signal combat_ended(attacker: PackedByteArray, defender: PackedByteArray)
+signal spawn_projectile(attacker_ulid: PackedByteArray, attacker_pos_q: int, attacker_pos_r: int, target_ulid: PackedByteArray, target_pos_q: int, target_pos_r: int, projectile_type: int, damage: int)
 signal resource_changed(resource_type: int, current: float, cap: float, rate: float)
 signal stat_changed(ulid: PackedByteArray, stat_type: int, new_value: float)
 signal entity_damaged(ulid: PackedByteArray, damage: float, new_hp: float)
@@ -38,6 +39,7 @@ func _ready() -> void:
 		event_bridge.damage_dealt.connect(_on_damage_dealt)
 		event_bridge.entity_died.connect(_on_entity_died)
 		event_bridge.combat_ended.connect(_on_combat_ended)
+		event_bridge.spawn_projectile.connect(_on_spawn_projectile)
 		event_bridge.resource_changed.connect(_on_resource_changed)
 		event_bridge.stat_changed.connect(_on_stat_changed)
 		event_bridge.entity_damaged.connect(_on_entity_damaged)
@@ -76,6 +78,9 @@ func _on_entity_died(ulid: PackedByteArray) -> void:
 
 func _on_combat_ended(attacker: PackedByteArray, defender: PackedByteArray) -> void:
 	combat_ended.emit(attacker, defender)
+
+func _on_spawn_projectile(attacker_ulid: PackedByteArray, attacker_pos_q: int, attacker_pos_r: int, target_ulid: PackedByteArray, target_pos_q: int, target_pos_r: int, projectile_type: int, damage: int) -> void:
+	spawn_projectile.emit(attacker_ulid, attacker_pos_q, attacker_pos_r, target_ulid, target_pos_q, target_pos_r, projectile_type, damage)
 
 func _on_resource_changed(resource_type: int, current: float, cap: float, rate: float) -> void:
 	resource_changed.emit(resource_type, current, cap, rate)
@@ -186,11 +191,11 @@ func remove_consumer(ulid: PackedByteArray) -> void:
 # ============================================================================
 
 ## Register entity stats (called when entity spawns)
-func register_entity_stats(ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: String, terrain_type: int, q: int, r: int) -> void:
+func register_entity_stats(ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: String, terrain_type: int, q: int, r: int, combat_type: int, projectile_type: int, combat_range: int) -> void:
 	if not event_bridge:
 		return
 
-	event_bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, q, r)
+	event_bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, q, r, combat_type, projectile_type, combat_range)
 
 ## Set a stat value for an entity
 func set_stat(ulid: PackedByteArray, stat_type: int, value: float) -> void:
@@ -212,6 +217,14 @@ func heal(ulid: PackedByteArray, amount: float) -> void:
 		return
 
 	event_bridge.heal(ulid, amount)
+
+## Called by projectile when it hits target
+## This applies the damage for ranged/bow/magic combat
+func projectile_hit(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray, damage: int, projectile_type: int) -> void:
+	if not event_bridge:
+		return
+
+	event_bridge.projectile_hit(attacker_ulid, defender_ulid, damage, projectile_type)
 
 # ============================================================================
 # RESOURCE API (Compatible with ResourceLedger)

@@ -19,6 +19,50 @@ signal waypoint_reached(tile: Vector2i)
 signal pathfinding_result(path: Array[Vector2i], success: bool)
 
 @onready var sprite: Sprite2D = $Sprite2D
+@onready var animation_mesh: MeshInstance2D = null  # Optional: For UV-baked animations (performance mode)
+
+# Animation system
+var use_animation_mesh: bool = false  # Set to true to use UV-baked animations instead of sprites
+var current_animation: int = -1  # Current animation type (AnimationType enum)
+var animation_frame: int = 0     # Current frame in animation
+var animation_timer: float = 0.0 # Time elapsed in current frame
+var animation_fps: float = 10.0  # Animation speed (frames per second)
+var entity_type_for_animation: String = "martial_hero"  # Entity type for animation atlas lookup
+var is_damaged: bool = false     # Flag for hurt animation trigger
+
+# Animation atlas system (UV-baked meshes for high performance)
+enum AnimationType {
+	IDLE = 0,
+	RUN = 1,
+	ATTACK1 = 2,
+	ATTACK2 = 3,
+	TAKE_HIT = 4,
+	DEATH = 5,
+	JUMP = 6,
+	FALL = 7
+}
+
+# Frame counts for each animation type
+const ANIMATION_FRAMES = {
+	AnimationType.IDLE: 8,      # 8 frames
+	AnimationType.RUN: 8,       # 8 frames
+	AnimationType.ATTACK1: 6,   # 6 frames
+	AnimationType.ATTACK2: 6,   # 6 frames
+	AnimationType.TAKE_HIT: 4,  # 4 frames
+	AnimationType.DEATH: 10,    # 10 frames
+	AnimationType.JUMP: 2,      # 2 frames
+	AnimationType.FALL: 2       # 2 frames
+}
+
+# Atlas layout (1600x1600, each frame is 200x200)
+const ATLAS_FRAME_SIZE = 200  # Each animation frame is 200x200 pixels
+const ATLAS_WIDTH = 1600      # 8 frames per row
+const ATLAS_HEIGHT = 1600     # 8 rows
+const FRAMES_PER_ROW = 8      # 8 frames fit horizontally
+
+# Mesh cache (class-level, shared across all instances)
+static var _animation_meshes: Dictionary = {}  # "entity_type:animation_type:frame" -> ArrayMesh
+static var _atlas_textures: Dictionary = {}    # "entity_type" -> Texture2D
 
 # Terrain Type enum (matches Rust TerrainType and unified pathfinding system)
 enum TerrainType {
@@ -37,6 +81,25 @@ enum State {
 	IN_COMBAT = 0b1000000,   # NPC is in combat (0x40)
 }
 
+# Combat Type enum (matches Rust bitwise flags pattern)
+enum CombatType {
+	MELEE = 0b0001,   # Close combat (1 hex range)
+	RANGED = 0b0010,  # Ranged physical attacks (bow, spear, etc.)
+	BOW = 0b0100,     # Bow/crossbow - uses ARROW/SPEAR projectiles
+	MAGIC = 0b1000,   # Magic attacks - uses spell projectiles (FIRE_BOLT, SHADOW_BOLT, etc.)
+}
+
+# Projectile Type enum (for BOW and MAGIC combat types)
+enum ProjectileType {
+	NONE = 0,
+	ARROW = 1,
+	SPEAR = 2,
+	FIRE_BOLT = 3,
+	SHADOW_BOLT = 4,
+	ICE_SHARD = 5,
+	LIGHTNING = 6,
+}
+
 # Cached state from Rust (updated via signal)
 # NOTE: Rust EntityManagerBridge is the single source of truth for state
 # This is just a local cache for performance
@@ -44,6 +107,11 @@ var current_state: int = State.IDLE
 
 # Terrain type (set by child classes) - determines pathfinding behavior
 var terrain_type: int = TerrainType.LAND  # Default to land
+
+# Combat type (set by child classes) - determines combat behavior and range
+var combat_type: int = CombatType.MELEE  # Default to melee
+var projectile_type: int = ProjectileType.NONE  # Set if using BOW or MAGIC
+var combat_range: int = 1  # Attack range in hexes (1 for melee, higher for ranged/bow/magic)
 
 # Reference to EntityManagerBridge (Rust source of truth)
 var entity_manager: Node = null
@@ -67,7 +135,7 @@ var npc_sprites: Array[Texture2D] = []
 var ship_sprites: Array[Texture2D] = []  # Alias for water entities (backwards compatibility)
 
 # Movement state
-var is_moving: bool = false
+# NOTE: Use has_state(State.MOVING) instead of boolean - state is managed by Actor
 var is_rotating_to_target: bool = false  # Rotating before moving (water entities only)
 var move_start_pos: Vector2 = Vector2.ZERO
 var move_target_pos: Vector2 = Vector2.ZERO
@@ -132,6 +200,16 @@ func _ready():
 	# Note: EntityManagerBridge is created as StatsManager.rust_bridge
 	call_deferred("_initialize_entity_manager")
 
+	# Initialize current angle based on initial direction
+	current_angle = direction_to_godot_angle(direction)
+	target_angle = current_angle
+	_last_sector = direction
+
+	# Initialize animation mesh if enabled (do this before ULID check so pool entities get initialized)
+	if use_animation_mesh:
+		_initialize_animation_mesh()
+	_update_sprite()
+
 	# ULID is set by Rust (UnifiedEventBridge) before EntityManager calls add_child()
 	# During pool initialization, ULID will be empty - this is expected
 	# Only register stats/combat if ULID is set (i.e., entity is actually spawned)
@@ -142,12 +220,6 @@ func _ready():
 	# Register entity stats with UnifiedEventBridge Actor (replaces old StatsManager)
 	# Combat registration happens automatically through stats - no separate call needed
 	call_deferred("_register_stats")
-
-	# Initialize current angle based on initial direction
-	current_angle = direction_to_godot_angle(direction)
-	target_angle = current_angle
-	_last_sector = direction
-	_update_sprite()
 
 	# Acquire health bar from pool (deferred to ensure Cluster is ready)
 	call_deferred("_setup_health_bar")
@@ -171,21 +243,23 @@ func _on_rust_state_changed(entity_ulid: PackedByteArray, new_state: int) -> voi
 	if entity_ulid == ulid:
 		current_state = new_state
 
-## Set state (notifies Rust - DO NOT use for local changes)
+## Set state (notifies Rust and updates local cache)
 func set_state(new_state: int) -> void:
+	current_state = new_state  # Update local cache immediately
 	if entity_manager:
 		entity_manager.set_entity_state(ulid, new_state)
-	# Cache will be updated via signal
 
-## Add state flag (notifies Rust)
+## Add state flag (notifies Rust and updates local cache)
 func add_state(state_flag: int) -> void:
 	var new_state = current_state | state_flag
+	current_state = new_state  # Update local cache immediately
 	if entity_manager:
 		entity_manager.set_entity_state(ulid, new_state)
 
-## Remove state flag (notifies Rust)
+## Remove state flag (notifies Rust and updates local cache)
 func remove_state(state_flag: int) -> void:
 	var new_state = current_state & ~state_flag
+	current_state = new_state  # Update local cache immediately
 	if entity_manager:
 		entity_manager.set_entity_state(ulid, new_state)
 
@@ -202,6 +276,194 @@ func is_moving_state() -> bool:
 
 func can_accept_command() -> bool:
 	return is_idle() and not has_state(State.PATHFINDING) and not has_state(State.BLOCKED)
+
+# === Animation Atlas Functions (UV-baked mesh system) ===
+
+## Get or create mesh for specific animation frame
+static func get_animation_mesh(entity_type: String, animation_type: AnimationType, frame: int) -> Mesh:
+	var key = "%s:%d:%d" % [entity_type, animation_type, frame]
+
+	if _animation_meshes.has(key):
+		return _animation_meshes[key]
+
+	# Generate mesh on demand
+	var mesh = _create_mesh_for_frame(entity_type, animation_type, frame)
+	if mesh:
+		_animation_meshes[key] = mesh
+	return mesh
+
+## Get atlas texture for entity type
+static func get_atlas_texture(entity_type: String) -> Texture2D:
+	if _atlas_textures.has(entity_type):
+		return _atlas_textures[entity_type]
+
+	# Load atlas texture based on entity type
+	var texture_path = ""
+	match entity_type:
+		"martial_hero", "king", "warrior":
+			texture_path = "res://nodes/npc/martialhero/martialhero_atlas.png"
+		"raptor", "dino", "jezza":
+			# TODO: Create raptor atlas or use individual frames
+			texture_path = "res://nodes/npc/dino/jezza/sheets/raptor-idle.png"  # Temporary
+		_:
+			push_error("NPC: Unknown entity type '%s' for animation atlas" % entity_type)
+			return null
+
+	var texture = load(texture_path)
+	if texture:
+		_atlas_textures[entity_type] = texture
+	else:
+		push_error("NPC: Failed to load texture at %s" % texture_path)
+
+	return texture
+
+## Create mesh with baked UVs for specific animation frame
+static func _create_mesh_for_frame(entity_type: String, animation_type: AnimationType, frame: int) -> ArrayMesh:
+	var atlas_texture = get_atlas_texture(entity_type)
+	if not atlas_texture:
+		return null
+
+	# Validate frame index
+	var max_frames = ANIMATION_FRAMES.get(animation_type, 1)
+	if frame < 0 or frame >= max_frames:
+		push_error("NPC: Invalid frame %d for animation %d (max: %d)" % [frame, animation_type, max_frames])
+		return null
+
+	# Calculate atlas position based on animation type and frame
+	var atlas_position = _get_atlas_position(animation_type, frame)
+	var atlas_col = atlas_position.x
+	var atlas_row = atlas_position.y
+
+	# Atlas texture dimensions
+	var tex_w = float(atlas_texture.get_width())
+	var tex_h = float(atlas_texture.get_height())
+
+	# Calculate UV coordinates for this frame
+	var frame_width = float(ATLAS_FRAME_SIZE)
+	var frame_height = float(ATLAS_FRAME_SIZE)
+
+	var u0 = (atlas_col * frame_width) / tex_w
+	var v0 = (atlas_row * frame_height) / tex_h
+	var u1 = u0 + (frame_width / tex_w)
+	var v1 = v0 + (frame_height / tex_h)
+
+	# No inset needed with nearest-neighbor filtering
+	var inset_px = 0.0
+	var du = inset_px / tex_w
+	var dv = inset_px / tex_h
+
+	u0 += du
+	v0 += dv
+	u1 -= du
+	v1 -= dv
+
+	# Create ArrayMesh with custom UV coordinates
+	var surface_array = []
+	surface_array.resize(Mesh.ARRAY_MAX)
+
+	# Vertices (quad corners) - centered at origin
+	var half_width = frame_width / 2.0   # 100
+	var half_height = frame_height / 2.0  # 100
+
+	var vertices = PackedVector3Array([
+		Vector3(-half_width, -half_height, 0),  # Top-left
+		Vector3(half_width, -half_height, 0),   # Top-right
+		Vector3(-half_width, half_height, 0),   # Bottom-left
+		Vector3(half_width, half_height, 0)     # Bottom-right
+	])
+
+	# UV coordinates for this specific frame
+	var uvs = PackedVector2Array([
+		Vector2(u0, v0),  # Top-left
+		Vector2(u1, v0),  # Top-right
+		Vector2(u0, v1),  # Bottom-left
+		Vector2(u1, v1)   # Bottom-right
+	])
+
+	# Indices (two triangles forming a quad)
+	var indices = PackedInt32Array([
+		0, 1, 2,  # First triangle
+		2, 1, 3   # Second triangle
+	])
+
+	# Normals (all pointing toward camera)
+	var normals = PackedVector3Array([
+		Vector3(0, 0, 1),
+		Vector3(0, 0, 1),
+		Vector3(0, 0, 1),
+		Vector3(0, 0, 1)
+	])
+
+	# Build the surface array
+	surface_array[Mesh.ARRAY_VERTEX] = vertices
+	surface_array[Mesh.ARRAY_TEX_UV] = uvs
+	surface_array[Mesh.ARRAY_NORMAL] = normals
+	surface_array[Mesh.ARRAY_INDEX] = indices
+
+	# Create the mesh
+	var array_mesh = ArrayMesh.new()
+	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surface_array)
+
+	return array_mesh
+
+## Calculate atlas position (col, row) for animation type and frame
+static func _get_atlas_position(animation_type: AnimationType, frame: int) -> Vector2i:
+	var row = 0
+	var col = frame
+
+	match animation_type:
+		AnimationType.IDLE:
+			row = 0
+			col = frame  # 0-7
+		AnimationType.RUN:
+			row = 1
+			col = frame  # 0-7
+		AnimationType.ATTACK1:
+			row = 2
+			col = frame  # 0-5
+		AnimationType.ATTACK2:
+			row = 3
+			col = frame  # 0-5
+		AnimationType.TAKE_HIT:
+			row = 4
+			col = frame  # 0-3
+		AnimationType.DEATH:
+			# Death has 10 frames, wraps across rows 5 and 6
+			if frame < 8:
+				row = 5
+				col = frame  # 0-7
+			else:
+				row = 6
+				col = frame - 8  # 8-9 -> 0-1
+		AnimationType.JUMP:
+			row = 7
+			col = frame  # 0-1
+		AnimationType.FALL:
+			row = 7
+			col = frame + 2  # 0-1 -> 2-3 (after jump frames)
+
+	return Vector2i(col, row)
+
+## Get frame count for animation type
+static func get_frame_count(animation_type: AnimationType) -> int:
+	return ANIMATION_FRAMES.get(animation_type, 1)
+
+## Map game state to animation type
+static func state_to_animation(state: int, is_damaged: bool = false) -> AnimationType:
+	# State enum: IDLE = 0b0001, MOVING = 0b0010, IN_COMBAT = 0b1000000
+
+	# Priority order: Damaged > Combat > Moving > Idle
+	if is_damaged:
+		return AnimationType.TAKE_HIT
+
+	if state & 0b1000000:  # IN_COMBAT
+		return AnimationType.ATTACK1
+
+	if state & 0b0010:  # MOVING
+		return AnimationType.RUN
+
+	# Default to idle
+	return AnimationType.IDLE
 
 # === Angular/Direction Functions ===
 
@@ -287,7 +549,7 @@ func _update_angular_motion(delta: float):
 # === Movement Functions ===
 
 func move_to(target_pos: Vector2):
-	if is_moving or is_rotating_to_target:
+	if has_state(State.MOVING) or is_rotating_to_target:
 		return  # Already moving or rotating
 
 	# Set up new movement segment
@@ -315,14 +577,14 @@ func move_to(target_pos: Vector2):
 				if angle_diff > rotation_threshold:
 					# Start rotating phase - don't move yet
 					is_rotating_to_target = true
-					is_moving = false
+					# Don't set MOVING state yet - waiting for rotation
 				else:
 					# Close enough, start moving immediately
 					is_rotating_to_target = false
-					is_moving = true
+					add_state(State.MOVING)
 			else:
 				# Land entities move immediately
-				is_moving = true
+				add_state(State.MOVING)
 
 func follow_path(path: Array[Vector2i], tile_map):
 	if path.size() == 0:
@@ -546,9 +808,112 @@ func _update_z_index() -> void:
 	else:
 		z_index = Cache.Z_INDEX_NPCS   # Land entities (ground NPCs)
 
+## Initialize animation mesh for UV-baked animations
+func _initialize_animation_mesh() -> void:
+	# Create MeshInstance2D if it doesn't exist
+	if not animation_mesh:
+		animation_mesh = MeshInstance2D.new()
+		add_child(animation_mesh)
+		animation_mesh.name = "AnimationMesh"
+
+	# Load initial animation (IDLE, frame 0) using class static functions
+	var initial_mesh = NPC.get_animation_mesh(entity_type_for_animation, AnimationType.IDLE, 0)
+	var initial_texture = NPC.get_atlas_texture(entity_type_for_animation)
+
+	if initial_mesh and initial_texture:
+		animation_mesh.mesh = initial_mesh
+		animation_mesh.texture = initial_texture
+		animation_mesh.visible = true
+		sprite.visible = false  # Hide directional sprite when using animation mesh
+		current_animation = AnimationType.IDLE
+		animation_frame = 0
+
+		# Scale down the animation mesh to match tile size
+		# Frame is 200x200, scale to approximately 30% to match hex tiles (~60 pixels)
+		animation_mesh.scale = Vector2(0.3, 0.3)
+	else:
+		push_error("NPC: Failed to load initial animation mesh!")
+		use_animation_mesh = false
+
+## Update sprite/animation based on current state
+func _update_animation() -> void:
+	if use_animation_mesh and animation_mesh:
+		# Use UV-baked animation mesh system (high performance)
+		_update_animation_mesh()
+	else:
+		# Fallback: Use color modulation to indicate state
+		if has_state(State.IN_COMBAT):
+			modulate = Color(1.2, 0.9, 0.9, 1.0)  # Reddish
+		elif has_state(State.MOVING):
+			modulate = Color.WHITE
+		elif has_state(State.BLOCKED):
+			modulate = Color(1.2, 1.2, 0.8, 1.0)  # Yellowish
+		elif has_state(State.IDLE):
+			modulate = Color.WHITE
+		else:
+			modulate = Color.WHITE
+
+## Update animation mesh based on current state
+func _update_animation_mesh() -> void:
+	# Determine target animation based on state using class static function
+	var target_animation = NPC.state_to_animation(current_state, is_damaged)
+
+	# If animation changed, reset frame counter
+	if target_animation != current_animation:
+		current_animation = target_animation
+		animation_frame = 0
+		animation_timer = 0.0
+
+	# Get frame count for current animation
+	var frame_count = NPC.get_frame_count(current_animation)
+
+	# Update animation mesh with current frame
+	var mesh = NPC.get_animation_mesh(entity_type_for_animation, current_animation, animation_frame)
+	if mesh:
+		animation_mesh.mesh = mesh
+
+	# Flip animation mesh based on movement direction (similar to shader-based NPCs)
+	if has_state(State.MOVING):
+		var movement_vec = move_target_pos - move_start_pos
+		if movement_vec.length_squared() > 0.01:
+			if movement_vec.x < 0:
+				animation_mesh.scale.x = -abs(animation_mesh.scale.x)  # Face left
+			else:
+				animation_mesh.scale.x = abs(animation_mesh.scale.x)   # Face right
+
+	# Clear damaged flag after hurt animation completes one cycle
+	if is_damaged and current_animation == AnimationType.TAKE_HIT:
+		if animation_frame >= frame_count - 1:
+			is_damaged = false
+
+## Advance animation frame based on time
+func _advance_animation_frame(delta: float) -> void:
+	# Get frame count for current animation using class static function
+	var frame_count = NPC.get_frame_count(current_animation)
+	if frame_count <= 0:
+		return
+
+	# Advance timer
+	animation_timer += delta
+
+	# Check if we should advance to next frame
+	var frame_duration = 1.0 / animation_fps
+	if animation_timer >= frame_duration:
+		animation_timer -= frame_duration
+
+		# Advance to next frame (loop back to 0)
+		animation_frame = (animation_frame + 1) % frame_count
+
 func _process(delta):
 	# Update z-index for proper layering as NPC moves
 	_update_z_index()
+
+	# Advance animation frames if using animation mesh
+	if use_animation_mesh and animation_mesh:
+		_advance_animation_frame(delta)
+
+	# Update sprite/animation based on state
+	_update_animation()
 
 	# CRITICAL: Check pathfinding timeout to prevent stuck state
 	if has_state(State.PATHFINDING):
@@ -563,8 +928,8 @@ func _process(delta):
 	# Pause movement if in combat
 	if current_state & State.IN_COMBAT:
 		# Stop any ongoing movement
-		if is_moving:
-			is_moving = false
+		if has_state(State.MOVING):
+			remove_state(State.MOVING)
 			move_progress = 0.0
 		if is_rotating_to_target:
 			is_rotating_to_target = false
@@ -576,12 +941,11 @@ func _process(delta):
 		if angle_diff <= rotation_threshold:
 			# Rotation complete, start moving
 			is_rotating_to_target = false
-			is_moving = true
 			# Atomic state transition: IDLE -> MOVING (single Rust call)
 			set_state((current_state & ~State.IDLE) | State.MOVING)
 
 	# Smooth movement interpolation
-	if is_moving:
+	if has_state(State.MOVING):
 		# Calculate progress based on actual distance and desired speed (tiles per second)
 		# Average hex tile size is approximately 30 pixels (32x28)
 		const AVERAGE_TILE_SIZE_PIXELS = 30.0
@@ -592,7 +956,7 @@ func _process(delta):
 		if move_progress >= 1.0:
 			# Movement complete - reached waypoint
 			position = move_target_pos
-			is_moving = false
+			remove_state(State.MOVING)
 			move_progress = 1.0
 
 			# Update combat system with new position (if registered)
@@ -633,8 +997,6 @@ func _process(delta):
 				current_path.clear()
 				path_index = 0
 
-				# Clear movement state
-				is_moving = false
 				# Atomic state transition: MOVING -> IDLE (single Rust call)
 				set_state((current_state & ~State.MOVING) | State.IDLE)
 
@@ -701,8 +1063,8 @@ func _register_stats() -> void:
 	else:
 		hex_pos = Vector2i(int(position.x / 128.0), int(position.y / 128.0))
 
-	# Register entity stats with Actor (including player_ulid for team detection)
-	bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y)
+	# Register entity stats with Actor (including player_ulid for team detection and combat info)
+	bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y, combat_type, projectile_type, combat_range)
 
 	# Connect to stat change signals to update health bar
 	if not bridge.stat_changed.is_connected(_on_stat_changed):
@@ -880,6 +1242,10 @@ func _on_entity_damaged(entity_ulid: PackedByteArray, damage: float, new_hp: flo
 	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
 		return
 
+	# Trigger hurt animation if using animation mesh
+	if use_animation_mesh:
+		is_damaged = true
+
 	# Update health bar if it exists
 	if health_bar and is_instance_valid(health_bar):
 		health_bar.set_health_values(new_hp, cached_max_hp)
@@ -930,8 +1296,7 @@ func _exit_tree() -> void:
 ## Reset entity state for pool reuse (called by Pool.release())
 ## CRITICAL: Clears ALL internal state to prevent stale data across pool reuse
 func reset_for_pool() -> void:
-	# Reset movement state
-	is_moving = false
+	# Reset movement state (state flags reset below)
 	is_rotating_to_target = false
 	move_start_pos = Vector2.ZERO
 	move_target_pos = Vector2.ZERO

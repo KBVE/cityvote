@@ -246,6 +246,90 @@ pub type ShipState = EntityState;
 /// NPC state (legacy - maps to EntityState)
 pub type NpcState = EntityState;
 
+/// Combat Type bitwise flags (must match GDScript CombatType enum)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CombatType {
+    Melee = 0b0001,   // Close combat (1 hex range)
+    Ranged = 0b0010,  // Ranged physical attacks (bow, spear, etc.)
+    Bow = 0b0100,     // Bow/crossbow - uses ARROW/SPEAR projectiles
+    Magic = 0b1000,   // Magic attacks - uses spell projectiles
+}
+
+impl CombatType {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0b0001 => Some(CombatType::Melee),
+            0b0010 => Some(CombatType::Ranged),
+            0b0100 => Some(CombatType::Bow),
+            0b1000 => Some(CombatType::Magic),
+            _ => None,
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+
+    /// Get default range for combat type
+    pub fn default_range(self) -> i32 {
+        match self {
+            CombatType::Melee => 1,
+            CombatType::Ranged => 3,
+            CombatType::Bow => 5,
+            CombatType::Magic => 6,
+        }
+    }
+}
+
+/// Projectile Type (for BOW and MAGIC combat types)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ProjectileType {
+    None = 0,
+    Arrow = 1,
+    Spear = 2,
+    FireBolt = 3,
+    ShadowBolt = 4,
+    IceShard = 5,
+    Lightning = 6,
+}
+
+impl ProjectileType {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(ProjectileType::None),
+            1 => Some(ProjectileType::Arrow),
+            2 => Some(ProjectileType::Spear),
+            3 => Some(ProjectileType::FireBolt),
+            4 => Some(ProjectileType::ShadowBolt),
+            5 => Some(ProjectileType::IceShard),
+            6 => Some(ProjectileType::Lightning),
+            _ => None,
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+
+    /// Check if projectile type is magic
+    pub fn is_magic(self) -> bool {
+        matches!(
+            self,
+            ProjectileType::FireBolt
+                | ProjectileType::ShadowBolt
+                | ProjectileType::IceShard
+                | ProjectileType::Lightning
+        )
+    }
+
+    /// Check if projectile type is physical
+    pub fn is_physical(self) -> bool {
+        matches!(self, ProjectileType::Arrow | ProjectileType::Spear)
+    }
+}
+
 /// Ship data (legacy - maps to EntityData with TerrainType::Water)
 pub type ShipData = EntityData;
 
@@ -265,6 +349,9 @@ pub struct EntityData {
     pub owner_id: Option<i64>,             // Godot instance ID of owner (player, AI)
     pub entity_type: String,               // Type identifier (e.g., "viking", "king", "jezza")
     pub cargo: Vec<u8>,                    // Cargo data (water entities only)
+    pub combat_type: CombatType,           // Combat behavior (melee, ranged, bow, magic)
+    pub projectile_type: ProjectileType,   // Projectile type for BOW/MAGIC
+    pub combat_range: i32,                 // Attack range in hexes
 }
 
 impl EntityData {
@@ -275,6 +362,10 @@ impl EntityData {
             TerrainType::Water => EntityStats::new_water_entity(),
             TerrainType::Land => EntityStats::new_land_entity(),
         };
+
+        // Default combat type is melee
+        let combat_type = CombatType::Melee;
+        let combat_range = combat_type.default_range();
 
         Self {
             ulid,
@@ -287,6 +378,9 @@ impl EntityData {
             owner_id: None,
             entity_type,
             cargo: Vec::new(),
+            combat_type,
+            projectile_type: ProjectileType::None,
+            combat_range,
         }
     }
 

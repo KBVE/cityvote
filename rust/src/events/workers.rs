@@ -359,9 +359,9 @@ fn find_closest_enemy(
             continue;
         }
 
-        // Check if in range
+        // Check if in range (use combat_range for combat-specific range)
         let distance = hex_distance(attacker.position, defender.position);
-        if distance > attacker.range {
+        if distance > attacker.combat_range {
             continue;
         }
 
@@ -389,19 +389,41 @@ fn execute_attack(
     let raw_damage = attacker.attack - defender.defense;
     let damage = raw_damage.max(1);
 
-    // Queue damage event
-    let _ = tx.send(CombatWorkResult::DamageDealt {
-        attacker_ulid: attacker.ulid.clone(),
-        defender_ulid: defender.ulid.clone(),
-        damage,
-    });
+    // CombatType flags
+    const MELEE: u8 = 0b0001;
+    const BOW: u8 = 0b0100;
+    const MAGIC: u8 = 0b1000;
 
-    // Check if defender will die
-    let new_hp = defender.hp - damage;
-    if new_hp <= 0 {
-        let _ = tx.send(CombatWorkResult::EntityDied {
-            ulid: defender.ulid.clone(),
+    // Check combat type
+    let is_melee = attacker.combat_type & MELEE != 0;
+    let is_bow = attacker.combat_type & BOW != 0;
+    let is_magic = attacker.combat_type & MAGIC != 0;
+
+    // For ranged combat (BOW or MAGIC), spawn projectile instead of instant damage
+    if is_bow || is_magic {
+        let _ = tx.send(CombatWorkResult::SpawnProjectile {
+            attacker_ulid: attacker.ulid.clone(),
+            attacker_position: attacker.position,
+            target_ulid: defender.ulid.clone(),
+            target_position: defender.position,
+            projectile_type: attacker.projectile_type,
+            damage,
         });
+    } else {
+        // Melee combat - instant damage
+        let _ = tx.send(CombatWorkResult::DamageDealt {
+            attacker_ulid: attacker.ulid.clone(),
+            defender_ulid: defender.ulid.clone(),
+            damage,
+        });
+
+        // Check if defender will die
+        let new_hp = defender.hp - damage;
+        if new_hp <= 0 {
+            let _ = tx.send(CombatWorkResult::EntityDied {
+                ulid: defender.ulid.clone(),
+            });
+        }
     }
 }
 

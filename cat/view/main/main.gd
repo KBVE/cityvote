@@ -237,6 +237,12 @@ func _initialize_game() -> void:
 	# Spawn test Martial Heroes on land tiles
 	_spawn_test_martial_heroes()
 
+	# Spawn test Skull Wizards on land tiles
+	_spawn_test_skull_wizards()
+
+	# Spawn test Fireworms on land tiles
+	_spawn_test_fireworms()
+
 	# Position camera at a city for a nice starting view
 	# DISABLED: Cities don't exist in procedurally generated world yet
 	# _position_camera_at_city()
@@ -424,12 +430,12 @@ func _spawn_test_vikings():
 	# Get spawn position near camera
 	var spawn_near = hex_map.tile_renderer.world_to_tile(camera.position)
 
-	# Spawn 10 vikings using EntityManager (which uses UnifiedEventBridge internally)
+	# Spawn 1 viking for testing
 	# NOTE: Vikings spawn on water near camera position (where chunks are loaded)
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "viking",
-		"count": 10,
+		"count": 1,
 		"tile_type": EntityManager.TileType.WATER,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
@@ -621,11 +627,11 @@ func _apply_wave_shader_to_viking(viking: Node2D) -> void:
 			sprite.material = shader_material
 
 func _spawn_test_jezza():
-	# Spawn 3 Jezzas using EntityManager (which uses UnifiedEventBridge internally)
+	# Spawn 1 Jezza for testing
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "jezza",
-		"count": 3,
+		"count": 1,
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
@@ -637,11 +643,11 @@ func _spawn_test_jezza():
 	})
 
 func _spawn_test_fantasy_warriors():
-	# Spawn 3 Fantasy Warriors using EntityManager (which uses UnifiedEventBridge internally)
+	# Spawn 1 Fantasy Warrior for testing
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "fantasywarrior",
-		"count": 3,
+		"count": 1,
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
@@ -653,11 +659,11 @@ func _spawn_test_fantasy_warriors():
 	})
 
 func _spawn_test_kings():
-	# Spawn 3 Kings using EntityManager (which uses UnifiedEventBridge internally)
+	# Spawn 1 King for testing
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "king",
-		"count": 3,
+		"count": 1,
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
@@ -669,11 +675,11 @@ func _spawn_test_kings():
 	})
 
 func _spawn_test_martial_heroes():
-	# Spawn 10 Martial Heroes using EntityManager (which uses UnifiedEventBridge internally)
+	# Spawn 1 Martial Hero for testing
 	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
 	EntityManager.spawn_multiple({
 		"pool_key": "martialhero",
-		"count": 10,
+		"count": 1,
 		"tile_type": EntityManager.TileType.LAND,
 		"hex_map": hex_map,
 		"tile_map": hex_map.tile_map,
@@ -682,6 +688,38 @@ func _spawn_test_martial_heroes():
 		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
 		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
 		"entity_name": "Martial Hero"
+	})
+
+func _spawn_test_skull_wizards():
+	# Spawn 1 Skull Wizard for testing
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
+		"pool_key": "skullwizard",
+		"count": 1,
+		"tile_type": EntityManager.TileType.LAND,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": EntityManager.occupied_tiles,
+		"storage_array": test_skull_wizards,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
+		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
+		"entity_name": "Skull Wizard"
+	})
+
+func _spawn_test_fireworms():
+	# Spawn 1 Fireworm for testing
+	# ASYNC: spawn_multiple() now returns void, spawns complete via signals
+	EntityManager.spawn_multiple({
+		"pool_key": "fireworm",
+		"count": 1,
+		"tile_type": EntityManager.TileType.LAND,
+		"hex_map": hex_map,
+		"tile_map": hex_map.tile_map,
+		"occupied_tiles": EntityManager.occupied_tiles,
+		"storage_array": test_fireworms,
+		"player_ulid": PackedByteArray(),  # Empty = AI controlled (no friendly fire)
+		"near_pos": hex_map.tile_renderer.world_to_tile(camera.position),
+		"entity_name": "Fireworm"
 	})
 
 # Find entity near a world position (spatial query)
