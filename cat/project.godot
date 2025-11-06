@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+WebSocketStub="*res://core/websocket_stub.gd"
 I18n="*res://core/i18n.gd"
 MapConfig="*res://core/map_config.gd"
 Cache="*res://core/cache.gd"

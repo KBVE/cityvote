@@ -471,7 +471,10 @@ mod wasm {
         user_data: *mut c_void,
     ) -> EM_BOOL {
         let ctx = &*(user_data as *const CallbackContext);
-        *ctx.state.lock().unwrap() = ConnectionState::Connected;
+        // Use try_lock to avoid deadlock
+        if let Ok(mut state) = ctx.state.try_lock() {
+            *state = ConnectionState::Connected;
+        }
         eprintln!("[WASM] WebSocket connection opened");
         EM_TRUE
     }
@@ -482,7 +485,10 @@ mod wasm {
         user_data: *mut c_void,
     ) -> EM_BOOL {
         let ctx = &*(user_data as *const CallbackContext);
-        *ctx.state.lock().unwrap() = ConnectionState::Failed;
+        // Use try_lock to avoid deadlock
+        if let Ok(mut state) = ctx.state.try_lock() {
+            *state = ConnectionState::Failed;
+        }
         eprintln!("[WASM] WebSocket error occurred");
         EM_TRUE
     }
@@ -493,7 +499,10 @@ mod wasm {
         user_data: *mut c_void,
     ) -> EM_BOOL {
         let ctx = &*(user_data as *const CallbackContext);
-        *ctx.state.lock().unwrap() = ConnectionState::Disconnected;
+        // Use try_lock to avoid deadlock
+        if let Ok(mut state) = ctx.state.try_lock() {
+            *state = ConnectionState::Disconnected;
+        }
 
         let code = (*event).code;
         let reason_bytes = &(*event).reason;
@@ -511,22 +520,23 @@ mod wasm {
         user_data: *mut c_void,
     ) -> EM_BOOL {
         let ctx = &*(user_data as *const CallbackContext);
-        let recv_tx = ctx.recv_tx.lock().unwrap();
+        // Use try_lock to avoid deadlock
+        if let Ok(recv_tx) = ctx.recv_tx.try_lock() {
+            let is_text = (*event).is_text == EM_TRUE;
+            let data_ptr = (*event).data;
+            let num_bytes = (*event).num_bytes as usize;
 
-        let is_text = (*event).is_text == EM_TRUE;
-        let data_ptr = (*event).data;
-        let num_bytes = (*event).num_bytes as usize;
-
-        if is_text {
-            // Text message
-            let slice = std::slice::from_raw_parts(data_ptr, num_bytes);
-            if let Ok(text) = std::str::from_utf8(slice) {
-                let _ = recv_tx.send(WebMessage::Text(text.to_string()));
+            if is_text {
+                // Text message
+                let slice = std::slice::from_raw_parts(data_ptr, num_bytes);
+                if let Ok(text) = std::str::from_utf8(slice) {
+                    let _ = recv_tx.send(WebMessage::Text(text.to_string()));
+                }
+            } else {
+                // Binary message
+                let slice = std::slice::from_raw_parts(data_ptr, num_bytes);
+                let _ = recv_tx.send(WebMessage::Binary(slice.to_vec()));
             }
-        } else {
-            // Binary message
-            let slice = std::slice::from_raw_parts(data_ptr, num_bytes);
-            let _ = recv_tx.send(WebMessage::Binary(slice.to_vec()));
         }
 
         EM_TRUE
@@ -634,12 +644,18 @@ mod wasm {
                 }
                 self.socket = -1;
             }
-            *self.state.lock().unwrap() = ConnectionState::Disconnected;
+            // Use try_lock to avoid deadlock
+            if let Ok(mut state) = self.state.try_lock() {
+                *state = ConnectionState::Disconnected;
+            }
             Ok(())
         }
 
         fn state(&self) -> ConnectionState {
-            *self.state.lock().unwrap()
+            // Use try_lock to avoid deadlock - return last known state if locked
+            self.state.try_lock()
+                .map(|s| *s)
+                .unwrap_or(ConnectionState::Disconnected)
         }
     }
 
