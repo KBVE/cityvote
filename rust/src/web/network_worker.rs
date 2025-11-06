@@ -97,10 +97,24 @@ pub struct NetworkWorkerHandle {
 impl NetworkWorkerHandle {
     /// Send a connection request
     pub fn connect(&self, url: String) {
+        #[cfg(not(target_family = "wasm"))]
         godot_print!("[IRC] NetworkWorkerHandle::connect() - sending Connect request for: {}", url);
+        #[cfg(target_family = "wasm")]
+        eprintln!("[IRC] NetworkWorkerHandle::connect() - sending Connect request for: {}", url);
+
         match self.request_tx.send(NetworkWorkerRequest::Connect { url: url.clone() }) {
-            Ok(_) => godot_print!("[IRC] NetworkWorkerHandle::connect() - request sent successfully"),
-            Err(e) => godot_error!("[IRC] NetworkWorkerHandle::connect() - ERROR sending request: {:?}", e),
+            Ok(_) => {
+                #[cfg(not(target_family = "wasm"))]
+                godot_print!("[IRC] NetworkWorkerHandle::connect() - request sent successfully");
+                #[cfg(target_family = "wasm")]
+                eprintln!("[IRC] NetworkWorkerHandle::connect() - request sent successfully");
+            }
+            Err(e) => {
+                #[cfg(not(target_family = "wasm"))]
+                godot_error!("[IRC] NetworkWorkerHandle::connect() - ERROR sending request: {:?}", e);
+                #[cfg(target_family = "wasm")]
+                eprintln!("[IRC] NetworkWorkerHandle::connect() - ERROR sending request: {:?}", e);
+            }
         }
     }
 
@@ -148,7 +162,7 @@ pub fn start_network_worker(config: NetworkWorkerConfig) -> NetworkWorkerHandle 
     }
 }
 
-/// Main network worker loop
+/// Main network worker loop (native - has access to godot_print!)
 #[cfg(not(target_family = "wasm"))]
 fn run_network_worker(
     config: NetworkWorkerConfig,
@@ -346,21 +360,37 @@ fn run_network_worker(
     }
 }
 
+// Emscripten-specific sleep function that yields to the browser event loop
+// This is crucial for WASM - thread::sleep blocks the pthread but emscripten_sleep yields
+#[cfg(target_family = "wasm")]
+fn emscripten_sleep_ms(ms: u32) {
+    unsafe {
+        emscripten_sleep(ms);
+    }
+}
+
+#[cfg(target_family = "wasm")]
+extern "C" {
+    // Emscripten's sleep function - yields to browser event loop unlike std::thread::sleep
+    fn emscripten_sleep(ms: u32);
+}
+
 /// Main network worker loop for WASM
 /// Uses pthread emulation via Emscripten atomics
+/// IMPORTANT: Uses emscripten_sleep instead of thread::sleep to avoid blocking the event loop
 #[cfg(target_family = "wasm")]
 fn run_network_worker(
     config: NetworkWorkerConfig,
     request_rx: Receiver<NetworkWorkerRequest>,
     response_tx: Sender<NetworkWorkerResponse>,
 ) {
-    godot_print!("[IRC] WASM Network worker thread started with pthread, tick_rate: {}ms", config.tick_rate_ms);
+    // Note: Using eprintln! instead of godot_print! because godot macros use wasm-bindgen
+    // which is incompatible with Emscripten (wasm32-unknown-emscripten)
+    eprintln!("[IRC] WASM Network worker thread started with pthread, tick_rate: {}ms", config.tick_rate_ms);
     let mut client: Option<WasmWebSocketClient> = None;
     let mut reconnect_attempts = 0u32;
     let mut last_url: Option<String> = None;
     let mut should_reconnect = false;
-
-    let tick_duration = Duration::from_millis(config.tick_rate_ms);
 
     loop {
             // Process incoming requests
@@ -465,8 +495,8 @@ fn run_network_worker(
                     {
                         reconnect_attempts += 1;
 
-                        // Sleep before reconnection attempt
-                        thread::sleep(Duration::from_millis(config.reconnect_interval_ms));
+                        // Sleep before reconnection attempt (use emscripten_sleep to yield to event loop)
+                        emscripten_sleep_ms(config.reconnect_interval_ms as u32);
 
                         if let Some(ref url) = last_url {
                             if let Ok(mut new_client) = WasmWebSocketClient::new() {
@@ -480,7 +510,7 @@ fn run_network_worker(
                 }
             }
 
-            // Sleep to avoid busy-waiting (pthread in WASM supports thread::sleep)
-            thread::sleep(tick_duration);
+            // Sleep to avoid busy-waiting (use emscripten_sleep to yield to event loop)
+            emscripten_sleep_ms(config.tick_rate_ms as u32);
         }
 }

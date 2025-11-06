@@ -605,7 +605,19 @@ impl ComboDetector {
         let mut values: Vec<u8> = by_value.keys().copied().collect();
         values.sort_by(|a, b| b.cmp(a)); // Sort descending
 
-        // Try to find highest straight
+        // Check for 10-J-Q-K-A (Broadway / Ace high straight) - HIGHEST possible straight
+        if values.contains(&1) && values.contains(&10) && values.contains(&11)
+           && values.contains(&12) && values.contains(&13) {
+            let mut result = Vec::new();
+            for &val in &[1, 13, 12, 11, 10] { // Ace, King, Queen, Jack, 10
+                if let Some(card_indices) = by_value.get(&val) {
+                    result.extend(Self::pick_n_deterministic(card_indices, 1, all_cards));
+                }
+            }
+            return result;
+        }
+
+        // Try to find highest straight (standard consecutive)
         for i in 0..=values.len().saturating_sub(5) {
             let window = &values[i..i+5];
             let mut is_straight = true;
@@ -626,7 +638,7 @@ impl ComboDetector {
             }
         }
 
-        // Check for A-2-3-4-5 (wheel)
+        // Check for A-2-3-4-5 (wheel / Ace low straight) - LOWEST straight
         if values.contains(&1) && values.contains(&2) && values.contains(&3)
            && values.contains(&4) && values.contains(&5) {
             let mut result = Vec::new();
@@ -930,9 +942,15 @@ impl ComboDetector {
             }
         }
 
-        // Check for A-2-3-4-5 (Ace low straight)
+        // Check for A-2-3-4-5 (Ace low straight / wheel)
         if values.contains(&1) && values.contains(&2) && values.contains(&3)
            && values.contains(&4) && values.contains(&5) {
+            return Some(());
+        }
+
+        // Check for 10-J-Q-K-A (Ace high straight / Broadway)
+        if values.contains(&1) && values.contains(&10) && values.contains(&11)
+           && values.contains(&12) && values.contains(&13) {
             return Some(());
         }
 

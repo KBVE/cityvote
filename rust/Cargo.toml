@@ -13,10 +13,6 @@ debug_logs = []
 
 [dependencies]
 arc-swap = "1.7.1"
-bevy = { version = "0.17.2", default-features = false, features = [
-    "bevy_asset",
-    "bevy_state",
-] }
 bitflags = "2.10.0"
 crossbeam-queue = "0.3.12"
 crossbeam-channel = "0.5"
@@ -45,13 +41,12 @@ tungstenite = { version = "0.24", default-features = false }
 rustls = { version = "0.23", features = ["ring"] }
 futures-util = "0.3"
 
-# HTTP/WebSocket support (WASM)
+# HTTP/WebSocket support (WASM via Emscripten)
+# Note: Godot uses wasm32-unknown-emscripten, NOT wasm32-unknown-unknown
+# Therefore we use Emscripten's native WebSocket API instead of wasm-bindgen/gloo-net
 [target.'cfg(target_family = "wasm")'.dependencies]
-gloo-net = { version = "0.6.0", features = ["websocket", "http"] }
-wasm-bindgen-futures = "0.4"
-wasm-bindgen = "0.2"
-js-sys = "0.3"
-futures-util = { version = "0.3", features = ["sink"] }
+# Emscripten provides WebSocket support through its sys APIs
+# No additional dependencies needed - using emscripten_websocket_sys directly
 
 # WASM storage (uses Emscripten IDBFS backed by browser IndexedDB)
 # WASM implementation uses standard Rust std::fs operations with /terrain_cache mounted as IDBFS

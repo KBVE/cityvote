@@ -9,6 +9,9 @@ pub mod irc_client;
 pub mod chat_history;
 pub mod irc_bridge;
 
+#[cfg(target_family = "wasm")]
+pub mod emscripten_websocket;
+
 pub use client::{
     ConnectionState, HttpClient, WebError, WebMessage, WebResult, WebSocketClient,
 };

@@ -415,184 +415,226 @@ mod native {
 }
 
 // ============================================================================
-// WASM IMPLEMENTATION (gloo-net)
+// WASM IMPLEMENTATION (Emscripten native WebSocket)
 // ============================================================================
 #[cfg(target_family = "wasm")]
 mod wasm {
     use super::*;
+    use crate::web::emscripten_websocket::*;
     use crossbeam_channel::{unbounded, Receiver, Sender};
-    use gloo_net::websocket::{futures::WebSocket, Message};
+    use std::ffi::{CStr, CString};
+    use std::os::raw::{c_char, c_int, c_uint, c_void};
     use std::sync::{Arc, Mutex};
-    use wasm_bindgen_futures::spawn_local;
 
-    /// WASM WebSocket client using gloo-net
+    /// WASM WebSocket client using Emscripten native WebSocket API
     pub struct WasmWebSocketClient {
+        socket: EMSCRIPTEN_WEBSOCKET_T,
         state: Arc<Mutex<ConnectionState>>,
-        send_tx: Option<Sender<WebMessage>>,
-        recv_rx: Option<Receiver<WebMessage>>,
+        recv_rx: Receiver<WebMessage>,
+        // Keep channels alive (they're used by callbacks)
+        _recv_tx: Arc<Mutex<Sender<WebMessage>>>,
     }
 
     impl WasmWebSocketClient {
         pub fn new() -> WebResult<Self> {
+            // Check if WebSocket is supported
+            unsafe {
+                if emscripten_websocket_is_supported() == EM_FALSE {
+                    return Err(WebError::Other(
+                        "WebSocket not supported in this environment".to_string(),
+                    ));
+                }
+            }
+
+            // Create channels for receiving messages
+            let (recv_tx, recv_rx) = unbounded::<WebMessage>();
+
             Ok(Self {
+                socket: -1, // Invalid socket initially
                 state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
-                send_tx: None,
-                recv_rx: None,
+                recv_rx,
+                _recv_tx: Arc::new(Mutex::new(recv_tx)),
             })
         }
     }
 
+    // Structure to pass state and channels to callbacks
+    struct CallbackContext {
+        state: Arc<Mutex<ConnectionState>>,
+        recv_tx: Arc<Mutex<Sender<WebMessage>>>,
+    }
+
+    // Callback handlers for Emscripten WebSocket events
+    unsafe extern "C" fn on_open(
+        _event_type: c_int,
+        _event: *const EmscriptenWebSocketOpenEvent,
+        user_data: *mut c_void,
+    ) -> EM_BOOL {
+        let ctx = &*(user_data as *const CallbackContext);
+        *ctx.state.lock().unwrap() = ConnectionState::Connected;
+        eprintln!("[WASM] WebSocket connection opened");
+        EM_TRUE
+    }
+
+    unsafe extern "C" fn on_error(
+        _event_type: c_int,
+        _event: *const EmscriptenWebSocketErrorEvent,
+        user_data: *mut c_void,
+    ) -> EM_BOOL {
+        let ctx = &*(user_data as *const CallbackContext);
+        *ctx.state.lock().unwrap() = ConnectionState::Failed;
+        eprintln!("[WASM] WebSocket error occurred");
+        EM_TRUE
+    }
+
+    unsafe extern "C" fn on_close(
+        _event_type: c_int,
+        event: *const EmscriptenWebSocketCloseEvent,
+        user_data: *mut c_void,
+    ) -> EM_BOOL {
+        let ctx = &*(user_data as *const CallbackContext);
+        *ctx.state.lock().unwrap() = ConnectionState::Disconnected;
+
+        let code = (*event).code;
+        let reason_bytes = &(*event).reason;
+        let reason = CStr::from_ptr(reason_bytes.as_ptr())
+            .to_string_lossy()
+            .into_owned();
+
+        eprintln!("[WASM] WebSocket closed: code={}, reason={}", code, reason);
+        EM_TRUE
+    }
+
+    unsafe extern "C" fn on_message(
+        _event_type: c_int,
+        event: *const EmscriptenWebSocketMessageEvent,
+        user_data: *mut c_void,
+    ) -> EM_BOOL {
+        let ctx = &*(user_data as *const CallbackContext);
+        let recv_tx = ctx.recv_tx.lock().unwrap();
+
+        let is_text = (*event).is_text == EM_TRUE;
+        let data_ptr = (*event).data;
+        let num_bytes = (*event).num_bytes as usize;
+
+        if is_text {
+            // Text message
+            let slice = std::slice::from_raw_parts(data_ptr, num_bytes);
+            if let Ok(text) = std::str::from_utf8(slice) {
+                let _ = recv_tx.send(WebMessage::Text(text.to_string()));
+            }
+        } else {
+            // Binary message
+            let slice = std::slice::from_raw_parts(data_ptr, num_bytes);
+            let _ = recv_tx.send(WebMessage::Binary(slice.to_vec()));
+        }
+
+        EM_TRUE
+    }
+
     impl WebSocketClient for WasmWebSocketClient {
         fn connect(&mut self, url: &str) -> WebResult<()> {
-            use futures_util::{SinkExt, StreamExt};
-
-            let (send_tx, send_rx) = unbounded::<WebMessage>();
-            let (recv_tx, recv_rx) = unbounded::<WebMessage>();
-
-            let state = Arc::clone(&self.state);
-            let url = url.to_string();
-
             // Update state to connecting
-            *state.lock().unwrap() = ConnectionState::Connecting;
+            *self.state.lock().unwrap() = ConnectionState::Connecting;
 
-            // Spawn WebSocket handler on WASM
-            spawn_local(async move {
-                // Open WebSocket with IRCv3 subprotocol
-                match WebSocket::open_with_protocol(&url, "text.ircv3.net") {
-                    Ok(ws) => {
-                        *state.lock().unwrap() = ConnectionState::Connected;
+            // Prepare URL and protocol
+            let url_c = CString::new(url)
+                .map_err(|e| WebError::InvalidUrl(e.to_string()))?;
 
-                        // Wrap WebSocket in Arc<Mutex> for shared access
-                        let ws = Arc::new(Mutex::new(ws));
+            // IRC WebSocket subprotocol
+            let protocol = CString::new("text.ircv3.net")
+                .map_err(|e| WebError::Other(e.to_string()))?;
+            let protocols = vec![protocol.as_ptr()];
 
-                        // Clone for receiver task
-                        let ws_recv = Arc::clone(&ws);
-                        let state_recv = Arc::clone(&state);
+            // Create WebSocket attributes
+            let attrs = EmscriptenWebSocketCreateAttributes {
+                url: url_c.as_ptr(),
+                protocols: protocols.as_ptr(),
+                num_protocols: protocols.len() as c_int,
+                create_on_main_thread: EM_TRUE,
+            };
 
-                        // Spawn receiver task - listens for incoming messages
-                        spawn_local(async move {
-                            loop {
-                                let result = {
-                                    let mut ws_lock = ws_recv.lock().unwrap();
-                                    ws_lock.next().await
-                                };
-
-                                match result {
-                                    Some(Ok(msg)) => {
-                                        let web_msg = match msg {
-                                            Message::Text(text) => WebMessage::Text(text),
-                                            Message::Bytes(data) => WebMessage::Binary(data),
-                                        };
-
-                                        if recv_tx.send(web_msg).is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Some(Err(_)) => {
-                                        *state_recv.lock().unwrap() = ConnectionState::Failed;
-                                        break;
-                                    }
-                                    None => {
-                                        *state_recv.lock().unwrap() = ConnectionState::Disconnected;
-                                        break;
-                                    }
-                                }
-                            }
-                        });
-
-                        // Sender loop - sends messages from send_rx channel
-                        // Note: Using try_recv() in a loop with yield instead of blocking recv()
-                        // because WASM doesn't support blocking in async contexts
-                        let state_send = Arc::clone(&state);
-                        loop {
-                            // Non-blocking receive
-                            match send_rx.try_recv() {
-                                Ok(msg) => {
-                                    match msg {
-                                        WebMessage::Text(text) => {
-                                            let result = {
-                                                let mut ws_lock = ws.lock().unwrap();
-                                                ws_lock.send(Message::Text(text)).await
-                                            };
-                                            if result.is_err() {
-                                                *state_send.lock().unwrap() = ConnectionState::Failed;
-                                                break;
-                                            }
-                                        }
-                                        WebMessage::Binary(data) => {
-                                            let result = {
-                                                let mut ws_lock = ws.lock().unwrap();
-                                                ws_lock.send(Message::Bytes(data)).await
-                                            };
-                                            if result.is_err() {
-                                                *state_send.lock().unwrap() = ConnectionState::Failed;
-                                                break;
-                                            }
-                                        }
-                                        WebMessage::Close => {
-                                            // Take ownership of WebSocket to close it
-                                            if let Ok(ws_owned) = Arc::try_unwrap(Arc::clone(&ws)) {
-                                                if let Ok(ws_inner) = ws_owned.into_inner() {
-                                                    let _ = ws_inner.close(None, None);
-                                                }
-                                            }
-                                            break;
-                                        }
-                                        _ => continue, // gloo-net doesn't support ping/pong directly
-                                    }
-                                }
-                                Err(_) => {
-                                    // No messages available, yield to event loop
-                                    wasm_bindgen_futures::JsFuture::from(
-                                        js_sys::Promise::resolve(&wasm_bindgen::JsValue::NULL)
-                                    ).await.ok();
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        *state.lock().unwrap() = ConnectionState::Failed;
-                        eprintln!("[WASM] WebSocket connection failed: {:?}", e);
-                    }
-                }
+            // Create callback context (Box to keep it alive)
+            let ctx = Box::new(CallbackContext {
+                state: Arc::clone(&self.state),
+                recv_tx: Arc::clone(&self._recv_tx),
             });
+            let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
 
-            self.send_tx = Some(send_tx);
-            self.recv_rx = Some(recv_rx);
+            // Create WebSocket
+            unsafe {
+                self.socket = emscripten_websocket_new(&attrs);
 
+                if self.socket <= 0 {
+                    // Free context on failure
+                    let _ = Box::from_raw(ctx_ptr as *mut CallbackContext);
+                    return Err(WebError::ConnectionFailed(
+                        "Failed to create WebSocket".to_string(),
+                    ));
+                }
+
+                // Set up event callbacks
+                emscripten_websocket_set_onopen_callback(self.socket, ctx_ptr, on_open);
+                emscripten_websocket_set_onerror_callback(self.socket, ctx_ptr, on_error);
+                emscripten_websocket_set_onclose_callback(self.socket, ctx_ptr, on_close);
+                emscripten_websocket_set_onmessage_callback(self.socket, ctx_ptr, on_message);
+            }
+
+            eprintln!("[WASM] WebSocket connection initiated to: {}", url);
             Ok(())
         }
 
         fn send(&mut self, message: WebMessage) -> WebResult<()> {
-            if let Some(tx) = &self.send_tx {
-                tx.send(message)
-                    .map_err(|e| WebError::SendFailed(e.to_string()))?;
-                Ok(())
-            } else {
-                Err(WebError::Disconnected)
+            if self.socket <= 0 {
+                return Err(WebError::Disconnected);
             }
+
+            unsafe {
+                match message {
+                    WebMessage::Text(text) => {
+                        let text_c = CString::new(text)
+                            .map_err(|e| WebError::SendFailed(e.to_string()))?;
+                        let result =
+                            emscripten_websocket_send_utf8_text(self.socket, text_c.as_ptr());
+                        if result != EMSCRIPTEN_RESULT_SUCCESS {
+                            return Err(WebError::SendFailed(format!("Send failed: {}", result)));
+                        }
+                    }
+                    WebMessage::Binary(data) => {
+                        let result = emscripten_websocket_send_binary(
+                            self.socket,
+                            data.as_ptr() as *const c_void,
+                            data.len() as c_uint,
+                        );
+                        if result != EMSCRIPTEN_RESULT_SUCCESS {
+                            return Err(WebError::SendFailed(format!("Send failed: {}", result)));
+                        }
+                    }
+                    _ => {} // Ping/Pong/Close handled elsewhere
+                }
+            }
+
+            Ok(())
         }
 
         fn try_recv(&mut self) -> WebResult<Option<WebMessage>> {
-            if let Some(rx) = &self.recv_rx {
-                match rx.try_recv() {
-                    Ok(msg) => Ok(Some(msg)),
-                    Err(crossbeam_channel::TryRecvError::Empty) => Ok(None),
-                    Err(e) => Err(WebError::ReceiveFailed(e.to_string())),
-                }
-            } else {
-                Err(WebError::Disconnected)
+            match self.recv_rx.try_recv() {
+                Ok(msg) => Ok(Some(msg)),
+                Err(crossbeam_channel::TryRecvError::Empty) => Ok(None),
+                Err(e) => Err(WebError::ReceiveFailed(e.to_string())),
             }
         }
 
         fn close(&mut self) -> WebResult<()> {
-            if let Some(tx) = &self.send_tx {
-                tx.send(WebMessage::Close)
-                    .map_err(|e| WebError::SendFailed(e.to_string()))?;
+            if self.socket > 0 {
+                unsafe {
+                    let reason = CString::new("Client closing connection").unwrap();
+                    emscripten_websocket_close(self.socket, 1000, reason.as_ptr());
+                    emscripten_websocket_delete(self.socket);
+                }
+                self.socket = -1;
             }
             *self.state.lock().unwrap() = ConnectionState::Disconnected;
-            self.send_tx = None;
-            self.recv_rx = None;
             Ok(())
         }
 

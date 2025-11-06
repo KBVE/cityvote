@@ -658,14 +658,28 @@ impl UnifiedEventBridge {
     /// player_name: Nickname to use for the connection
     #[func]
     pub fn irc_connect(&self, player_name: GString) {
+        #[cfg(not(target_family = "wasm"))]
         godot_print!("[IRC] Rust FFI bridge irc_connect called with player_name: {}", player_name);
+        #[cfg(target_family = "wasm")]
+        eprintln!("[IRC] Rust FFI bridge irc_connect called with player_name: {}", player_name);
+
         let request = GameRequest::IrcConnect {
             player_name: player_name.to_string(),
         };
 
         match CHANNELS.request_tx.send(request) {
-            Ok(_) => godot_print!("[IRC] IrcConnect request sent to Actor successfully"),
-            Err(e) => godot_error!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e),
+            Ok(_) => {
+                #[cfg(not(target_family = "wasm"))]
+                godot_print!("[IRC] IrcConnect request sent to Actor successfully");
+                #[cfg(target_family = "wasm")]
+                eprintln!("[IRC] IrcConnect request sent to Actor successfully");
+            }
+            Err(e) => {
+                #[cfg(not(target_family = "wasm"))]
+                godot_error!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e);
+                #[cfg(target_family = "wasm")]
+                eprintln!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e);
+            }
         }
     }
 

@@ -40,30 +40,6 @@ unsafe impl ExtensionLibrary for Godo {
                 let _ = rustls::crypto::ring::default_provider().install_default();
             }
 
-            // Set up panic hook for better diagnostics
-            std::panic::set_hook(Box::new(|panic_info| {
-                let payload = panic_info.payload();
-                let message = if let Some(s) = payload.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = payload.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "Unknown panic payload".to_string()
-                };
-
-                let location = if let Some(loc) = panic_info.location() {
-                    format!("{}:{}:{}", loc.file(), loc.line(), loc.column())
-                } else {
-                    "Unknown location".to_string()
-                };
-
-                godot::prelude::godot_error!(
-                    "RUST PANIC: {} at {}",
-                    message,
-                    location
-                );
-            }));
-
             // Register AsyncRuntime singleton for tokio operations (native only)
             #[cfg(not(target_family = "wasm"))]
             {
