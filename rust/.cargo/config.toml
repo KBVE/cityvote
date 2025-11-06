@@ -5,7 +5,7 @@ rustflags = [
     "-C", "link-args=-sUSE_PTHREADS=1",
     "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
     "-C", "link-args=-sSHARED_MEMORY=1",
-    "-C", "link-args=-sPTHREAD_POOL_SIZE=64", # Thread pool size for worker threads (GameActor + NetworkWorker + ChunkGen + CardCombo + Toast + ResourceLedger + ...)
+    "-C", "link-args=-sPTHREAD_POOL_SIZE=128", # Thread pool size for worker threads (GameActor + ChunkGen + CardCombo + Toast + ResourceLedger + ...)
     "-C", "link-args=-sPTHREAD_POOL_SIZE_STRICT=2", # Throw error instead of deadlock if pool exhausted
 
     # Godot GDExtension requirements

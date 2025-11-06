@@ -135,51 +135,52 @@ impl UnifiedEventBridge {
     #[signal]
     fn combo_detected(hand_rank: i32, hand_name: GString, positions: VariantArray, bonuses: VariantArray);
 
-    // === IRC Chat Signals ===
-
-    /// Emitted when connected to IRC server
-    #[signal]
-    fn irc_connected(nickname: GString, server: GString);
-
-    /// Emitted when disconnected from IRC
-    #[signal]
-    fn irc_disconnected(reason: GString);
-
-    /// Emitted when joined an IRC channel
-    #[signal]
-    fn irc_joined_channel(channel: GString, nickname: GString);
-
-    /// Emitted when left an IRC channel
-    #[signal]
-    fn irc_left_channel(channel: GString, nickname: GString, message: GString);
-
-    /// Emitted when a channel message is received
-    #[signal]
-    fn irc_channel_message(channel: GString, sender: GString, message: GString);
-
-    /// Emitted when a private message is received
-    #[signal]
-    fn irc_private_message(sender: GString, message: GString);
-
-    /// Emitted when a notice is received
-    #[signal]
-    fn irc_notice(sender: GString, message: GString);
-
-    /// Emitted when an IRC error occurs
-    #[signal]
-    fn irc_error(message: GString);
-
-    /// Emitted when a user joins a channel
-    #[signal]
-    fn irc_user_joined(channel: GString, nickname: GString);
-
-    /// Emitted when a user leaves a channel
-    #[signal]
-    fn irc_user_parted(channel: GString, nickname: GString, message: GString);
-
-    /// Emitted when a user quits IRC
-    #[signal]
-    fn irc_user_quit(nickname: GString, message: GString);
+    // DEPRECATED: IRC/WebSocket now handled by GDScript (irc_websocket_client.gd)
+    // // === IRC Chat Signals ===
+    //
+    // /// Emitted when connected to IRC server
+    // #[signal]
+    // fn irc_connected(nickname: GString, server: GString);
+    //
+    // /// Emitted when disconnected from IRC
+    // #[signal]
+    // fn irc_disconnected(reason: GString);
+    //
+    // /// Emitted when joined an IRC channel
+    // #[signal]
+    // fn irc_joined_channel(channel: GString, nickname: GString);
+    //
+    // /// Emitted when left an IRC channel
+    // #[signal]
+    // fn irc_left_channel(channel: GString, nickname: GString, message: GString);
+    //
+    // /// Emitted when a channel message is received
+    // #[signal]
+    // fn irc_channel_message(channel: GString, sender: GString, message: GString);
+    //
+    // /// Emitted when a private message is received
+    // #[signal]
+    // fn irc_private_message(sender: GString, message: GString);
+    //
+    // /// Emitted when a notice is received
+    // #[signal]
+    // fn irc_notice(sender: GString, message: GString);
+    //
+    // /// Emitted when an IRC error occurs
+    // #[signal]
+    // fn irc_error(message: GString);
+    //
+    // /// Emitted when a user joins a channel
+    // #[signal]
+    // fn irc_user_joined(channel: GString, nickname: GString);
+    //
+    // /// Emitted when a user leaves a channel
+    // #[signal]
+    // fn irc_user_parted(channel: GString, nickname: GString, message: GString);
+    //
+    // /// Emitted when a user quits IRC
+    // #[signal]
+    // fn irc_user_quit(nickname: GString, message: GString);
 
     // ========================================================================
     // REQUEST METHODS (Unified API - All game requests)
@@ -488,244 +489,246 @@ impl UnifiedEventBridge {
         dict
     }
 
-    // ========================================================================
-    // IRC CHAT HISTORY METHODS (Query DashMap storage from GDScript)
-    // ========================================================================
+    // DEPRECATED: IRC/WebSocket now handled by GDScript (irc_websocket_client.gd)
+    // // ========================================================================
+    // // IRC CHAT HISTORY METHODS (Query DashMap storage from GDScript)
+    // // ========================================================================
+    //
+    // /// Get all messages from a channel
+    // /// Returns: Array of Dictionaries with keys: sender, message, timestamp, msg_type
+    // #[func]
+    // pub fn get_channel_messages(&self, channel: GString) -> Array<Dictionary> {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //     let mut result = Array::new();
+    //
+    //     if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
+    //         for msg in history.messages() {
+    //             let mut dict = Dictionary::new();
+    //             dict.set("sender", GString::from(&msg.sender));
+    //             dict.set("message", GString::from(&msg.message));
+    //             dict.set("timestamp", msg.timestamp as i64);
+    //             dict.set("msg_type", msg.msg_type as i64);
+    //             result.push(&dict);
+    //         }
+    //     }
+    //
+    //     result
+    // }
+    //
+    // /// Get last N messages from a channel
+    // #[func]
+    // pub fn get_last_messages(&self, channel: GString, count: i64) -> Array<Dictionary> {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //     let mut result = Array::new();
+    //
+    //     if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
+    //         let messages = history.last_n(count as usize);
+    //         for msg in messages {
+    //             let mut dict = Dictionary::new();
+    //             dict.set("sender", GString::from(&msg.sender));
+    //             dict.set("message", GString::from(&msg.message));
+    //             dict.set("timestamp", msg.timestamp as i64);
+    //             dict.set("msg_type", msg.msg_type as i64);
+    //             result.push(&dict);
+    //         }
+    //     }
+    //
+    //     result
+    // }
+    //
+    // /// Get messages after a specific timestamp
+    // #[func]
+    // pub fn get_messages_after(&self, channel: GString, timestamp: i64) -> Array<Dictionary> {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //     let mut result = Array::new();
+    //
+    //     if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
+    //         let messages = history.messages_after(timestamp as u64);
+    //         for msg in messages {
+    //             let mut dict = Dictionary::new();
+    //             dict.set("sender", GString::from(&msg.sender));
+    //             dict.set("message", GString::from(&msg.message));
+    //             dict.set("timestamp", msg.timestamp as i64);
+    //             dict.set("msg_type", msg.msg_type as i64);
+    //             result.push(&dict);
+    //         }
+    //     }
+    //
+    //     result
+    // }
+    //
+    // /// Search messages in a channel
+    // #[func]
+    // pub fn search_messages(&self, channel: GString, query: GString) -> Array<Dictionary> {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //     let query_str = query.to_string();
+    //     let mut result = Array::new();
+    //
+    //     if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
+    //         let messages = history.search(&query_str);
+    //         for msg in messages {
+    //             let mut dict = Dictionary::new();
+    //             dict.set("sender", GString::from(&msg.sender));
+    //             dict.set("message", GString::from(&msg.message));
+    //             dict.set("timestamp", msg.timestamp as i64);
+    //             dict.set("msg_type", msg.msg_type as i64);
+    //             result.push(&dict);
+    //         }
+    //     }
+    //
+    //     result
+    // }
+    //
+    // /// Get messages from a specific sender
+    // #[func]
+    // pub fn get_messages_from(&self, channel: GString, sender: GString) -> Array<Dictionary> {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //     let sender_str = sender.to_string();
+    //     let mut result = Array::new();
+    //
+    //     if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
+    //         let messages = history.from_sender(&sender_str);
+    //         for msg in messages {
+    //             let mut dict = Dictionary::new();
+    //             dict.set("sender", GString::from(&msg.sender));
+    //             dict.set("message", GString::from(&msg.message));
+    //             dict.set("timestamp", msg.timestamp as i64);
+    //             dict.set("msg_type", msg.msg_type as i64);
+    //             result.push(&dict);
+    //         }
+    //     }
+    //
+    //     result
+    // }
+    //
+    // /// Get number of messages in a channel
+    // #[func]
+    // pub fn get_message_count(&self, channel: GString) -> i64 {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //
+    //     if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
+    //         history.len() as i64
+    //     } else {
+    //         0
+    //     }
+    // }
+    //
+    // /// Get list of all channels with messages
+    // #[func]
+    // pub fn get_channels(&self) -> Array<GString> {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let mut result = Array::new();
+    //
+    //     for entry in IRC_CHAT_HISTORY.iter() {
+    //         let channel_name = GString::from(entry.key());
+    //         result.push(&channel_name);
+    //     }
+    //
+    //     result
+    // }
+    //
+    // /// Clear all messages in a channel
+    // #[func]
+    // pub fn clear_channel(&self, channel: GString) {
+    //     use super::actor::IRC_CHAT_HISTORY;
+    //
+    //     let channel_str = channel.to_string();
+    //
+    //     if let Some(mut history) = IRC_CHAT_HISTORY.get_mut(&channel_str) {
+    //         history.clear();
+    //     }
+    // }
 
-    /// Get all messages from a channel
-    /// Returns: Array of Dictionaries with keys: sender, message, timestamp, msg_type
-    #[func]
-    pub fn get_channel_messages(&self, channel: GString) -> Array<Dictionary> {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-        let mut result = Array::new();
-
-        if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
-            for msg in history.messages() {
-                let mut dict = Dictionary::new();
-                dict.set("sender", GString::from(&msg.sender));
-                dict.set("message", GString::from(&msg.message));
-                dict.set("timestamp", msg.timestamp as i64);
-                dict.set("msg_type", msg.msg_type as i64);
-                result.push(&dict);
-            }
-        }
-
-        result
-    }
-
-    /// Get last N messages from a channel
-    #[func]
-    pub fn get_last_messages(&self, channel: GString, count: i64) -> Array<Dictionary> {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-        let mut result = Array::new();
-
-        if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
-            let messages = history.last_n(count as usize);
-            for msg in messages {
-                let mut dict = Dictionary::new();
-                dict.set("sender", GString::from(&msg.sender));
-                dict.set("message", GString::from(&msg.message));
-                dict.set("timestamp", msg.timestamp as i64);
-                dict.set("msg_type", msg.msg_type as i64);
-                result.push(&dict);
-            }
-        }
-
-        result
-    }
-
-    /// Get messages after a specific timestamp
-    #[func]
-    pub fn get_messages_after(&self, channel: GString, timestamp: i64) -> Array<Dictionary> {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-        let mut result = Array::new();
-
-        if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
-            let messages = history.messages_after(timestamp as u64);
-            for msg in messages {
-                let mut dict = Dictionary::new();
-                dict.set("sender", GString::from(&msg.sender));
-                dict.set("message", GString::from(&msg.message));
-                dict.set("timestamp", msg.timestamp as i64);
-                dict.set("msg_type", msg.msg_type as i64);
-                result.push(&dict);
-            }
-        }
-
-        result
-    }
-
-    /// Search messages in a channel
-    #[func]
-    pub fn search_messages(&self, channel: GString, query: GString) -> Array<Dictionary> {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-        let query_str = query.to_string();
-        let mut result = Array::new();
-
-        if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
-            let messages = history.search(&query_str);
-            for msg in messages {
-                let mut dict = Dictionary::new();
-                dict.set("sender", GString::from(&msg.sender));
-                dict.set("message", GString::from(&msg.message));
-                dict.set("timestamp", msg.timestamp as i64);
-                dict.set("msg_type", msg.msg_type as i64);
-                result.push(&dict);
-            }
-        }
-
-        result
-    }
-
-    /// Get messages from a specific sender
-    #[func]
-    pub fn get_messages_from(&self, channel: GString, sender: GString) -> Array<Dictionary> {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-        let sender_str = sender.to_string();
-        let mut result = Array::new();
-
-        if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
-            let messages = history.from_sender(&sender_str);
-            for msg in messages {
-                let mut dict = Dictionary::new();
-                dict.set("sender", GString::from(&msg.sender));
-                dict.set("message", GString::from(&msg.message));
-                dict.set("timestamp", msg.timestamp as i64);
-                dict.set("msg_type", msg.msg_type as i64);
-                result.push(&dict);
-            }
-        }
-
-        result
-    }
-
-    /// Get number of messages in a channel
-    #[func]
-    pub fn get_message_count(&self, channel: GString) -> i64 {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-
-        if let Some(history) = IRC_CHAT_HISTORY.get(&channel_str) {
-            history.len() as i64
-        } else {
-            0
-        }
-    }
-
-    /// Get list of all channels with messages
-    #[func]
-    pub fn get_channels(&self) -> Array<GString> {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let mut result = Array::new();
-
-        for entry in IRC_CHAT_HISTORY.iter() {
-            let channel_name = GString::from(entry.key());
-            result.push(&channel_name);
-        }
-
-        result
-    }
-
-    /// Clear all messages in a channel
-    #[func]
-    pub fn clear_channel(&self, channel: GString) {
-        use super::actor::IRC_CHAT_HISTORY;
-
-        let channel_str = channel.to_string();
-
-        if let Some(mut history) = IRC_CHAT_HISTORY.get_mut(&channel_str) {
-            history.clear();
-        }
-    }
-
-    // ========================================================================
-    // IRC REQUEST METHODS (GDScript -> Actor)
-    // ========================================================================
-
-    /// Connect to IRC server
-    /// player_name: Nickname to use for the connection
-    #[func]
-    pub fn irc_connect(&self, player_name: GString) {
-        #[cfg(not(target_family = "wasm"))]
-        godot_print!("[IRC] Rust FFI bridge irc_connect called with player_name: {}", player_name);
-        #[cfg(target_family = "wasm")]
-        eprintln!("[IRC] Rust FFI bridge irc_connect called with player_name: {}", player_name);
-
-        let request = GameRequest::IrcConnect {
-            player_name: player_name.to_string(),
-        };
-
-        match CHANNELS.request_tx.send(request) {
-            Ok(_) => {
-                #[cfg(not(target_family = "wasm"))]
-                godot_print!("[IRC] IrcConnect request sent to Actor successfully");
-                #[cfg(target_family = "wasm")]
-                eprintln!("[IRC] IrcConnect request sent to Actor successfully");
-            }
-            Err(e) => {
-                #[cfg(not(target_family = "wasm"))]
-                godot_error!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e);
-                #[cfg(target_family = "wasm")]
-                eprintln!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e);
-            }
-        }
-    }
-
-    /// Disconnect from IRC server
-    /// message: Optional quit message
-    #[func]
-    pub fn irc_disconnect(&self, message: GString) {
-        let msg_str = message.to_string();
-        let request = GameRequest::IrcDisconnect {
-            message: if msg_str.is_empty() { None } else { Some(msg_str) },
-        };
-
-        let _ = CHANNELS.request_tx.send(request);
-    }
-
-    /// Send a message to the current IRC channel
-    #[func]
-    pub fn irc_send_message(&self, message: GString) {
-        let request = GameRequest::IrcSendMessage {
-            message: message.to_string(),
-        };
-
-        let _ = CHANNELS.request_tx.send(request);
-    }
-
-    /// Join an IRC channel
-    #[func]
-    pub fn irc_join_channel(&self, channel: GString) {
-        let request = GameRequest::IrcJoinChannel {
-            channel: channel.to_string(),
-        };
-
-        let _ = CHANNELS.request_tx.send(request);
-    }
-
-    /// Leave an IRC channel
-    #[func]
-    pub fn irc_leave_channel(&self, channel: GString, message: GString) {
-        let msg_str = message.to_string();
-        let request = GameRequest::IrcLeaveChannel {
-            channel: channel.to_string(),
-            message: if msg_str.is_empty() { None } else { Some(msg_str) },
-        };
-
-        let _ = CHANNELS.request_tx.send(request);
-    }
+    // DEPRECATED: IRC/WebSocket now handled by GDScript (irc_websocket_client.gd)
+    // // ========================================================================
+    // // IRC REQUEST METHODS (GDScript -> Actor)
+    // // ========================================================================
+    //
+    // /// Connect to IRC server
+    // /// player_name: Nickname to use for the connection
+    // #[func]
+    // pub fn irc_connect(&self, player_name: GString) {
+    //     #[cfg(not(target_family = "wasm"))]
+    //     godot_print!("[IRC] Rust FFI bridge irc_connect called with player_name: {}", player_name);
+    //     #[cfg(target_family = "wasm")]
+    //     eprintln!("[IRC] Rust FFI bridge irc_connect called with player_name: {}", player_name);
+    //
+    //     let request = GameRequest::IrcConnect {
+    //         player_name: player_name.to_string(),
+    //     };
+    //
+    //     match CHANNELS.request_tx.send(request) {
+    //         Ok(_) => {
+    //             #[cfg(not(target_family = "wasm"))]
+    //             godot_print!("[IRC] IrcConnect request sent to Actor successfully");
+    //             #[cfg(target_family = "wasm")]
+    //             eprintln!("[IRC] IrcConnect request sent to Actor successfully");
+    //         }
+    //         Err(e) => {
+    //             #[cfg(not(target_family = "wasm"))]
+    //             godot_error!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e);
+    //             #[cfg(target_family = "wasm")]
+    //             eprintln!("[IRC] ERROR: Failed to send IrcConnect request: {:?}", e);
+    //         }
+    //     }
+    // }
+    //
+    // /// Disconnect from IRC server
+    // /// message: Optional quit message
+    // #[func]
+    // pub fn irc_disconnect(&self, message: GString) {
+    //     let msg_str = message.to_string();
+    //     let request = GameRequest::IrcDisconnect {
+    //         message: if msg_str.is_empty() { None } else { Some(msg_str) },
+    //     };
+    //
+    //     let _ = CHANNELS.request_tx.send(request);
+    // }
+    //
+    // /// Send a message to the current IRC channel
+    // #[func]
+    // pub fn irc_send_message(&self, message: GString) {
+    //     let request = GameRequest::IrcSendMessage {
+    //         message: message.to_string(),
+    //     };
+    //
+    //     let _ = CHANNELS.request_tx.send(request);
+    // }
+    //
+    // /// Join an IRC channel
+    // #[func]
+    // pub fn irc_join_channel(&self, channel: GString) {
+    //     let request = GameRequest::IrcJoinChannel {
+    //         channel: channel.to_string(),
+    //     };
+    //
+    //     let _ = CHANNELS.request_tx.send(request);
+    // }
+    //
+    // /// Leave an IRC channel
+    // #[func]
+    // pub fn irc_leave_channel(&self, channel: GString, message: GString) {
+    //     let msg_str = message.to_string();
+    //     let request = GameRequest::IrcLeaveChannel {
+    //         channel: channel.to_string(),
+    //         message: if msg_str.is_empty() { None } else { Some(msg_str) },
+    //     };
+    //
+    //     let _ = CHANNELS.request_tx.send(request);
+    // }
 
     // ========================================================================
     // EVENT EMISSION (Internal - converts Rust events to Godot signals)
@@ -960,121 +963,128 @@ impl UnifiedEventBridge {
                 );
             }
 
-            GameEvent::IrcConnected { nickname, server } => {
-                self.base_mut().emit_signal(
-                    "irc_connected",
-                    &[
-                        GString::from(&nickname).to_variant(),
-                        GString::from(&server).to_variant(),
-                    ],
-                );
-            }
+            // DEPRECATED: IRC/WebSocket now handled by GDScript (irc_websocket_client.gd)
+            // GameEvent::IrcConnected { nickname, server } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_connected",
+            //         &[
+            //             GString::from(&nickname).to_variant(),
+            //             GString::from(&server).to_variant(),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcDisconnected { reason } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_disconnected",
+            //         &[reason
+            //             .map(|r| GString::from(&r).to_variant())
+            //             .unwrap_or_else(|| Variant::nil())],
+            //     );
+            // }
+            //
+            // GameEvent::IrcJoinedChannel { channel, nickname } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_joined_channel",
+            //         &[
+            //             GString::from(&channel).to_variant(),
+            //             GString::from(&nickname).to_variant(),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcLeftChannel {
+            //     channel,
+            //     nickname,
+            //     message,
+            // } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_left_channel",
+            //         &[
+            //             GString::from(&channel).to_variant(),
+            //             GString::from(&nickname).to_variant(),
+            //             message
+            //                 .map(|m| GString::from(&m).to_variant())
+            //                 .unwrap_or_else(|| Variant::nil()),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcChannelMessage {
+            //     channel,
+            //     sender,
+            //     message,
+            // } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_channel_message",
+            //         &[
+            //             GString::from(&channel).to_variant(),
+            //             GString::from(&sender).to_variant(),
+            //             GString::from(&message).to_variant(),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcPrivateMessage { sender, message } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_private_message",
+            //         &[
+            //             GString::from(&sender).to_variant(),
+            //             GString::from(&message).to_variant(),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcUserJoined { channel, nickname } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_user_joined",
+            //         &[
+            //             GString::from(&channel).to_variant(),
+            //             GString::from(&nickname).to_variant(),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcUserLeft {
+            //     channel,
+            //     nickname,
+            //     message,
+            // } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_user_left",
+            //         &[
+            //             GString::from(&channel).to_variant(),
+            //             GString::from(&nickname).to_variant(),
+            //             message
+            //                 .map(|m| GString::from(&m).to_variant())
+            //                 .unwrap_or_else(|| Variant::nil()),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcUserQuit { nickname, message } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_user_quit",
+            //         &[
+            //             GString::from(&nickname).to_variant(),
+            //             message
+            //                 .map(|m| GString::from(&m).to_variant())
+            //                 .unwrap_or_else(|| Variant::nil()),
+            //         ],
+            //     );
+            // }
+            //
+            // GameEvent::IrcError { message } => {
+            //     self.base_mut().emit_signal(
+            //         "irc_error",
+            //         &[GString::from(&message).to_variant()],
+            //     );
+            // }
 
-            GameEvent::IrcDisconnected { reason } => {
-                self.base_mut().emit_signal(
-                    "irc_disconnected",
-                    &[reason
-                        .map(|r| GString::from(&r).to_variant())
-                        .unwrap_or_else(|| Variant::nil())],
-                );
-            }
-
-            GameEvent::IrcJoinedChannel { channel, nickname } => {
-                self.base_mut().emit_signal(
-                    "irc_joined_channel",
-                    &[
-                        GString::from(&channel).to_variant(),
-                        GString::from(&nickname).to_variant(),
-                    ],
-                );
-            }
-
-            GameEvent::IrcLeftChannel {
-                channel,
-                nickname,
-                message,
-            } => {
-                self.base_mut().emit_signal(
-                    "irc_left_channel",
-                    &[
-                        GString::from(&channel).to_variant(),
-                        GString::from(&nickname).to_variant(),
-                        message
-                            .map(|m| GString::from(&m).to_variant())
-                            .unwrap_or_else(|| Variant::nil()),
-                    ],
-                );
-            }
-
-            GameEvent::IrcChannelMessage {
-                channel,
-                sender,
-                message,
-            } => {
-                self.base_mut().emit_signal(
-                    "irc_channel_message",
-                    &[
-                        GString::from(&channel).to_variant(),
-                        GString::from(&sender).to_variant(),
-                        GString::from(&message).to_variant(),
-                    ],
-                );
-            }
-
-            GameEvent::IrcPrivateMessage { sender, message } => {
-                self.base_mut().emit_signal(
-                    "irc_private_message",
-                    &[
-                        GString::from(&sender).to_variant(),
-                        GString::from(&message).to_variant(),
-                    ],
-                );
-            }
-
-            GameEvent::IrcUserJoined { channel, nickname } => {
-                self.base_mut().emit_signal(
-                    "irc_user_joined",
-                    &[
-                        GString::from(&channel).to_variant(),
-                        GString::from(&nickname).to_variant(),
-                    ],
-                );
-            }
-
-            GameEvent::IrcUserLeft {
-                channel,
-                nickname,
-                message,
-            } => {
-                self.base_mut().emit_signal(
-                    "irc_user_left",
-                    &[
-                        GString::from(&channel).to_variant(),
-                        GString::from(&nickname).to_variant(),
-                        message
-                            .map(|m| GString::from(&m).to_variant())
-                            .unwrap_or_else(|| Variant::nil()),
-                    ],
-                );
-            }
-
-            GameEvent::IrcUserQuit { nickname, message } => {
-                self.base_mut().emit_signal(
-                    "irc_user_quit",
-                    &[
-                        GString::from(&nickname).to_variant(),
-                        message
-                            .map(|m| GString::from(&m).to_variant())
-                            .unwrap_or_else(|| Variant::nil()),
-                    ],
-                );
-            }
-
-            GameEvent::IrcError { message } => {
-                self.base_mut().emit_signal(
-                    "irc_error",
-                    &[GString::from(&message).to_variant()],
-                );
+            // DEPRECATED: IRC events now handled by GDScript (irc_websocket_client.gd)
+            // Catch all deprecated IRC events
+            _ => {
+                // Ignore deprecated IRC events and any unhandled events
             }
         }
     }

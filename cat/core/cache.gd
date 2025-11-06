@@ -15,6 +15,10 @@ const COLOR_FAITH: Color = Color(0.7, 0.5, 0.9)      # Purple
 # String-to-string mappings for UI text, translations, etc.
 var strings: Dictionary = {}
 
+# ===== GENERIC VALUES =====
+# Generic key-value storage for game data (player name, settings, etc.)
+var values: Dictionary = {}
+
 # ===== FONTS =====
 # Preloaded fonts for UI
 var fonts: Dictionary = {}
@@ -292,3 +296,25 @@ func open_url(url: String) -> int:
 		push_error("Cache: Failed to open URL: %s (Error code: %d)" % [url, result])
 
 	return result
+
+# ===== GENERIC VALUE STORAGE =====
+
+## Store a value by key
+func set_value(key: String, value) -> void:
+	values[key] = value
+
+## Get a value by key with optional default
+func get_value(key: String, default = null):
+	return values.get(key, default)
+
+## Check if a value exists
+func has_value(key: String) -> bool:
+	return values.has(key)
+
+## Remove a value by key
+func remove_value(key: String) -> void:
+	values.erase(key)
+
+## Clear all stored values
+func clear_values() -> void:
+	values.clear()

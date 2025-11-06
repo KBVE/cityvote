@@ -18,6 +18,7 @@ extends CanvasLayer
 
 signal language_selected(language: int, world_seed: int, player_name: String)  # Old signal (for main.gd loading progress)
 signal start_game(language: int, world_seed: int, player_name: String)  # New signal (for title.gd)
+signal test_captcha()  # Signal to request hCaptcha test
 
 var flag_buttons: Array[TextureButton] = []
 var pooled_flags: Array[PooledFlagIcon] = []  # Track pooled flag icons for cleanup
@@ -26,6 +27,7 @@ var selected_button: TextureButton = null  # Track which button is selected
 var world_seed: int = 12345
 var player_name: String = "Player"
 var start_button: Button = null
+var captcha_button: Button = null
 
 # Mode: "title" = show Start button, "loading" = show loading progress
 var mode: String = "title"
@@ -53,6 +55,9 @@ func _ready() -> void:
 	# Create Start button
 	_create_start_button()
 
+	# Create hCaptcha Test button
+	_create_captcha_button()
+
 	# Setup social logos
 	_setup_social_logos()
 
@@ -64,6 +69,8 @@ func _ready() -> void:
 		if start_button:
 			start_button.visible = true
 			start_button.disabled = true  # Disabled until language selected
+		if captcha_button:
+			captcha_button.visible = true
 		if spinner:
 			spinner.hide_spinner()  # Hide and stop spinner
 		set_process(false)  # Don't need loading animation
@@ -73,6 +80,8 @@ func _ready() -> void:
 		input_section.modulate.a = 0.3
 		if start_button:
 			start_button.visible = false
+		if captcha_button:
+			captcha_button.visible = false
 		if spinner:
 			spinner.show_spinner()  # Show and start spinner
 		# Start rotating status messages
@@ -197,6 +206,9 @@ func _on_flag_hover(button: TextureButton, is_hovered: bool) -> void:
 func _initialize_inputs() -> void:
 	# Set default values
 	seed_input.text = str(world_seed)
+
+	# Generate random anonymous player name: PlayerAnon + 9 random alphanumeric chars
+	player_name = "PlayerAnon" + _generate_random_alphanumeric(9)
 	name_input.text = player_name
 
 	# Connect text changed signals
@@ -252,6 +264,49 @@ func _create_start_button() -> void:
 	# Add to VBoxContainer (after FlagContainer)
 	$Panel/MarginContainer/VBoxContainer.add_child(start_button)
 	$Panel/MarginContainer/VBoxContainer.move_child(start_button, $Panel/MarginContainer/VBoxContainer.get_child_count() - 1)
+
+func _create_captcha_button() -> void:
+	# Create Test hCaptcha button
+	captcha_button = Button.new()
+	captcha_button.text = "Test hCaptcha"
+	captcha_button.custom_minimum_size = Vector2(200, 40)
+
+	# Apply font
+	var font = Cache.get_font("alagard")
+	if font:
+		captcha_button.add_theme_font_override("font", font)
+		captcha_button.add_theme_font_size_override("font_size", 16)
+
+	# Style the button (similar to start button but with different colors)
+	var style_normal = StyleBoxFlat.new()
+	style_normal.bg_color = Color(0.15, 0.1, 0.2, 1.0)
+	style_normal.border_color = Color(0.6, 0.4, 0.8, 1.0)
+	style_normal.border_width_left = 2
+	style_normal.border_width_top = 2
+	style_normal.border_width_right = 2
+	style_normal.border_width_bottom = 2
+	style_normal.corner_radius_top_left = 8
+	style_normal.corner_radius_top_right = 8
+	style_normal.corner_radius_bottom_left = 8
+	style_normal.corner_radius_bottom_right = 8
+
+	var style_hover = style_normal.duplicate()
+	style_hover.bg_color = Color(0.2, 0.15, 0.25, 1.0)
+
+	captcha_button.add_theme_stylebox_override("normal", style_normal)
+	captcha_button.add_theme_stylebox_override("hover", style_hover)
+	captcha_button.add_theme_stylebox_override("pressed", style_hover)
+
+	# Connect button press
+	captcha_button.pressed.connect(_on_captcha_button_pressed)
+
+	# Add to VBoxContainer (before start button)
+	$Panel/MarginContainer/VBoxContainer.add_child(captcha_button)
+	$Panel/MarginContainer/VBoxContainer.move_child(captcha_button, $Panel/MarginContainer/VBoxContainer.get_child_count() - 2)
+
+func _on_captcha_button_pressed() -> void:
+	# Emit signal to request hCaptcha test
+	test_captcha.emit()
 
 func _on_start_button_pressed() -> void:
 	# Emit start_game signal
@@ -457,3 +512,12 @@ func _on_discord_pressed() -> void:
 ## Handle Twitch logo click
 func _on_twitch_pressed() -> void:
 	Cache.open_url("https://kbve.com/twitch/")
+
+## Generate random alphanumeric string
+func _generate_random_alphanumeric(length: int) -> String:
+	"""Generate a random alphanumeric string of specified length"""
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	var result = ""
+	for i in range(length):
+		result += chars[randi() % chars.length()]
+	return result

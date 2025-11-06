@@ -31,22 +31,19 @@ serde_json = "1.0.145"
 bincode = { version = "2.0.1", features = ["serde"] }
 ulid = "1.2.1"
 
-# HTTP/WebSocket support (native)
+# DEPRECATED: HTTP/WebSocket dependencies (IRC now handled by GDScript)
+# Kept for reference but can be removed in future cleanup
+# [target.'cfg(not(target_family = "wasm"))'.dependencies]
+# reqwest = { version = "0.12.24", features = ["json", "stream", "blocking"] }
+# tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
+# tokio-tungstenite = { version = "0.28", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
+# tungstenite = { version = "0.24", default-features = false }
+# rustls = { version = "0.23", features = ["ring"] }
+# futures-util = "0.3"
+
+# Native-only dependencies (non-WASM)
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 rusqlite = { version = "0.37.0", features = ["bundled"] }
-reqwest = { version = "0.12.24", features = ["json", "stream", "blocking"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
-tungstenite = { version = "0.24", default-features = false }
-rustls = { version = "0.23", features = ["ring"] }
-futures-util = "0.3"
-
-# HTTP/WebSocket support (WASM via Emscripten)
-# Note: Godot uses wasm32-unknown-emscripten, NOT wasm32-unknown-unknown
-# Therefore we use Emscripten's native WebSocket API instead of wasm-bindgen/gloo-net
-[target.'cfg(target_family = "wasm")'.dependencies]
-# Emscripten provides WebSocket support through its sys APIs
-# No additional dependencies needed - using emscripten_websocket_sys directly
 
 # WASM storage (uses Emscripten IDBFS backed by browser IndexedDB)
 # WASM implementation uses standard Rust std::fs operations with /terrain_cache mounted as IDBFS

@@ -1045,6 +1045,136 @@ var translations: Dictionary = {
 		Language.HINDI: "प्राप्त संसाधन:",
 		Language.SPANISH: "Recursos Obtenidos:",
 		Language.FRENCH: "Ressources Obtenues :"
+	},
+
+	# Chat UI
+	"chat.channel": {
+		Language.ENGLISH: "Channel: %s",
+		Language.JAPANESE: "チャンネル: %s",
+		Language.CHINESE: "频道: %s",
+		Language.HINDI: "चैनल: %s",
+		Language.SPANISH: "Canal: %s",
+		Language.FRENCH: "Canal : %s"
+	},
+	"chat.not_connected": {
+		Language.ENGLISH: "Not Connected",
+		Language.JAPANESE: "接続されていません",
+		Language.CHINESE: "未连接",
+		Language.HINDI: "कनेक्ट नहीं है",
+		Language.SPANISH: "No Conectado",
+		Language.FRENCH: "Non Connecté"
+	},
+	"chat.minimize": {
+		Language.ENGLISH: "▼ Minimize",
+		Language.JAPANESE: "▼ 最小化",
+		Language.CHINESE: "▼ 最小化",
+		Language.HINDI: "▼ छोटा करें",
+		Language.SPANISH: "▼ Minimizar",
+		Language.FRENCH: "▼ Réduire"
+	},
+	"chat.expand": {
+		Language.ENGLISH: "▲ Expand",
+		Language.JAPANESE: "▲ 展開",
+		Language.CHINESE: "▲ 展开",
+		Language.HINDI: "▲ विस्तारित करें",
+		Language.SPANISH: "▲ Expandir",
+		Language.FRENCH: "▲ Agrandir"
+	},
+	"chat.connect": {
+		Language.ENGLISH: "Connect",
+		Language.JAPANESE: "接続",
+		Language.CHINESE: "连接",
+		Language.HINDI: "कनेक्ट",
+		Language.SPANISH: "Conectar",
+		Language.FRENCH: "Connecter"
+	},
+	"chat.disconnect": {
+		Language.ENGLISH: "Disconnect",
+		Language.JAPANESE: "切断",
+		Language.CHINESE: "断开",
+		Language.HINDI: "डिस्कनेक्ट",
+		Language.SPANISH: "Desconectar",
+		Language.FRENCH: "Déconnecter"
+	},
+	"chat.send": {
+		Language.ENGLISH: "Send",
+		Language.JAPANESE: "送信",
+		Language.CHINESE: "发送",
+		Language.HINDI: "भेजें",
+		Language.SPANISH: "Enviar",
+		Language.FRENCH: "Envoyer"
+	},
+	"chat.placeholder": {
+		Language.ENGLISH: "Type your message...",
+		Language.JAPANESE: "メッセージを入力...",
+		Language.CHINESE: "输入你的消息...",
+		Language.HINDI: "अपना संदेश लिखें...",
+		Language.SPANISH: "Escribe tu mensaje...",
+		Language.FRENCH: "Tapez votre message..."
+	},
+	"chat.quick_placeholder": {
+		Language.ENGLISH: "Quick chat...",
+		Language.JAPANESE: "クイックチャット...",
+		Language.CHINESE: "快速聊天...",
+		Language.HINDI: "त्वरित चैट...",
+		Language.SPANISH: "Chat rápido...",
+		Language.FRENCH: "Chat rapide..."
+	},
+	"chat.not_connected_placeholder": {
+		Language.ENGLISH: "Not connected...",
+		Language.JAPANESE: "接続されていません...",
+		Language.CHINESE: "未连接...",
+		Language.HINDI: "कनेक्ट नहीं है...",
+		Language.SPANISH: "No conectado...",
+		Language.FRENCH: "Non connecté..."
+	},
+	"chat.initializing": {
+		Language.ENGLISH: "IRC client initializing...",
+		Language.JAPANESE: "IRCクライアントを初期化中...",
+		Language.CHINESE: "IRC客户端初始化中...",
+		Language.HINDI: "IRC क्लाइंट शुरू हो रहा है...",
+		Language.SPANISH: "Inicializando cliente IRC...",
+		Language.FRENCH: "Initialisation du client IRC..."
+	},
+	"chat.connected_as": {
+		Language.ENGLISH: "Connected to IRC as %s",
+		Language.JAPANESE: "%sとしてIRCに接続しました",
+		Language.CHINESE: "已作为 %s 连接到IRC",
+		Language.HINDI: "%s के रूप में IRC से कनेक्ट हो गया",
+		Language.SPANISH: "Conectado a IRC como %s",
+		Language.FRENCH: "Connecté à IRC en tant que %s"
+	},
+	"chat.disconnected": {
+		Language.ENGLISH: "Disconnected from IRC",
+		Language.JAPANESE: "IRCから切断されました",
+		Language.CHINESE: "已从IRC断开",
+		Language.HINDI: "IRC से डिस्कनेक्ट हो गया",
+		Language.SPANISH: "Desconectado de IRC",
+		Language.FRENCH: "Déconnecté d'IRC"
+	},
+	"chat.not_connected_error": {
+		Language.ENGLISH: "Not connected to IRC!",
+		Language.JAPANESE: "IRCに接続されていません！",
+		Language.CHINESE: "未连接到IRC！",
+		Language.HINDI: "IRC से कनेक्ट नहीं है!",
+		Language.SPANISH: "¡No conectado a IRC!",
+		Language.FRENCH: "Non connecté à IRC !"
+	},
+	"chat.joined_channel": {
+		Language.ENGLISH: "Joined channel: %s",
+		Language.JAPANESE: "チャンネルに参加しました: %s",
+		Language.CHINESE: "已加入频道: %s",
+		Language.HINDI: "चैनल में शामिल हो गए: %s",
+		Language.SPANISH: "Unido al canal: %s",
+		Language.FRENCH: "Rejoint le canal : %s"
+	},
+	"chat.disconnecting": {
+		Language.ENGLISH: "Disconnecting from IRC...",
+		Language.JAPANESE: "IRCから切断中...",
+		Language.CHINESE: "正在从IRC断开...",
+		Language.HINDI: "IRC से डिस्कनेक्ट हो रहा है...",
+		Language.SPANISH: "Desconectando de IRC...",
+		Language.FRENCH: "Déconnexion d'IRC..."
 	}
 }
 

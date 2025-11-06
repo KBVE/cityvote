@@ -19,7 +19,6 @@ class_name TopbarUIUX
 # Center section buttons
 @onready var city_vote_button: Button = $MarginContainer/HBoxContainer/CenterSection/CityVoteButton
 @onready var inventory_button: Button = $MarginContainer/HBoxContainer/CenterSection/InventoryButton
-@onready var chat_button: Button = $MarginContainer/HBoxContainer/CenterSection/ChatButton
 
 # Right section labels (timer and turn moved here)
 @onready var timer_label: Label = $MarginContainer/HBoxContainer/RightSection/TimerLabel
@@ -68,10 +67,6 @@ func _ready() -> void:
 	# Connect Inventory button
 	if inventory_button:
 		inventory_button.pressed.connect(_on_inventory_pressed)
-
-	# Connect Chat button
-	if chat_button:
-		chat_button.pressed.connect(_on_chat_pressed)
 
 	# Connect to global timer
 	if GameTimer:
@@ -150,7 +145,6 @@ func _apply_fonts() -> void:
 	# Apply to center section buttons
 	city_vote_button.add_theme_font_override("font", font)
 	inventory_button.add_theme_font_override("font", font)
-	chat_button.add_theme_font_override("font", font)
 
 	# Apply to right section (timer and turn)
 	timer_label.add_theme_font_override("font", font)
@@ -194,14 +188,6 @@ func _on_inventory_pressed() -> void:
 		inventory_panel.toggle_visibility()
 	else:
 		push_warning("TopbarUIUX: InventoryPanel not found!")
-
-func _on_chat_pressed() -> void:
-	# Toggle chat panel visibility
-	var chat_panel = get_node_or_null("/root/Main/ChatPanel")
-	if chat_panel:
-		chat_panel.toggle_visibility()
-	else:
-		push_warning("TopbarUIUX: ChatPanel not found!")
 
 func _on_timer_tick(time_left: int) -> void:
 	_update_timer_display(time_left)

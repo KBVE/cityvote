@@ -1,0 +1,52 @@
+[gd_scene load_steps=3 format=3 uid="uid://chat_toggle_button_001"]
+
+[ext_resource type="Script" uid="uid://bpvycmnxo74w8" path="res://view/hud/chat/chat_toggle_button.gd" id="1_toggle"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mini_chat"]
+bg_color = Color(0.1, 0.1, 0.1, 0.85)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.6, 0.8, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="ChatToggleButton" type="PanelContainer"]
+offset_left = 10.0
+offset_top = 550.0
+offset_right = 410.0
+offset_bottom = 710.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_mini_chat")
+script = ExtResource("1_toggle")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InputRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ExpandButton" type="Button" parent="MarginContainer/VBoxContainer/InputRow"]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 11
+text = "▲ Expand"
+
+[node name="QuickInput" type="LineEdit" parent="MarginContainer/VBoxContainer/InputRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+placeholder_text = "Quick chat..."
+editable = false

@@ -42,7 +42,14 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 16
-text = "Channel: #cityvote"
+text = "Channel: #general"
+
+[node name="MinimizeButton" type="Button" parent="MarginContainer/VBoxContainer/HeaderContainer"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 12
+text = "▼ Minimize"
 
 [node name="ConnectButton" type="Button" parent="MarginContainer/VBoxContainer/HeaderContainer"]
 custom_minimum_size = Vector2(100, 0)
@@ -55,6 +62,7 @@ layout_mode = 2
 size_flags_vertical = 3
 follow_focus = true
 scroll_horizontal_enabled = false
+vertical_scroll_mode = 2
 
 [node name="MessageContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/ScrollContainer"]
 layout_mode = 2
@@ -81,3 +89,21 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 14
 disabled = true
 text = "Send"
+
+[node name="CompactControls" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ExpandButton" type="Button" parent="MarginContainer/VBoxContainer/CompactControls"]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 11
+text = "▲ Maximize"
+
+[node name="QuickInput" type="LineEdit" parent="MarginContainer/VBoxContainer/CompactControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+placeholder_text = "Quick chat..."
+editable = false

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+	<meta name="author" content="$GODOT_PROJECT_NAME">
+	<meta name="description" content="$GODOT_PROJECT_NAME">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="application-name" content="$GODOT_PROJECT_NAME">
+	<meta name="apple-mobile-web-app-title" content="$GODOT_PROJECT_NAME">
+	<meta name="theme-color" content="$GODOT_THEME_COLOR">
+	<meta name="msapplication-navbutton-color" content="$GODOT_THEME_COLOR">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="msapplication-starturl" content="$GODOT_URL">
+	<meta property="og:site_name" content="$GODOT_PROJECT_NAME">
+	<meta property="og:url" content="$GODOT_URL">
+	<meta property="og:title" content="$GODOT_PROJECT_NAME">
+	<meta property="og:description" content="$GODOT_PROJECT_NAME">
+	<meta property="og:image" content="$GODOT_URL/$GODOT_HEAD_ICON">
+	<meta property="og:type" content="website">
+	<meta name="twitter:card" content="summary">
+	<meta name="twitter:title" content="$GODOT_PROJECT_NAME">
+	<meta name="twitter:description" content="$GODOT_PROJECT_NAME">
+	<meta name="twitter:image" content="$GODOT_URL/$GODOT_HEAD_ICON">
+	<link id="-gd-engine-icon" rel="icon" type="image/png" href="$GODOT_HEAD_ICON">
+	<link rel="apple-touch-icon" type="image/png" href="$GODOT_HEAD_ICON">
+	<title>$GODOT_PROJECT_NAME</title>
+
+	<!-- hCaptcha Integration -->
+	<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		*:focus {
+			outline: none;
+		}
+
+		body {
+			background-color: #000000;
+			overflow: hidden;
+			touch-action: none;
+			position: fixed;
+			width: 100%;
+			height: 100%;
+			-webkit-user-select: none;
+			-moz-user-select: none;
+			user-select: none;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+		}
+
+		#canvas-container {
+			width: 100%;
+			height: 100%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			overflow: hidden;
+		}
+
+		#canvas {
+			display: block;
+			outline: none;
+			touch-action: none;
+			-webkit-tap-highlight-color: transparent;
+		}
+
+		#canvas:focus {
+			outline: none;
+		}
+
+		/* Game title during loading */
+		#game-title {
+			position: absolute;
+			left: 50%;
+			top: 40%;
+			transform: translate(-50%, -50%);
+			color: #ffffff;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			font-size: 48px;
+			font-weight: bold;
+			text-align: center;
+			letter-spacing: 2px;
+			text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+		}
+
+		/* Status display */
+		#status {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+			color: #ffffff;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			font-size: 16px;
+			text-align: center;
+		}
+
+		#status-progress {
+			width: 240px;
+			height: 6px;
+			background-color: rgba(255, 255, 255, 0.2);
+			border-radius: 3px;
+			margin: 16px auto 0;
+			overflow: hidden;
+		}
+
+		#status-progress-inner {
+			height: 100%;
+			width: 0%;
+			background-color: #4a90e2;
+			border-radius: 3px;
+			transition: width 0.2s ease;
+		}
+
+		#status-indeterminate {
+			height: 6px;
+			width: 240px;
+			margin: 16px auto 0;
+			background-color: rgba(255, 255, 255, 0.2);
+			border-radius: 3px;
+			overflow: hidden;
+			display: none;
+		}
+
+		#status-indeterminate > div {
+			width: 50%;
+			height: 100%;
+			background-color: #4a90e2;
+			border-radius: 3px;
+			animation: indeterminate 2s linear infinite;
+		}
+
+		@keyframes indeterminate {
+			0% { transform: translateX(-100%); }
+			100% { transform: translateX(300%); }
+		}
+
+		#status-notice {
+			margin-top: 16px;
+			font-size: 14px;
+			color: rgba(255, 255, 255, 0.7);
+		}
+
+		/* hCaptcha container */
+		#hcaptcha-container {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			z-index: 1000;
+			background: rgba(0, 0, 0, 0.8);
+			padding: 20px;
+			border-radius: 8px;
+			display: none;
+		}
+
+		#hcaptcha-container.visible {
+			display: block;
+		}
+	</style>
+	$GODOT_HEAD_INCLUDE
+</head>
+<body>
+	<div id="canvas-container">
+		<canvas id="canvas">
+			Your browser does not support the canvas element.
+		</canvas>
+	</div>
+
+	<div id="game-title">Virtual Pet AFK</div>
+
+	<!-- hCaptcha Widget Container -->
+	<div id="hcaptcha-container">
+		<div id="hcaptcha-widget"></div>
+	</div>
+
+	<div id="status">
+		<div id="status-progress">
+			<div id="status-progress-inner"></div>
+		</div>
+		<div id="status-indeterminate">
+			<div></div>
+		</div>
+		<div id="status-notice"></div>
+	</div>
+
+	<script src="$GODOT_URL"></script>
+	<script>
+		const GODOT_CONFIG = $GODOT_CONFIG;
+		const EXECUTABLE_NAME = GODOT_CONFIG['executable'];
+		const MAIN_PACK = GODOT_CONFIG['mainPack'];
+
+		const statusElement = document.getElementById('status');
+		const statusProgressElement = document.getElementById('status-progress');
+		const statusProgressInnerElement = document.getElementById('status-progress-inner');
+		const statusIndeterminateElement = document.getElementById('status-indeterminate');
+		const statusNoticeElement = document.getElementById('status-notice');
+		const gameTitleElement = document.getElementById('game-title');
+		const canvasElement = document.getElementById('canvas');
+
+		let initializing = true;
+		let gameStarted = false;
+
+		function setStatusMode(mode) {
+			if (mode === 'hidden') {
+				statusElement.style.display = 'none';
+				gameTitleElement.style.display = 'none';
+			} else {
+				statusElement.style.display = 'block';
+				gameTitleElement.style.display = 'block';
+				statusProgressElement.style.display = mode === 'progress' ? 'block' : 'none';
+				statusIndeterminateElement.style.display = mode === 'indeterminate' ? 'block' : 'none';
+			}
+		}
+
+		function setStatusNotice(text) {
+			statusNoticeElement.textContent = text;
+		}
+
+		function setStatusProgress(progress) {
+			if (progress < 0) {
+				progress = 0;
+			}
+			if (progress > 1) {
+				progress = 1;
+			}
+			statusProgressInnerElement.style.width = (progress * 100) + '%';
+		}
+
+		function displayFailureNotice(message) {
+			setStatusMode('indeterminate');
+			setStatusNotice(message);
+			initializing = false;
+			gameStarted = false;
+		}
+
+		const engine = new Engine(GODOT_CONFIG);
+
+		engine.startGame({
+			'onProgress': function(current, total) {
+				if (current > 0 && total > 0) {
+					const percentage = Math.round((current / total) * 100);
+					setStatusMode('progress');
+					setStatusProgress(current / total);
+					setStatusNotice('Loading... ' + percentage + '%');
+				} else {
+					setStatusMode('indeterminate');
+					setStatusNotice('Loading...');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+			initializing = false;
+			gameStarted = true;
+			// Focus canvas for input
+			canvasElement.focus();
+		}, (err) => {
+			displayFailureNotice('Error: ' + err);
+		});
+
+		// Prevent context menu on long press for mobile
+		canvasElement.addEventListener('contextmenu', (e) => {
+			e.preventDefault();
+			return false;
+		});
+
+		// Prevent default touch behaviors
+		document.body.addEventListener('touchstart', (e) => {
+			if (gameStarted && e.target === canvasElement) {
+				e.preventDefault();
+			}
+		}, { passive: false });
+
+		document.body.addEventListener('touchmove', (e) => {
+			if (gameStarted && e.target === canvasElement) {
+				e.preventDefault();
+			}
+		}, { passive: false });
+
+		// Handle window resize for responsive canvas
+		window.addEventListener('resize', () => {
+			if (gameStarted) {
+				canvasElement.focus();
+			}
+		});
+
+		// ============================================
+		// hCaptcha Integration Functions
+		// ============================================
+
+		let hcaptchaWidgetId = null;
+		let hcaptchaCallback = null;
+
+		// Default hCaptcha site key (CityVote/AFK)
+		const DEFAULT_HCAPTCHA_SITEKEY = 'e19cf4a6-2168-49a2-88fe-716e97569e88';
+
+		/**
+		 * Initialize hCaptcha widget
+		 * @param {string} sitekey - Your hCaptcha site key (optional, uses default if not provided)
+		 * @param {function} callback - Callback function to receive the token
+		 */
+		window.initHCaptcha = function(sitekey, callback) {
+			// Use default site key if not provided
+			if (!sitekey) {
+				sitekey = DEFAULT_HCAPTCHA_SITEKEY;
+			}
+			if (typeof hcaptcha === 'undefined') {
+				console.error('hCaptcha library not loaded');
+				return false;
+			}
+
+			hcaptchaCallback = callback;
+
+			hcaptchaWidgetId = hcaptcha.render('hcaptcha-widget', {
+				sitekey: sitekey,
+				callback: function(token) {
+					if (hcaptchaCallback) {
+						hcaptchaCallback(token);
+					}
+					// Hide the container after successful completion
+					document.getElementById('hcaptcha-container').classList.remove('visible');
+				},
+				'error-callback': function(err) {
+					console.error('hCaptcha error:', err);
+					if (hcaptchaCallback) {
+						hcaptchaCallback('ERROR:' + err);
+					}
+				},
+				'expired-callback': function() {
+					console.warn('hCaptcha token expired');
+					if (hcaptchaCallback) {
+						hcaptchaCallback('EXPIRED');
+					}
+				}
+			});
+
+			return true;
+		};
+
+		/**
+		 * Show the hCaptcha challenge
+		 */
+		window.showHCaptcha = function() {
+			if (hcaptchaWidgetId === null) {
+				console.error('hCaptcha not initialized. Call initHCaptcha first.');
+				return false;
+			}
+			document.getElementById('hcaptcha-container').classList.add('visible');
+			return true;
+		};
+
+		/**
+		 * Hide the hCaptcha challenge
+		 */
+		window.hideHCaptcha = function() {
+			document.getElementById('hcaptcha-container').classList.remove('visible');
+			return true;
+		};
+
+		/**
+		 * Reset the hCaptcha widget
+		 */
+		window.resetHCaptcha = function() {
+			if (hcaptchaWidgetId !== null && typeof hcaptcha !== 'undefined') {
+				hcaptcha.reset(hcaptchaWidgetId);
+				return true;
+			}
+			return false;
+		};
+
+		/**
+		 * Get hCaptcha response token
+		 */
+		window.getHCaptchaResponse = function() {
+			if (hcaptchaWidgetId !== null && typeof hcaptcha !== 'undefined') {
+				return hcaptcha.getResponse(hcaptchaWidgetId);
+			}
+			return null;
+		};
+	</script>
+	$GODOT_BODY_INCLUDE
+</body>
+</html>

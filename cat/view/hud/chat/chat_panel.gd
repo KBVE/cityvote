@@ -10,23 +10,29 @@ class_name ChatPanel
 @onready var input_field: LineEdit = $MarginContainer/VBoxContainer/InputContainer/MessageInput
 @onready var send_button: Button = $MarginContainer/VBoxContainer/InputContainer/SendButton
 @onready var connect_button: Button = $MarginContainer/VBoxContainer/HeaderContainer/ConnectButton
+@onready var minimize_button: Button = $MarginContainer/VBoxContainer/HeaderContainer/MinimizeButton
 @onready var channel_label: Label = $MarginContainer/VBoxContainer/HeaderContainer/ChannelLabel
+@onready var compact_controls: HBoxContainer = $MarginContainer/VBoxContainer/CompactControls
+@onready var expand_button: Button = $MarginContainer/VBoxContainer/CompactControls/ExpandButton
+@onready var quick_input: LineEdit = $MarginContainer/VBoxContainer/CompactControls/QuickInput
 
 # State
 var is_connected: bool = false
-var current_channel: String = "#general"  # Changed from #cityvote to #general
+var current_channel: String = "#general"  # IRC channel from GDScript IRC client
 var player_name: String = "Player"  # Will be set from game state
 var max_visible_messages: int = 100  # Keep message list from growing too large
+var is_expanded: bool = false  # Track if chat is in maximized state
 
-# Reference to UnifiedEventBridge singleton
-@onready var event_bridge = get_node("/root/UnifiedEventBridge")
+# Reference to IRC WebSocket client singleton
+@onready var irc_client = get_node("/root/IrcWebSocketClient")
 
 # Message type colors (matching Rust MessageType enum)
+# Brighter colors for better readability in compact mode
 const MESSAGE_COLORS = {
-	0: Color(1.0, 1.0, 1.0),      # Channel - White
-	1: Color(0.8, 0.6, 1.0),      # Private - Purple
-	2: Color(0.6, 0.6, 0.6),      # System - Gray
-	3: Color(1.0, 0.3, 0.3),      # Error - Red
+	0: Color(1.0, 1.0, 1.0),      # Channel - Bright White
+	1: Color(0.9, 0.7, 1.0),      # Private - Bright Purple
+	2: Color(0.8, 0.85, 0.9),     # System - Bright Gray/Blue
+	3: Color(1.0, 0.5, 0.5),      # Error - Bright Red
 }
 
 func _ready() -> void:
@@ -40,32 +46,139 @@ func _ready() -> void:
 	if connect_button:
 		connect_button.pressed.connect(_on_connect_pressed)
 
+	if minimize_button:
+		minimize_button.pressed.connect(_on_minimize_pressed)
+
+	if expand_button:
+		expand_button.pressed.connect(_on_expand_pressed)
+
+	if quick_input:
+		quick_input.text_submitted.connect(_on_quick_input_submitted)
+
 	if input_field:
 		input_field.text_submitted.connect(_on_text_submitted)
 
-	# Connect to UnifiedEventBridge IRC signals
-	event_bridge.irc_connected.connect(_on_irc_connected)
-	event_bridge.irc_disconnected.connect(_on_irc_disconnected)
-	event_bridge.irc_channel_message.connect(_on_channel_message)
-	event_bridge.irc_private_message.connect(_on_private_message)
-	event_bridge.irc_notice.connect(_on_notice)
-	event_bridge.irc_error.connect(_on_error)
-	event_bridge.irc_user_joined.connect(_on_user_joined)
-	event_bridge.irc_user_parted.connect(_on_user_parted)
-	event_bridge.irc_user_quit.connect(_on_user_quit)
+	# Connect to IrcWebSocketClient signals
+	if irc_client:
+		print("[ChatPanel] Connecting to IRC client signals...")
+		irc_client.irc_connected.connect(_on_irc_connected)
+		irc_client.irc_disconnected.connect(_on_irc_disconnected)
+		irc_client.irc_message_received.connect(_on_irc_message_received)
+		irc_client.irc_joined_channel.connect(_on_irc_joined_channel)
+		print("[ChatPanel] Signals connected successfully")
+
+		# Check if already connected (in case we missed the signal)
+		if irc_client.is_irc_connected():
+			print("[ChatPanel] IRC already connected, updating UI immediately")
+			_on_irc_connected()
+	else:
+		push_error("[ChatPanel] Could not find IrcWebSocketClient singleton!")
+
+	# Get player name from Cache
+	if Cache and Cache.has_value("player_name"):
+		player_name = Cache.get_value("player_name", "Player")
+		print("[ChatPanel] Loaded player name from Cache: ", player_name)
+
+	# Connect to language changes
+	if I18n:
+		I18n.language_changed.connect(_on_language_changed)
 
 	# Initialize UI state
 	_update_connection_state()
 	_update_channel_label()
+	_update_button_text()
 
-	# Load any existing chat history from Rust
-	_load_chat_history()
+	# IRC client auto-connects on _ready() - no need for initialization message
+
+	# Start in compact mode
+	position = Vector2(10, 550)
+	size = Vector2(400, 160)
+	_set_compact_mode(true)
+
+	# Double-check connection status after a brief delay (for race conditions)
+	# Use a timer to allow websocket connection to complete
+	var timer = Timer.new()
+	add_child(timer)
+	timer.wait_time = 0.5  # Check after 500ms
+	timer.one_shot = true
+	timer.timeout.connect(_check_delayed_connection)
+	timer.start()
+
+func _input(event: InputEvent) -> void:
+	# Handle ESC key to minimize chat when expanded
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		# Only handle if chat is visible (expanded mode)
+		if visible and not _is_compact():
+			_on_minimize_pressed()
+			get_viewport().set_input_as_handled()
+
+func _is_compact() -> bool:
+	# Check if we're in compact mode
+	var header = get_node_or_null("MarginContainer/VBoxContainer/HeaderContainer")
+	return header and not header.visible
+
+func _set_compact_mode(compact: bool) -> void:
+	# In compact mode: hide header and full input, show compact controls, hide scrollbar
+	# In full mode: show header and full input, hide compact controls, show scrollbar
+	var header = get_node_or_null("MarginContainer/VBoxContainer/HeaderContainer")
+	var input_container = get_node_or_null("MarginContainer/VBoxContainer/InputContainer")
+
+	if header:
+		header.visible = not compact
+	if input_container:
+		input_container.visible = not compact
+	if compact_controls:
+		compact_controls.visible = compact
+
+	# Control scrollbar visibility: hidden in compact mode, auto in expanded mode
+	if scroll_container:
+		if compact:
+			scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		else:
+			scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+
+func _on_expand_pressed() -> void:
+	# Expand chat to full size
+	is_expanded = true
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(self, "position", Vector2(10, 300), 0.3)
+	tween.tween_property(self, "size", Vector2(500, 400), 0.3)
+	await tween.finished
+	_set_compact_mode(false)
+
+func _on_minimize_pressed() -> void:
+	# Minimize chat to compact size
+	is_expanded = false
+	_set_compact_mode(true)
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.set_ease(Tween.EASE_IN)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(self, "position", Vector2(10, 550), 0.3)
+	tween.tween_property(self, "size", Vector2(400, 160), 0.3)
+
+func _on_quick_input_submitted(text: String) -> void:
+	if text.is_empty():
+		return
+	if not is_connected:
+		return
+	if irc_client:
+		irc_client.send_message(current_channel, text)
+		var nickname = "CityVote_%s" % player_name
+		_add_message(nickname, text, 0)
+	quick_input.clear()
 
 func _apply_fonts() -> void:
 	var font = Cache.get_font_for_current_language()
 	if font == null:
 		push_warning("ChatPanel: Could not load font from Cache")
 		return
+
+	if minimize_button:
+		minimize_button.add_theme_font_override("font", font)
 
 	if channel_label:
 		channel_label.add_theme_font_override("font", font)
@@ -75,16 +188,33 @@ func _apply_fonts() -> void:
 		send_button.add_theme_font_override("font", font)
 	if connect_button:
 		connect_button.add_theme_font_override("font", font)
+	if expand_button:
+		expand_button.add_theme_font_override("font", font)
+	if quick_input:
+		quick_input.add_theme_font_override("font", font)
+
+func _on_language_changed(_new_language: int) -> void:
+	_apply_fonts()
+	_update_connection_state()
+	_update_channel_label()
+	_update_button_text()
+
+func _update_button_text() -> void:
+	if minimize_button:
+		minimize_button.text = I18n.translate("chat.minimize")
+	if send_button:
+		send_button.text = I18n.translate("chat.send")
 
 func _on_connect_pressed() -> void:
 	if not is_connected:
-		# Connect to IRC
-		event_bridge.irc_connect(player_name)
-		_add_system_message("Connecting to IRC...")
+		# IRC client auto-connects on startup - if disconnected, try reconnecting
+		if irc_client:
+			irc_client._connect_to_irc()
 	else:
 		# Disconnect from IRC
-		event_bridge.irc_disconnect("Leaving")
-		_add_system_message("Disconnecting from IRC...")
+		if irc_client:
+			irc_client.disconnect_irc()
+		_add_system_message(I18n.translate("chat.disconnecting"))
 
 func _on_send_pressed() -> void:
 	_send_message()
@@ -101,14 +231,15 @@ func _send_message() -> void:
 		return
 
 	if not is_connected:
-		_add_error_message("Not connected to IRC!")
+		_add_error_message(I18n.translate("chat.not_connected_error"))
 		return
 
-	# Send message via UnifiedEventBridge
-	event_bridge.irc_send_message(message)
-	# Echo our own message locally
-	var nickname = "CityVote_%s" % player_name
-	_add_message(nickname, message, 0)  # MessageType::Channel
+	# Send message via IrcWebSocketClient
+	if irc_client:
+		irc_client.send_message(current_channel, message)
+		# Echo our own message locally
+		var nickname = "CityVote_%s" % player_name
+		_add_message(nickname, message, 0)  # MessageType::Channel
 
 	# Clear input field
 	input_field.text = ""
@@ -137,11 +268,15 @@ func _add_message(sender: String, message: String, msg_type: int) -> void:
 	if msg_type in MESSAGE_COLORS:
 		label.add_theme_color_override("font_color", MESSAGE_COLORS[msg_type])
 
-	# Apply font
+	# Apply font with larger size for better readability in compact mode
 	var font = Cache.get_font_for_current_language()
 	if font:
 		label.add_theme_font_override("font", font)
-		label.add_theme_font_size_override("font_size", 14)
+		label.add_theme_font_size_override("font_size", 16)  # Increased from 14 to 16
+
+	# Add subtle text outline for better readability
+	label.add_theme_constant_override("outline_size", 1)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 
 	# Add to container
 	message_container.add_child(label)
@@ -166,87 +301,62 @@ func _add_error_message(message: String) -> void:
 func _update_connection_state() -> void:
 	if connect_button:
 		if is_connected:
-			connect_button.text = "Disconnect"
+			connect_button.text = I18n.translate("chat.disconnect")
 			connect_button.modulate = Color(1.0, 0.4, 0.4)  # Red tint
 		else:
-			connect_button.text = "Connect"
+			connect_button.text = I18n.translate("chat.connect")
 			connect_button.modulate = Color(0.4, 1.0, 0.4)  # Green tint
 
 	# Enable/disable input based on connection
 	if input_field:
 		input_field.editable = is_connected
+		if is_connected:
+			input_field.placeholder_text = I18n.translate("chat.placeholder")
+		else:
+			input_field.placeholder_text = I18n.translate("chat.not_connected_placeholder")
+	if quick_input:
+		quick_input.editable = is_connected
+		if is_connected:
+			quick_input.placeholder_text = I18n.translate("chat.quick_placeholder")
+		else:
+			quick_input.placeholder_text = I18n.translate("chat.not_connected_placeholder")
 	if send_button:
 		send_button.disabled = not is_connected
 
 func _update_channel_label() -> void:
 	if channel_label:
 		if is_connected:
-			channel_label.text = "Channel: %s" % current_channel
+			channel_label.text = I18n.translate("chat.channel", [current_channel])
 		else:
-			channel_label.text = "Not Connected"
-
-func _load_chat_history() -> void:
-	# Load last N messages from Rust DashMap via UnifiedEventBridge
-	var messages = event_bridge.get_last_messages(current_channel, 50)
-	for msg_dict in messages:
-		var sender = msg_dict.get("sender", "")
-		var message = msg_dict.get("message", "")
-		var msg_type = msg_dict.get("msg_type", 0)
-		_add_message(sender, message, msg_type)
+			channel_label.text = I18n.translate("chat.not_connected")
 
 # ========================================================================
-# IRC EVENT HANDLERS (from UnifiedEventBridge signals)
+# IRC EVENT HANDLERS (from IrcWebSocketClient signals)
 # ========================================================================
 
-func _on_irc_connected(nickname: String, server: String) -> void:
+func _on_irc_connected() -> void:
+	print("[ChatPanel] _on_irc_connected() called!")
 	is_connected = true
 	_update_connection_state()
 	_update_channel_label()
-	_add_system_message("Connected to %s as %s" % [server, nickname])
+	var nickname = "CityVote_%s" % player_name
+	_add_system_message(I18n.translate("chat.connected_as", [nickname]))
+	print("[ChatPanel] UI updated - is_connected=%s" % is_connected)
 
-func _on_irc_disconnected(reason: String) -> void:
+func _on_irc_disconnected() -> void:
 	is_connected = false
 	_update_connection_state()
 	_update_channel_label()
-	var msg = "Disconnected from IRC"
-	if not reason.is_empty():
-		msg += ": %s" % reason
-	# If we weren't connected yet, this is likely a connection failure
-	if not is_connected:
-		_add_error_message("Connection failed: %s" % reason if not reason.is_empty() else "Unknown error")
-	else:
-		_add_system_message(msg)
+	_add_system_message(I18n.translate("chat.disconnected"))
 
-func _on_channel_message(channel: String, sender: String, message: String) -> void:
+func _on_irc_message_received(channel: String, sender: String, message: String) -> void:
 	if channel == current_channel:
 		_add_message(sender, message, 0)  # MessageType::Channel
 
-func _on_private_message(sender: String, message: String) -> void:
-	_add_message(sender, message, 1)  # MessageType::Private
-
-func _on_notice(sender: String, message: String) -> void:
-	var display_sender = sender if not sender.is_empty() else "Server"
-	_add_message(display_sender, message, 2)  # MessageType::System
-
-func _on_error(message: String) -> void:
-	_add_error_message(message)
-
-func _on_user_joined(channel: String, nickname: String) -> void:
-	if channel == current_channel:
-		_add_system_message("%s joined %s" % [nickname, channel])
-
-func _on_user_parted(channel: String, nickname: String, message: String) -> void:
-	if channel == current_channel:
-		var msg = "%s left %s" % [nickname, channel]
-		if not message.is_empty():
-			msg += " (%s)" % message
-		_add_system_message(msg)
-
-func _on_user_quit(nickname: String, message: String) -> void:
-	var msg = "%s quit" % nickname
-	if not message.is_empty():
-		msg += " (%s)" % message
-	_add_system_message(msg)
+func _on_irc_joined_channel(channel: String) -> void:
+	_add_system_message(I18n.translate("chat.joined_channel", [channel]))
+	current_channel = channel
+	_update_channel_label()
 
 # ========================================================================
 # PUBLIC METHODS
@@ -257,3 +367,9 @@ func set_player_name(name: String) -> void:
 
 func toggle_visibility() -> void:
 	visible = not visible
+
+func _check_delayed_connection() -> void:
+	# Check connection status after _ready() completes
+	if irc_client and irc_client.is_irc_connected():
+		print("[ChatPanel] Delayed check: IRC is connected, updating UI")
+		_on_irc_connected()

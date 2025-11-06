@@ -1,6 +1,25 @@
 # WebSocket Integration for AFK
 
-This module provides unified WebSocket and HTTP/HTTPS support for both **native** (macOS, Linux, Windows) and **WASM** (browser) builds.
+## ⚠️ DEPRECATED - Code Kept for Reference Only
+
+**Status**: All WebSocket/IRC functionality has been moved to GDScript (`cat/core/irc_websocket_client.gd`).
+
+**Why**:
+- Emscripten WebSocket symbols not available in Godot SIDE_MODULE builds
+- Thread pool exhaustion issues in WASM (Rust spawns too many threads)
+- GDScript WebSocketPeer works perfectly on ALL platforms (native + WASM)
+- Simpler architecture, fewer dependencies, no FFI overhead
+
+**This module is commented out but preserved for:**
+- Future reference if WebSocket needs move back to Rust
+- Learning/documentation purposes
+- Potential native-only optimizations later
+
+---
+
+## Original Documentation (Historical)
+
+This module **provided** unified WebSocket and HTTP/HTTPS support for both **native** (macOS, Linux, Windows) and **WASM** (browser) builds.
 
 ## Architecture Overview
 

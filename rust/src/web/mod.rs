@@ -1,5 +1,20 @@
-// Web module for HTTP/HTTPS and WebSocket communication
-// Supports both native and WASM builds
+// ============================================================================
+// DEPRECATED: Web module for HTTP/HTTPS and WebSocket communication
+// ============================================================================
+//
+// STATUS: All WebSocket/IRC functionality moved to GDScript (irc_websocket_client.gd)
+//
+// REASON FOR DEPRECATION:
+// - Emscripten WebSocket symbols not available in Godot SIDE_MODULE builds
+// - Thread pool exhaustion in WASM (Rust spawns too many threads)
+// - GDScript WebSocketPeer works on ALL platforms (native + WASM)
+// - Simpler architecture, no FFI overhead
+//
+// This code is commented out but preserved for future reference.
+// See README.md in this directory for full explanation.
+// ============================================================================
+
+/* COMMENTED OUT - Kept for reference
 
 pub mod client;
 pub mod network_worker;
@@ -30,3 +45,5 @@ pub use client::{NativeHttpClient, NativeWebSocketClient};
 
 #[cfg(target_family = "wasm")]
 pub use client::{WasmHttpClient, WasmWebSocketClient};
+
+*/
