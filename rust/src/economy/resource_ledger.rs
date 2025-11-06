@@ -210,13 +210,18 @@ pub fn can_spend(cost: &[(ResourceType, f32)]) -> bool {
 pub fn spend(cost: &[(ResourceType, f32)]) -> bool {
     // Check first
     if !can_spend(cost) {
+        println!("ResourceLedger: Cannot spend {:?} - insufficient resources", cost);
         return false;
     }
+
+    println!("ResourceLedger: Spending {:?}", cost);
 
     // Spend atomically
     for (resource_type, amount) in cost {
         if let Some(mut entry) = RESOURCE_LEDGER.get_mut(resource_type) {
+            let old_value = entry.current;
             entry.current -= amount;
+            println!("ResourceLedger: {:?} {} -> {}", resource_type, old_value, entry.current);
         }
     }
 

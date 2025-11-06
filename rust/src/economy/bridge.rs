@@ -21,40 +21,16 @@ impl INode for ResourceLedgerBridge {
     }
 
     fn ready(&mut self) {
-        // Emit initial resource values to GDScript
-        let resources = [
-            resource_ledger::ResourceType::Gold,
-            resource_ledger::ResourceType::Food,
-            resource_ledger::ResourceType::Labor,
-            resource_ledger::ResourceType::Faith,
-        ];
-
-        for rt in resources {
-            let current = resource_ledger::get_current(rt);
-            let cap = resource_ledger::get_cap(rt);
-            let rate = resource_ledger::get_rate(rt);
-            self.base_mut().emit_signal(
-                "resource_changed",
-                &[(rt as i32).to_variant(), current.to_variant(), cap.to_variant(), rate.to_variant()],
-            );
-        }
+        // NOTE: Signal emissions disabled - GameActor via UnifiedEventBridge is the source of truth
+        // This bridge is now only used as a CACHE for synchronous queries from GDScript
+        // Initial resource values are emitted by GameActor on startup
     }
 
     fn process(&mut self, _delta: f64) {
-        // Check for tick results from worker thread and emit signals
-        while let Some(result) = resource_ledger::get_tick_result() {
-            for (resource_type, current, cap) in result.changes {
-                let rate = resource_ledger::get_rate(resource_type);
-                self.base_mut().emit_signal(
-                    "resource_changed",
-                    &[
-                        (resource_type as i32).to_variant(),
-                        current.to_variant(),
-                        cap.to_variant(),
-                        rate.to_variant(),
-                    ],
-                );
-            }
+        // NOTE: Signal emissions disabled - GameActor via UnifiedEventBridge is the source of truth
+        // Still drain tick results to prevent queue buildup, but don't emit signals
+        while let Some(_result) = resource_ledger::get_tick_result() {
+            // Discard tick results - GameActor handles all resource change events
         }
     }
 }
@@ -186,7 +162,9 @@ impl ResourceLedgerBridge {
             })
             .collect();
 
+        godot_print!("ResourceLedger.spend() called with cost: {:?}", cost);
         let success = resource_ledger::spend(&cost);
+        godot_print!("ResourceLedger.spend() success: {}", success);
 
         if success {
             // Emit change signals for all spent resources

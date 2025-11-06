@@ -4,13 +4,15 @@ set -e
 # Display usage information
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [-mac] [-wasm] [-cache]
+Usage: $(basename "$0") [-mac] [-wasm] [-cache] [-debug]
 
   -mac   Build and sync macOS binaries only
-  -wasm  Build and sync WASM binaries only
+  -wasm  Build and sync WASM binaries only (release by default)
   -cache Use sccache (if available) to cache Rust builds
+  -debug Build debug WASM (large files, not for git commits)
 
 Running without flags executes both macOS and WASM workflows.
+Note: WASM debug builds are large and should not be committed to git.
 EOF
 }
 
@@ -18,6 +20,7 @@ EOF
 BUILD_MAC=false
 BUILD_WASM=false
 USE_CACHE=false
+BUILD_WASM_DEBUG=false
 EXPLICIT_TARGET=false
 
 for arg in "$@"; do
@@ -32,6 +35,9 @@ for arg in "$@"; do
             ;;
         -cache)
             USE_CACHE=true
+            ;;
+        -debug)
+            BUILD_WASM_DEBUG=true
             ;;
         -h|--help)
             usage
@@ -173,16 +179,22 @@ if [ "$BUILD_WASM" = true ]; then
     # Step 4: Build for WASM (if emsdk is available) - runs in background
     step "Building for WASM (this may take a while)..."
     if command -v emcc &> /dev/null; then
-        echo "  → Building WASM debug with nightly toolchain (size-optimized)..."
-        CARGO_PROFILE_DEV_DEBUG=false \
-        CARGO_PROFILE_DEV_OPT_LEVEL=s \
-        CARGO_PROFILE_DEV_STRIP=debuginfo \
-        CARGO_PROFILE_DEV_PANIC=abort \
-        CARGO_PROFILE_DEV_LTO=thin \
-        CARGO_PROFILE_DEV_CODEGEN_UNITS=1 \
-        CARGO_PROFILE_DEV_INCREMENTAL=false \
-            cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten
-        echo "  ✓ WASM debug build complete"
+        # Only build debug WASM if explicitly requested (large files)
+        if [ "$BUILD_WASM_DEBUG" = true ]; then
+            echo "  → Building WASM debug with nightly toolchain (size-optimized)..."
+            CARGO_PROFILE_DEV_DEBUG=false \
+            CARGO_PROFILE_DEV_OPT_LEVEL=s \
+            CARGO_PROFILE_DEV_STRIP=debuginfo \
+            CARGO_PROFILE_DEV_PANIC=abort \
+            CARGO_PROFILE_DEV_LTO=thin \
+            CARGO_PROFILE_DEV_CODEGEN_UNITS=1 \
+            CARGO_PROFILE_DEV_INCREMENTAL=false \
+                cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten
+            echo "  ✓ WASM debug build complete"
+        else
+            echo "  ℹ Skipping WASM debug build (use -debug flag to enable)"
+            echo "    Note: Debug WASM files are large and should not be committed"
+        fi
 
         echo "  → Building WASM release with nightly toolchain..."
         cargo +nightly build -Zbuild-std=std,panic_abort --target wasm32-unknown-emscripten --release
@@ -191,16 +203,19 @@ if [ "$BUILD_WASM" = true ]; then
         echo ""
         echo "  → Copying WASM binaries to plugin..."
 
-        # WASM (Note: emscripten builds use godo.wasm, not libgodo.wasm)
-        WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/dev-wasm/godo.wasm"
-        if [ ! -f "$WASM_DEBUG_PATH" ]; then
-            WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/debug/godo.wasm"
-        fi
-        if [ -f "$WASM_DEBUG_PATH" ]; then
-            cp "$WASM_DEBUG_PATH" "$PLUGIN_DIR/bin/debug/"
-            echo "  ✓ Copied: godo.wasm (debug)"
+        # WASM Debug (only if built)
+        if [ "$BUILD_WASM_DEBUG" = true ]; then
+            WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/dev-wasm/godo.wasm"
+            if [ ! -f "$WASM_DEBUG_PATH" ]; then
+                WASM_DEBUG_PATH="$TARGET_DIR/wasm32-unknown-emscripten/debug/godo.wasm"
+            fi
+            if [ -f "$WASM_DEBUG_PATH" ]; then
+                cp "$WASM_DEBUG_PATH" "$PLUGIN_DIR/bin/debug/"
+                echo "  ✓ Copied: godo.wasm (debug)"
+            fi
         fi
 
+        # WASM Release (always built)
         if [ -f "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" ]; then
             cp "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" "$PLUGIN_DIR/bin/release/"
             echo "  ✓ Copied: godo.wasm (release)"

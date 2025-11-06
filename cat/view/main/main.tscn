@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://c8oam0p1q2r5u" path="res://view/hud/topbar/topbar_uiux.tscn" id="8_topbar"]
 [ext_resource type="PackedScene" path="res://view/hud/entity_stats_panel.tscn" id="9_stats_panel"]
 [ext_resource type="PackedScene" uid="uid://c8n9m0p1q2r5v" path="res://view/hud/inventory/inventory_panel.tscn" id="10_inventory"]
+[ext_resource type="PackedScene" uid="uid://chat_panel_001" path="res://view/hud/chat/chat_panel.tscn" id="11_chat"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
 shader = ExtResource("7_water")
@@ -203,3 +204,7 @@ z_index = 103
 
 [node name="InventoryPanel" parent="." instance=ExtResource("10_inventory")]
 z_index = 103
+
+[node name="ChatPanel" parent="." instance=ExtResource("11_chat")]
+z_index = 104
+visible = false

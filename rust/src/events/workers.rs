@@ -449,14 +449,14 @@ fn hex_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
 
 #[derive(Debug, Clone)]
 pub struct EconomyWorkRequest {
-    pub producers_snapshot: Vec<(Vec<u8>, i32, f32, bool)>, // (ulid, resource_type, rate, active)
-    pub consumers_snapshot: Vec<(Vec<u8>, i32, f32, bool)>,
-    pub current_resources: Vec<(i32, f32, f32)>, // (type, current, cap)
+    pub producers_snapshot: Vec<(Vec<u8>, i64, f64, bool)>, // (ulid, resource_type, rate, active)
+    pub consumers_snapshot: Vec<(Vec<u8>, i64, f64, bool)>,
+    pub current_resources: Vec<(i64, f64, f64)>, // (type, current, cap)
 }
 
 #[derive(Debug, Clone)]
 pub struct EconomyWorkResult {
-    pub resource_changes: Vec<(i32, f32, f32, f32)>, // (type, current, cap, rate)
+    pub resource_changes: Vec<(i64, f64, f64, f64)>, // (type, current, cap, rate)
 }
 
 pub fn spawn_economy_worker(
@@ -473,14 +473,14 @@ pub fn spawn_economy_worker(
 
                     for (resource_type, current, cap) in request.current_resources {
                         // Calculate net rate
-                        let producer_rate: f32 = request
+                        let producer_rate: f64 = request
                             .producers_snapshot
                             .iter()
                             .filter(|(_, rt, _, active)| *rt == resource_type && *active)
                             .map(|(_, _, rate, _)| rate)
                             .sum();
 
-                        let consumer_rate: f32 = request
+                        let consumer_rate: f64 = request
                             .consumers_snapshot
                             .iter()
                             .filter(|(_, rt, _, active)| *rt == resource_type && *active)

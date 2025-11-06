@@ -61,10 +61,10 @@ pub enum GameEvent {
 
     // === Economy Events ===
     ResourceChanged {
-        resource_type: i32,
-        current: f32,
-        cap: f32,
-        rate: f32,
+        resource_type: i64,
+        current: f64,
+        cap: f64,
+        rate: f64,
     },
 
     // === Stats Events ===
@@ -90,6 +90,79 @@ pub enum GameEvent {
         hand_name: String,       // "One Pair", "Full House", etc.
         card_positions: Vec<(i32, i32)>,  // Positions of cards in the combo
         resource_bonuses: Vec<(i32, f32)>, // (resource_type, amount) pairs
+    },
+
+    // === Network Events ===
+    /// Successfully connected to multiplayer server
+    NetworkConnected {
+        session_id: String,
+    },
+    /// Connection to server failed
+    NetworkConnectionFailed {
+        error: String,
+    },
+    /// Disconnected from server
+    NetworkDisconnected,
+    /// Received a message from the server
+    NetworkMessageReceived {
+        data: Vec<u8>,
+    },
+    /// Network error occurred
+    NetworkError {
+        message: String,
+    },
+
+    // === IRC Chat Events ===
+    /// Connected to IRC server
+    IrcConnected {
+        nickname: String,
+        server: String,
+    },
+    /// Disconnected from IRC
+    IrcDisconnected {
+        reason: Option<String>,
+    },
+    /// Joined IRC channel
+    IrcJoinedChannel {
+        channel: String,
+        nickname: String,
+    },
+    /// Left IRC channel
+    IrcLeftChannel {
+        channel: String,
+        nickname: String,
+        message: Option<String>,
+    },
+    /// Received channel message
+    IrcChannelMessage {
+        channel: String,
+        sender: String,
+        message: String,
+    },
+    /// Received private message
+    IrcPrivateMessage {
+        sender: String,
+        message: String,
+    },
+    /// User joined channel
+    IrcUserJoined {
+        channel: String,
+        nickname: String,
+    },
+    /// User left channel
+    IrcUserLeft {
+        channel: String,
+        nickname: String,
+        message: Option<String>,
+    },
+    /// User quit IRC
+    IrcUserQuit {
+        nickname: String,
+        message: Option<String>,
+    },
+    /// IRC error
+    IrcError {
+        message: String,
     },
 }
 
@@ -135,25 +208,25 @@ pub enum GameRequest {
 
     // === Resource Requests ===
     SpendResources {
-        cost: Vec<(i32, f32)>, // (resource_type, amount)
+        cost: Vec<(i64, f64)>, // (resource_type, amount)
     },
     AddResources {
-        resource_type: i32,
-        amount: f32,
+        resource_type: i64,
+        amount: f64,
     },
     /// Process turn-based resource consumption (called by GameTimer on turn end)
     /// Consumes 1 food per active entity (entities with registered stats)
     ProcessTurnConsumption,
     RegisterProducer {
         ulid: Vec<u8>,
-        resource_type: i32,
-        rate_per_sec: f32,
+        resource_type: i64,
+        rate_per_sec: f64,
         active: bool,
     },
     RegisterConsumer {
         ulid: Vec<u8>,
-        resource_type: i32,
-        rate_per_sec: f32,
+        resource_type: i64,
+        rate_per_sec: f64,
         active: bool,
     },
     RemoveProducer {
@@ -225,6 +298,41 @@ pub enum GameRequest {
         center_x: i32,
         center_y: i32,
         radius: i32,
+    },
+
+    // === Network Requests ===
+    /// Connect to a multiplayer server
+    NetworkConnect {
+        url: String,
+    },
+    /// Send a network message to the server
+    NetworkSend {
+        message: Vec<u8>,
+    },
+    /// Disconnect from the multiplayer server
+    NetworkDisconnect,
+
+    // === IRC Chat Requests ===
+    /// Connect to IRC server (Ergo WebIRC)
+    IrcConnect {
+        player_name: String,
+    },
+    /// Send a message to IRC channel
+    IrcSendMessage {
+        message: String,
+    },
+    /// Join an IRC channel
+    IrcJoinChannel {
+        channel: String,
+    },
+    /// Leave an IRC channel
+    IrcLeaveChannel {
+        channel: String,
+        message: Option<String>,
+    },
+    /// Disconnect from IRC
+    IrcDisconnect {
+        message: Option<String>,
     },
 }
 

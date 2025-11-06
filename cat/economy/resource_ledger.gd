@@ -18,13 +18,20 @@ enum R {
 var rust_bridge: ResourceLedgerBridge
 
 func _ready() -> void:
-	# Create Rust bridge
+	# Create Rust bridge (used as CACHE for synchronous queries only)
 	rust_bridge = ResourceLedgerBridge.new()
 	add_child(rust_bridge)
 	rust_bridge.name = "RustBridge"
 
-	# Connect Rust bridge signal to our signal (re-emit for GDScript listeners)
-	rust_bridge.resource_changed.connect(_on_rust_resource_changed)
+	# NOTE: rust_bridge.resource_changed is NOT connected anymore
+	# GameActor via UnifiedEventBridge is the ONLY source of truth for resource changes
+
+	# Connect to GameActor's resource signals via UnifiedEventBridge
+	# This updates our cached values when GameActor changes resources
+	if UnifiedEventBridge:
+		UnifiedEventBridge.resource_changed.connect(_on_gameactor_resource_changed)
+	else:
+		push_error("ResourceLedger: UnifiedEventBridge not found!")
 
 	# Connect to GameTimer
 	if GameTimer:
@@ -41,9 +48,15 @@ func _on_consume_food() -> void:
 	# Consume 1 food per turn (every 60 seconds)
 	add(R.FOOD, -1.0)
 
-func _on_rust_resource_changed(kind: int, current: float, cap: float, rate: float) -> void:
-	# Re-emit signal for GDScript listeners
-	resource_changed.emit(kind, current, cap, rate)
+func _on_gameactor_resource_changed(kind: int, current: float, cap: float, rate: float) -> void:
+	# GameActor (via UnifiedEventBridge) has updated resources
+	# Update our cached rust_bridge values for synchronous queries
+	var resource_name = ["GOLD", "FOOD", "LABOR", "FAITH"][kind] if kind < 4 else "UNKNOWN"
+	print("ResourceLedger: Received GameActor resource update - %s: current=%.1f, cap=%.1f, rate=%.1f" % [resource_name, current, cap, rate])
+
+	# Update cached values in rust_bridge
+	rust_bridge.set_current(kind, current)
+	rust_bridge.set_cap(kind, cap)
 
 # ---- Public API ----
 
@@ -69,18 +82,67 @@ func set_current(kind: int, value: float) -> void:
 
 ## Add to current amount (clamped to [0, cap])
 func add(kind: int, amount: float) -> void:
-	rust_bridge.add(kind, amount)
+	# Delegate to GameActor via UnifiedEventBridge (single source of truth)
+	var event_bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if event_bridge:
+		event_bridge.add_resources(kind, amount)
+	else:
+		push_error("ResourceLedger: UnifiedEventBridge not available!")
 
 ## Check if we can spend resources
 ## cost: Dictionary of {Resource enum -> amount}
 ## Example: {R.GOLD: 50, R.FOOD: 10}
+## NOTE: This is best-effort based on last known values.
+## For authoritative check, use spend() which will fail if insufficient.
 func can_spend(cost: Dictionary) -> bool:
-	return rust_bridge.can_spend(cost)
+	# Best-effort check using rust_bridge's cached values
+	# GameActor has the authoritative state, so this may be slightly stale
+	for resource_type in cost.keys():
+		var required = cost[resource_type]
+		var current = rust_bridge.get_current(resource_type)
+		if current < required:
+			return false
+	return true
 
-## Spend resources (returns false if not enough)
+## Spend resources (GameActor checks and returns true/false)
 ## cost: Dictionary of {Resource enum -> amount}
+## NOTE: This is ASYNCHRONOUS - GameActor will emit resource_changed signals
+## when the spend completes. We return true optimistically.
 func spend(cost: Dictionary) -> bool:
-	return rust_bridge.spend(cost)
+	# Delegate to GameActor via UnifiedEventBridge (single source of truth)
+	var event_bridge = get_node_or_null("/root/UnifiedEventBridge")
+	if not event_bridge:
+		push_error("ResourceLedger: UnifiedEventBridge not available!")
+		return false
+
+	# Serialize cost to PackedByteArray for efficient Rust FFI
+	# Format: [resource_type (i64, 8 bytes), amount (f64, 8 bytes)] repeated
+	var costs_bytes = PackedByteArray()
+	for resource_type in cost.keys():
+		var amount = cost[resource_type]
+
+		# Encode resource_type as i64 (8 bytes, little-endian)
+		costs_bytes.append((resource_type >> 0) & 0xFF)
+		costs_bytes.append((resource_type >> 8) & 0xFF)
+		costs_bytes.append((resource_type >> 16) & 0xFF)
+		costs_bytes.append((resource_type >> 24) & 0xFF)
+		costs_bytes.append((resource_type >> 32) & 0xFF)
+		costs_bytes.append((resource_type >> 40) & 0xFF)
+		costs_bytes.append((resource_type >> 48) & 0xFF)
+		costs_bytes.append((resource_type >> 56) & 0xFF)
+
+		# Encode amount as f64 (8 bytes)
+		# Use PackedFloat64Array for proper IEEE 754 f64 encoding
+		var temp_array = PackedFloat64Array([amount])
+		var float_bytes = temp_array.to_byte_array()
+		for i in range(8):
+			costs_bytes.append(float_bytes[i])
+
+	event_bridge.spend_resources(costs_bytes)
+
+	# Return true optimistically - GameActor will emit events with actual results
+	# TODO: This should be async/await pattern in the future
+	return true
 
 ## Register a producer
 ## Returns: the entity's ULID for future reference

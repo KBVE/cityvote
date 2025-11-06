@@ -14,12 +14,19 @@ use once_cell::sync::Lazy;
 use crate::npc::entity::{EntityData, EntityStats};
 use crate::economy::resource_ledger::ResourceType;
 use crate::card::card_registry::CardRegistry;
+use crate::web::{NetworkWorkerHandle, NetworkWorkerConfig, start_network_worker, NetworkWorkerResponse, IrcClient, IrcConfig, IrcEvent, ChannelHistory, ChatMessage, MessageType};
 use super::types::{GameEvent, GameRequest, CombatEntitySnapshot};
 use super::workers::*;
 
 // Global entity stats storage (thread-safe, shared between Actor and FFI)
 // Actor owns write access, FFI reads via get_all_stats()
 pub static ACTOR_ENTITY_STATS: Lazy<Arc<DashMap<Vec<u8>, EntityStats>>> = Lazy::new(|| {
+    Arc::new(DashMap::new())
+});
+
+// Global IRC chat history storage (thread-safe, shared between Actor and FFI)
+// Actor owns write access, FFI reads for UI rendering
+pub static IRC_CHAT_HISTORY: Lazy<Arc<DashMap<String, ChannelHistory>>> = Lazy::new(|| {
     Arc::new(DashMap::new())
 });
 
@@ -38,9 +45,9 @@ pub struct GameActor {
     event_tx: Sender<GameEvent>,        // Send events to Godot
 
     // Resource state (simplified for now)
-    resources: HashMap<i32, (f32, f32, f32)>, // (current, cap, rate)
-    producers: Vec<(Vec<u8>, i32, f32, bool)>, // (ulid, resource_type, rate, active)
-    consumers: Vec<(Vec<u8>, i32, f32, bool)>,
+    resources: HashMap<i64, (f64, f64, f64)>, // (current, cap, rate)
+    producers: Vec<(Vec<u8>, i64, f64, bool)>, // (ulid, resource_type, rate, active)
+    consumers: Vec<(Vec<u8>, i64, f64, bool)>,
 
     // === WORKER CHANNELS ===
     spawn_tx: Sender<SpawnWorkRequest>,
@@ -54,6 +61,15 @@ pub struct GameActor {
 
     economy_tx: Sender<EconomyWorkRequest>,
     economy_rx: Receiver<EconomyWorkResult>,
+
+    // === GENERIC NETWORK WORKER (for general HTTP/WebSocket, NOT IRC) ===
+    network_worker: Option<NetworkWorkerHandle>,
+
+    // === IRC CLIENT (owns its own dedicated network worker) ===
+    irc_client: Option<IrcClient>,
+
+    // === IRC CHAT HISTORY ===
+    chat_history: Arc<DashMap<String, ChannelHistory>>,  // Reference to global chat history
 
     // === TIMING ===
     last_combat_tick: Instant,
@@ -98,6 +114,15 @@ impl GameActor {
         spawn_combat_worker(combat_rx_worker, combat_tx_worker);
         spawn_economy_worker(economy_rx_worker, economy_tx_worker);
 
+        // Generic network worker (for HTTP/WebSocket, NOT IRC)
+        let network_worker = None;
+
+        // IRC client will own its own dedicated network worker when created
+        let irc_client = None;
+
+        // Get reference to global chat history
+        let chat_history = Arc::clone(&IRC_CHAT_HISTORY);
+
         let mut actor = Self {
             entities,
             entity_stats,
@@ -123,6 +148,10 @@ impl GameActor {
 
             economy_tx,
             economy_rx,
+
+            network_worker,
+            irc_client,
+            chat_history,
 
             last_combat_tick: Instant::now(),
             last_economy_tick: Instant::now(),
@@ -156,6 +185,8 @@ impl GameActor {
         self.collect_pathfinding_results();
         self.collect_combat_results();
         self.collect_economy_results();
+        self.collect_network_results();
+        self.collect_irc_events();
 
         // 3. Periodic ticks
         if self.last_combat_tick.elapsed() >= Duration::from_millis(500) {
@@ -586,7 +617,7 @@ impl GameActor {
 
                     if player_entity_count > 0 {
                         // Consume 1 food per player-controlled entity
-                        let food_cost = player_entity_count as f32;
+                        let food_cost = player_entity_count as f64;
 
                         if let Some(food) = self.resources.get_mut(&1) { // Resource type 1 = Food
                             food.0 = (food.0 - food_cost).max(0.0);
@@ -684,6 +715,82 @@ impl GameActor {
                         card_positions: combo_result.positions.clone(),
                         resource_bonuses,
                     });
+                }
+
+                GameRequest::NetworkConnect { url } => {
+                    // Initialize network worker if not already started
+                    if self.network_worker.is_none() {
+                        let config = NetworkWorkerConfig::default();
+                        self.network_worker = Some(start_network_worker(config));
+                    }
+
+                    // Send connect request to network worker
+                    if let Some(ref worker) = self.network_worker {
+                        worker.connect(url);
+                    }
+                }
+
+                GameRequest::NetworkSend { message } => {
+                    if let Some(ref worker) = self.network_worker {
+                        worker.send_message(message);
+                    } else {
+                        // Network worker not initialized
+                        let _ = self.event_tx.send(GameEvent::NetworkError {
+                            message: "Network worker not initialized".to_string(),
+                        });
+                    }
+                }
+
+                GameRequest::NetworkDisconnect => {
+                    if let Some(ref worker) = self.network_worker {
+                        worker.disconnect();
+                    }
+                }
+
+                GameRequest::IrcConnect { player_name } => {
+                    godot_print!("[IRC] Received IrcConnect request for player: {}", player_name);
+
+                    // Create network worker and IRC client
+                    godot_print!("[IRC] Starting network worker...");
+                    let worker_config = NetworkWorkerConfig::default();
+                    let worker_handle = start_network_worker(worker_config);
+
+                    godot_print!("[IRC] Creating IRC client...");
+                    let config = IrcConfig::cityvote(player_name);
+                    godot_print!("[IRC] Connecting to: {}", config.url);
+                    let mut client = IrcClient::new(config, worker_handle);
+                    client.connect();
+                    self.irc_client = Some(client);
+                    godot_print!("[IRC] IRC client created and connecting...");
+                }
+
+                GameRequest::IrcSendMessage { message } => {
+                    if let Some(ref mut client) = self.irc_client {
+                        client.send_channel_message(&message);
+                    } else {
+                        let _ = self.event_tx.send(GameEvent::IrcError {
+                            message: "IRC not connected".to_string(),
+                        });
+                    }
+                }
+
+                GameRequest::IrcJoinChannel { channel } => {
+                    if let Some(ref mut client) = self.irc_client {
+                        client.join_channel(&channel);
+                    }
+                }
+
+                GameRequest::IrcLeaveChannel { channel, message } => {
+                    if let Some(ref mut client) = self.irc_client {
+                        client.leave_channel(&channel, message.as_deref());
+                    }
+                }
+
+                GameRequest::IrcDisconnect { message } => {
+                    if let Some(ref mut client) = self.irc_client {
+                        client.disconnect(message.as_deref());
+                        self.irc_client = None;
+                    }
                 }
 
                 _ => {
@@ -875,6 +982,188 @@ impl GameActor {
                     cap,
                     rate,
                 });
+            }
+        }
+    }
+
+    /// Collect network worker responses
+    fn collect_network_results(&mut self) {
+        if let Some(ref worker) = self.network_worker {
+            while let Some(response) = worker.try_recv() {
+                match response {
+                    NetworkWorkerResponse::Connected => {
+                        let _ = self.event_tx.send(GameEvent::NetworkConnected {
+                            session_id: "connected".to_string(), // TODO: Get actual session ID
+                        });
+                    }
+                    NetworkWorkerResponse::ConnectionFailed { error } => {
+                        let _ = self.event_tx.send(GameEvent::NetworkConnectionFailed {
+                            error,
+                        });
+                    }
+                    NetworkWorkerResponse::Disconnected => {
+                        let _ = self.event_tx.send(GameEvent::NetworkDisconnected);
+                    }
+                    NetworkWorkerResponse::MessageReceived { data } => {
+                        let _ = self.event_tx.send(GameEvent::NetworkMessageReceived {
+                            data,
+                        });
+                    }
+                    NetworkWorkerResponse::TextReceived { text } => {
+                        // Convert text to bytes for consistency
+                        let _ = self.event_tx.send(GameEvent::NetworkMessageReceived {
+                            data: text.into_bytes(),
+                        });
+                    }
+                    NetworkWorkerResponse::Error { message } => {
+                        let _ = self.event_tx.send(GameEvent::NetworkError {
+                            message,
+                        });
+                    }
+                    NetworkWorkerResponse::StateChanged { .. } => {
+                        // Could emit state change events if needed
+                    }
+                }
+            }
+        }
+    }
+
+    /// Collect IRC events
+    fn collect_irc_events(&mut self) {
+        // Process IRC client if it exists
+        if let Some(ref mut client) = self.irc_client {
+            // Process network events (must be called regularly)
+            client.process();
+
+            // Collect IRC events
+            while let Some(event) = client.try_recv_event() {
+                match event {
+                    IrcEvent::Connected { ref nickname, ref server } => {
+                        let _ = self.event_tx.send(GameEvent::IrcConnected {
+                            nickname: nickname.clone(),
+                            server: server.clone(),
+                        });
+                    }
+                    IrcEvent::Disconnected { ref reason } => {
+                        let _ = self.event_tx.send(GameEvent::IrcDisconnected {
+                            reason: reason.clone(),
+                        });
+                    }
+                    IrcEvent::Joined { ref channel, ref nickname } => {
+                        // Ensure channel history exists
+                        self.chat_history
+                            .entry(channel.clone())
+                            .or_insert_with(|| ChannelHistory::new(channel, 500));
+
+                        // Add system message
+                        if let Some(mut history) = self.chat_history.get_mut(channel) {
+                            history.add_message(ChatMessage::system(format!("{} joined", nickname)));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcJoinedChannel {
+                            channel: channel.clone(),
+                            nickname: nickname.clone(),
+                        });
+                    }
+                    IrcEvent::Parted { ref channel, ref nickname, ref message } => {
+                        // Add system message
+                        if let Some(mut history) = self.chat_history.get_mut(channel) {
+                            let msg = if let Some(m) = message {
+                                format!("{} left ({})", nickname, m)
+                            } else {
+                                format!("{} left", nickname)
+                            };
+                            history.add_message(ChatMessage::system(msg));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcLeftChannel {
+                            channel: channel.clone(),
+                            nickname: nickname.clone(),
+                            message: message.clone(),
+                        });
+                    }
+                    IrcEvent::ChannelMessage { ref channel, ref sender, ref message } => {
+                        // Store message in chat history
+                        if let Some(mut history) = self.chat_history.get_mut(channel) {
+                            history.add_message(ChatMessage::channel(sender, message));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcChannelMessage {
+                            channel: channel.clone(),
+                            sender: sender.clone(),
+                            message: message.clone(),
+                        });
+                    }
+                    IrcEvent::PrivateMessage { ref sender, ref message } => {
+                        // Store in private message "channel" (use sender as key)
+                        let pm_channel = format!("PM:{}", sender);
+                        self.chat_history
+                            .entry(pm_channel.clone())
+                            .or_insert_with(|| ChannelHistory::new(&pm_channel, 500));
+
+                        if let Some(mut history) = self.chat_history.get_mut(&pm_channel) {
+                            history.add_message(ChatMessage::private(sender, message));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcPrivateMessage {
+                            sender: sender.clone(),
+                            message: message.clone(),
+                        });
+                    }
+                    IrcEvent::UserJoined { ref channel, ref nickname } => {
+                        // Add system message
+                        if let Some(mut history) = self.chat_history.get_mut(channel) {
+                            history.add_message(ChatMessage::system(format!("{} joined", nickname)));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcUserJoined {
+                            channel: channel.clone(),
+                            nickname: nickname.clone(),
+                        });
+                    }
+                    IrcEvent::UserParted { ref channel, ref nickname, ref message } => {
+                        // Add system message
+                        if let Some(mut history) = self.chat_history.get_mut(channel) {
+                            let msg = if let Some(m) = message {
+                                format!("{} left ({})", nickname, m)
+                            } else {
+                                format!("{} left", nickname)
+                            };
+                            history.add_message(ChatMessage::system(msg));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcUserLeft {
+                            channel: channel.clone(),
+                            nickname: nickname.clone(),
+                            message: message.clone(),
+                        });
+                    }
+                    IrcEvent::UserQuit { ref nickname, ref message } => {
+                        // Add to all channels (simplified - normally track user presence per channel)
+                        let quit_msg = if let Some(m) = message {
+                            format!("{} quit ({})", nickname, m)
+                        } else {
+                            format!("{} quit", nickname)
+                        };
+
+                        for mut history in self.chat_history.iter_mut() {
+                            history.add_message(ChatMessage::system(&quit_msg));
+                        }
+
+                        let _ = self.event_tx.send(GameEvent::IrcUserQuit {
+                            nickname: nickname.clone(),
+                            message: message.clone(),
+                        });
+                    }
+                    IrcEvent::Error { ref message } => {
+                        let _ = self.event_tx.send(GameEvent::IrcError {
+                            message: message.clone(),
+                        });
+                    }
+                    _ => {
+                        // Unhandled IRC events
+                    }
+                }
             }
         }
     }

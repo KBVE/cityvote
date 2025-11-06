@@ -1,5 +1,6 @@
 extends Node
 
+###
 ## UnifiedEventBridge - Single Godot autoload for all game events
 ## Wraps the Rust UnifiedEventBridge class for convenient access
 
@@ -23,6 +24,19 @@ signal entity_damaged(ulid: PackedByteArray, damage: float, new_hp: float)
 signal entity_healed(ulid: PackedByteArray, heal_amount: float, new_hp: float)
 signal combo_detected(hand_rank: int, hand_name: String, positions: Array, bonuses: Array)
 
+# IRC Chat Signals
+signal irc_connected(nickname: String, server: String)
+signal irc_disconnected(reason: String)
+signal irc_joined_channel(channel: String, nickname: String)
+signal irc_left_channel(channel: String, nickname: String, message: String)
+signal irc_channel_message(channel: String, sender: String, message: String)
+signal irc_private_message(sender: String, message: String)
+signal irc_notice(sender: String, message: String)
+signal irc_error(message: String)
+signal irc_user_joined(channel: String, nickname: String)
+signal irc_user_parted(channel: String, nickname: String, message: String)
+signal irc_user_quit(nickname: String, message: String)
+
 func _ready() -> void:
 	# Instantiate Rust bridge
 	event_bridge = ClassDB.instantiate("UnifiedEventBridge")
@@ -45,8 +59,25 @@ func _ready() -> void:
 		event_bridge.entity_damaged.connect(_on_entity_damaged)
 		event_bridge.entity_healed.connect(_on_entity_healed)
 		event_bridge.combo_detected.connect(_on_combo_detected)
+
+		# IRC signals
+		event_bridge.irc_connected.connect(_on_irc_connected)
+		event_bridge.irc_disconnected.connect(_on_irc_disconnected)
+		event_bridge.irc_joined_channel.connect(_on_irc_joined_channel)
+		event_bridge.irc_left_channel.connect(_on_irc_left_channel)
+		event_bridge.irc_channel_message.connect(_on_irc_channel_message)
+		event_bridge.irc_private_message.connect(_on_irc_private_message)
+		event_bridge.irc_notice.connect(_on_irc_notice)
+		event_bridge.irc_error.connect(_on_irc_error)
+		event_bridge.irc_user_joined.connect(_on_irc_user_joined)
+		event_bridge.irc_user_parted.connect(_on_irc_user_parted)
+		event_bridge.irc_user_quit.connect(_on_irc_user_quit)
 	else:
 		push_error("UnifiedEventBridge: Failed to instantiate Rust bridge!")
+
+# Note: The Rust UnifiedEventBridge node has its own process() method
+# that is called automatically by Godot every frame (set_process(true) in ready())
+# No need to manually call it from GDScript
 
 # ============================================================================
 # SIGNAL FORWARDERS (Forward Rust signals to GDScript signals)
@@ -96,6 +127,40 @@ func _on_entity_healed(ulid: PackedByteArray, heal_amount: float, new_hp: float)
 
 func _on_combo_detected(hand_rank: int, hand_name: String, positions: Array, bonuses: Array) -> void:
 	combo_detected.emit(hand_rank, hand_name, positions, bonuses)
+
+# IRC Signal Forwarders
+func _on_irc_connected(nickname: String, server: String) -> void:
+	irc_connected.emit(nickname, server)
+
+func _on_irc_disconnected(reason: String) -> void:
+	irc_disconnected.emit(reason)
+
+func _on_irc_joined_channel(channel: String, nickname: String) -> void:
+	irc_joined_channel.emit(channel, nickname)
+
+func _on_irc_left_channel(channel: String, nickname: String, message: String) -> void:
+	irc_left_channel.emit(channel, nickname, message)
+
+func _on_irc_channel_message(channel: String, sender: String, message: String) -> void:
+	irc_channel_message.emit(channel, sender, message)
+
+func _on_irc_private_message(sender: String, message: String) -> void:
+	irc_private_message.emit(sender, message)
+
+func _on_irc_notice(sender: String, message: String) -> void:
+	irc_notice.emit(sender, message)
+
+func _on_irc_error(message: String) -> void:
+	irc_error.emit(message)
+
+func _on_irc_user_joined(channel: String, nickname: String) -> void:
+	irc_user_joined.emit(channel, nickname)
+
+func _on_irc_user_parted(channel: String, nickname: String, message: String) -> void:
+	irc_user_parted.emit(channel, nickname, message)
+
+func _on_irc_user_quit(nickname: String, message: String) -> void:
+	irc_user_quit.emit(nickname, message)
 
 # ============================================================================
 # SPAWN API (Compatible with EntitySpawnBridge)
@@ -238,11 +303,16 @@ func add_resources(resource_type: int, amount: float) -> void:
 	event_bridge.add_resources(resource_type, amount)
 
 ## Spend resources (called by building costs, unit spawning, etc.)
-func spend_resources(costs: Array) -> void:
+## Accepts PackedByteArray with serialized cost data
+func spend_resources(costs_bytes: PackedByteArray) -> void:
 	if not event_bridge:
+		push_error("UnifiedEventBridge: event_bridge not initialized!")
 		return
 
-	event_bridge.spend_resources(costs)
+	# Debug: Log what we're sending
+	print("UnifiedEventBridge.spend_resources() called with %d bytes" % costs_bytes.size())
+
+	event_bridge.spend_resources(costs_bytes)
 
 ## Process turn-based resource consumption (called by GameTimer on turn end)
 ## Consumes 1 food per active entity
@@ -300,3 +370,64 @@ func detect_combo(center_x: int, center_y: int, radius: int) -> void:
 		return
 
 	event_bridge.detect_combo(center_x, center_y, radius)
+
+# ============================================================================
+# IRC CHAT API
+# ============================================================================
+
+## Connect to IRC server
+func irc_connect(player_name: String) -> void:
+	print("[IRC] GDScript wrapper irc_connect called with player_name: ", player_name)
+
+	if not event_bridge:
+		push_error("[IRC] Rust bridge not initialized!")
+		return
+
+	# Check if the method exists
+	if not event_bridge.has_method("irc_connect"):
+		push_error("[IRC] irc_connect method NOT found on event_bridge!")
+		return
+
+	print("[IRC] Calling Rust event_bridge.irc_connect()")
+	event_bridge.irc_connect(player_name)
+	print("[IRC] Rust irc_connect call returned")
+
+## Disconnect from IRC server
+func irc_disconnect(message: String = "") -> void:
+	if not event_bridge:
+		push_error("UnifiedEventBridge: Rust bridge not initialized!")
+		return
+
+	event_bridge.irc_disconnect(message)
+
+## Send a message to the current IRC channel
+func irc_send_message(message: String) -> void:
+	if not event_bridge:
+		push_error("UnifiedEventBridge: Rust bridge not initialized!")
+		return
+
+	event_bridge.irc_send_message(message)
+
+## Join an IRC channel
+func irc_join_channel(channel: String) -> void:
+	if not event_bridge:
+		push_error("UnifiedEventBridge: Rust bridge not initialized!")
+		return
+
+	event_bridge.irc_join_channel(channel)
+
+## Leave an IRC channel
+func irc_leave_channel(channel: String, message: String = "") -> void:
+	if not event_bridge:
+		push_error("UnifiedEventBridge: Rust bridge not initialized!")
+		return
+
+	event_bridge.irc_leave_channel(channel, message)
+
+## Get last N messages from a channel (for chat history)
+func get_last_messages(channel: String, count: int) -> Array:
+	if not event_bridge:
+		push_error("UnifiedEventBridge: Rust bridge not initialized!")
+		return []
+
+	return event_bridge.get_last_messages(channel, count)

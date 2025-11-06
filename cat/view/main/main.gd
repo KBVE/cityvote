@@ -47,6 +47,9 @@ Audit: main.gd - 11-05-2025
 # NOTE: Camera bounds removed for infinite world
 # Chunks are generated on-demand based on camera position
 
+# Initialization flag
+var game_initialized: bool = false
+
 # Drag panning variables
 var is_dragging = false
 var drag_start_mouse_pos = Vector2.ZERO
@@ -141,6 +144,12 @@ func _ready():
 	call_deferred("_initialize_game")
 
 func _initialize_game() -> void:
+	# Guard: Only initialize once per scene instance
+	if game_initialized:
+		push_warning("Main._initialize_game() called multiple times - skipping")
+		return
+
+	game_initialized = true
 	print("DEBUG: Main._initialize_game() starting...")
 
 	# CRITICAL: Reset resources to initial values (1000 each)
@@ -302,20 +311,29 @@ func _process(delta):
 
 	#; TEST
 	# Camera panning with arrow keys or WASD (works even when dragging a card!)
-	var direction = Vector2.ZERO
+	# But DON'T move camera if chat input has focus
+	var chat_has_focus = false
+	if has_node("ChatPanel"):
+		var chat_panel = get_node("ChatPanel")
+		if chat_panel.has_node("MarginContainer/VBoxContainer/InputContainer/MessageInput"):
+			var input_field = chat_panel.get_node("MarginContainer/VBoxContainer/InputContainer/MessageInput")
+			chat_has_focus = input_field.has_focus()
 
-	if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
-		direction.x += 1
-	if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
-		direction.x -= 1
-	if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
-		direction.y += 1
-	if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
-		direction.y -= 1
+	if not chat_has_focus:
+		var direction = Vector2.ZERO
 
-	if direction != Vector2.ZERO:
-		var new_pos = camera.position + direction.normalized() * camera_speed * delta / camera.zoom.x
-		camera.position = _clamp_camera_position(new_pos)
+		if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
+			direction.x += 1
+		if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
+			direction.x -= 1
+		if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
+			direction.y += 1
+		if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
+			direction.y -= 1
+
+		if direction != Vector2.ZERO:
+			var new_pos = camera.position + direction.normalized() * camera_speed * delta / camera.zoom.x
+			camera.position = _clamp_camera_position(new_pos)
 	#; TEST
 
 	#### TEST ####
