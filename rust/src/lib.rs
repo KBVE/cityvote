@@ -25,9 +25,22 @@ mod world_gen;
 mod structures;
 mod loot;
 mod events;  // Unified event system (actor-coordinator pattern)
-// DEPRECATED: Web module disabled - IRC/WebSocket now handled by GDScript (irc_websocket_client.gd)
-// pub mod web;  // Web/network module for HTTP/WebSocket (native + WASM)
-mod async_runtime;  // Tokio runtime singleton for async operations
+
+// Web browser integration (wry-based webview for native platforms)
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub mod web;
+
+// Native-only: Tokio runtime for async operations (macOS, Windows, Linux)
+#[cfg(not(target_family = "wasm"))]
+mod async_runtime;
+
+// macOS-only: Native window management (transparency, always-on-top, focus tracking, browser)
+#[cfg(target_os = "macos")]
+mod macos;
+
+// Windows-only: Native window management (browser integration)
+#[cfg(target_os = "windows")]
+mod windows;
 
 struct Godo;
 
@@ -35,20 +48,19 @@ struct Godo;
 unsafe impl ExtensionLibrary for Godo {
     fn on_level_init(level: InitLevel) {
         if level == InitLevel::Scene {
-            // DEPRECATED: rustls no longer needed (WebSocket moved to GDScript)
-            // #[cfg(not(target_family = "wasm"))]
-            // {
-            //     let _ = rustls::crypto::ring::default_provider().install_default();
-            // }
+            // Re-enabled: AsyncRuntime for future async operations (native only)
+            #[cfg(not(target_family = "wasm"))]
+            {
+                godot::classes::Engine::singleton().register_singleton(
+                    async_runtime::AsyncRuntime::SINGLETON,
+                    &async_runtime::AsyncRuntime::new_alloc()
+                );
+                godot_print!("[Runtime] AsyncRuntime singleton registered");
+            }
 
-            // DEPRECATED: AsyncRuntime no longer needed (no tokio WebSocket)
-            // #[cfg(not(target_family = "wasm"))]
-            // {
-            //     godot::classes::Engine::singleton().register_singleton(
-            //         async_runtime::AsyncRuntime::SINGLETON,
-            //         &async_runtime::AsyncRuntime::new_alloc()
-            //     );
-            // }
+            // Note: macOS window setup moved to MacOSWindowBridge._ready()
+            // The window doesn't exist yet at InitLevel::Scene, so we defer initialization
+            // to when the Godot scene tree is fully loaded
 
             debug_log!("Godo v0.1.1 - GDExtension loaded successfully!");
 

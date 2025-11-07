@@ -18,6 +18,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 IrcWebSocketClient="*res://view/hud/chat/irc_websocket_client.gd"
+MacOSWindowManager="*res://core/macos_window_manager.gd"
 I18n="*res://core/i18n.gd"
 MapConfig="*res://core/map_config.gd"
 Cache="*res://core/cache.gd"
@@ -55,4 +56,5 @@ window/stretch/mode="canvas_items"
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
 limits/global_shader_variables/buffer_size=8192

@@ -52,7 +52,7 @@ func _on_gameactor_resource_changed(kind: int, current: float, cap: float, rate:
 	# GameActor (via UnifiedEventBridge) has updated resources
 	# Update our cached rust_bridge values for synchronous queries
 	var resource_name = ["GOLD", "FOOD", "LABOR", "FAITH"][kind] if kind < 4 else "UNKNOWN"
-	print("ResourceLedger: Received GameActor resource update - %s: current=%.1f, cap=%.1f, rate=%.1f" % [resource_name, current, cap, rate])
+	# print("ResourceLedger: Received GameActor resource update - %s: current=%.1f, cap=%.1f, rate=%.1f" % [resource_name, current, cap, rate])
 
 	# Update cached values in rust_bridge
 	rust_bridge.set_current(kind, current)

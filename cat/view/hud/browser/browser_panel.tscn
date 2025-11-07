@@ -1,0 +1,62 @@
+[gd_scene load_steps=3 format=3 uid="uid://b9r0w5er_p4nel"]
+
+[ext_resource type="Script" path="res://view/hud/browser/browser_panel.gd" id="1_browser"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_browser"]
+bg_color = Color(0.1, 0.1, 0.1, 0.95)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.5, 0.8, 1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="BrowserControl" type="Control"]
+offset_left = 100.0
+offset_top = 100.0
+offset_right = 1180.0
+offset_bottom = 620.0
+script = ExtResource("1_browser")
+
+[node name="BrowserPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_browser")
+
+[node name="MarginContainer" type="MarginContainer" parent="BrowserPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 15
+
+[node name="VBoxContainer" type="VBoxContainer" parent="BrowserPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HeaderBar" type="HBoxContainer" parent="BrowserPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="TitleLabel" type="Label" parent="BrowserPanel/MarginContainer/VBoxContainer/HeaderBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.5, 0.8, 1, 1)
+theme_override_font_sizes/font_size = 24
+text = "KBVE Browser"
+
+[node name="CloseButton" type="Button" parent="BrowserPanel/MarginContainer/VBoxContainer/HeaderBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
+theme_override_font_sizes/font_size = 20
+text = "Close [X]"
+
+[node name="BrowserContainer" type="Control" parent="BrowserPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_horizontal = 3

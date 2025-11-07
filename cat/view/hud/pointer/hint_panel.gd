@@ -63,11 +63,13 @@ func _position_panel() -> void:
 	# Check if we're in the title scene by looking for LanguageSelector
 	var language_selector = get_tree().root.get_node_or_null("Title/LanguageSelector")
 	if language_selector:
-		# We're in title scene - position above language selector
+		# We're in title scene - position below language selector
+		print("HintPanel: Detected title scene, positioning below language selector")
 		_position_above_language_selector(language_selector)
 		return
 
-	# Otherwise, position under CityVote button in main scene
+	# Otherwise, position under topbar in main scene
+	print("HintPanel: Detected main scene, positioning under topbar")
 	_position_under_city_vote()
 
 func _position_above_language_selector(language_selector: Node) -> void:
@@ -80,20 +82,20 @@ func _position_above_language_selector(language_selector: Node) -> void:
 		push_warning("HintPanel: Could not find language selector panel")
 		return
 
-	# Position above the language selector panel
+	# Position below the language selector panel (flush with its bottom border)
 	var panel_global_pos = selector_panel.global_position
 	var panel_size = selector_panel.size
 
-	# Center horizontally above panel
+	# Center horizontally below panel
 	panel_container.position = Vector2(
 		panel_global_pos.x + panel_size.x / 2 - panel_container.size.x / 2,
-		panel_global_pos.y - expanded_height - 10  # 10px gap above
+		panel_global_pos.y + panel_size.y + 2  # 2px below panel bottom border
 	)
 
 	# Match panel width for visual coherence (but slightly narrower)
 	panel_container.custom_minimum_size.x = min(panel_size.x * 0.8, 400)
 
-	print("HintPanel: Positioned above language selector at ", panel_container.position)
+	print("HintPanel: Positioned below language selector at ", panel_container.position)
 
 func _position_under_city_vote() -> void:
 	# Use Cache to get Main scene reference (faster than tree search)
@@ -108,29 +110,23 @@ func _position_under_city_vote() -> void:
 		# Topbar not available yet, silently return
 		return
 
-	# Get the CityVote button
-	var city_vote_button = topbar.get_node_or_null("MarginContainer/HBoxContainer/CenterSection/CityVoteButton")
-	if not city_vote_button:
-		# CityVote button not found, silently return
-		return
+	# Wait multiple frames for layout to finalize (topbar needs time to position)
+	for i in range(5):
+		await get_tree().process_frame
 
-	# Wait one more frame for layout to finalize
-	await get_tree().process_frame
+	# Get topbar position and size
+	var topbar_global_pos = topbar.global_position
+	var topbar_size = topbar.size
 
-	# Position directly under the CityVote button
-	var button_global_pos = city_vote_button.global_position
-	var button_size = city_vote_button.size
+	print("HintPanel DEBUG: topbar global_pos = ", topbar_global_pos, ", size = ", topbar_size)
 
-	# Center horizontally under button, position slightly overlapping for tighter docking
+	# Center horizontally with topbar, position vertically flush with topbar's bottom border
 	panel_container.position = Vector2(
-		button_global_pos.x + button_size.x / 2 - panel_container.size.x / 2,
-		button_global_pos.y + button_size.y - 8  # 8px overlap for tighter visual connection
+		topbar_global_pos.x + topbar_size.x / 2 - panel_container.size.x / 2,  # Center horizontally
+		topbar_global_pos.y + topbar_size.y + 2  # 2px below topbar bottom border
 	)
 
-	# Match button width for visual coherence
-	panel_container.custom_minimum_size.x = button_size.x
-
-	print("HintPanel: Positioned under CityVote button at ", panel_container.position)
+	print("HintPanel: Positioned under topbar at ", panel_container.position, " (topbar bottom: ", topbar_global_pos.y + topbar_size.y, ")")
 
 func _process(delta: float) -> void:
 	# Determine if panel should be expanded
@@ -213,3 +209,8 @@ func force_expand() -> void:
 func force_collapse() -> void:
 	has_active_hint = false
 	is_mouse_over = false
+
+## Public function to reposition the panel (called by main scene on ready)
+func reposition_for_main_scene() -> void:
+	print("HintPanel: Repositioning for main scene")
+	_position_under_city_vote()

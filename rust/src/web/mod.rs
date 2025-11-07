@@ -14,6 +14,8 @@
 // See README.md in this directory for full explanation.
 // ============================================================================
 
+pub mod web_browser;
+
 /* COMMENTED OUT - Kept for reference
 
 pub mod client;

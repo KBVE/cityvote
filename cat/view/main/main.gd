@@ -110,6 +110,10 @@ func _ready():
 	Cache.set_ui_reference("tile_info", tile_info)
 	Cache.set_ui_reference("entity_stats_panel", entity_stats_panel)
 
+	# Reposition hint panel for main scene
+	if GlobalHint:
+		GlobalHint.reposition_for_main_scene()
+
 	# Generate player ULID (represents the current player)
 	if UlidManager:
 		player_ulid = UlidManager.generate()
