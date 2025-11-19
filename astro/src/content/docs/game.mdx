@@ -1,0 +1,108 @@
+---
+title: |
+  Play BugWars
+description: |
+  Experience BugWars in your browser with Unity WebGL
+template: splash
+hero:
+  tagline: Survive the swarm. Prove your worth.
+  image:
+    file: ../../assets/BugWars.webp
+  rawHtml: "<div id='unity-container' style='width: 100%; max-width: 960px; margin: 0 auto;'><div id='unity-canvas-container'></div></div>"
+
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import AstroUnityGameContainer from '@/components/unity-react/AstroUnityGameContainer.astro';
+
+export const unityConfig = {
+  loaderUrl: "/assets/game/Build/WebGL.loader.js",
+  dataUrl: "/assets/game/Build/WebGL.data",
+  frameworkUrl: "/assets/game/Build/WebGL.framework.js",
+  codeUrl: "/assets/game/Build/WebGL.wasm",
+};
+
+## Play BugWars in Your Browser
+
+Get ready to face the ultimate survival challenge. BugWars runs directly in your browser using Unity WebGL technology - no installation required.
+
+<AstroUnityGameContainer
+  config={unityConfig}
+  className="bugwars-unity-container"
+  canvasId="bugwars-canvas"
+  showFullscreenButton={true}
+  height="600px"
+/>
+
+## Game Controls
+
+<CardGrid stagger>
+	<Card title="Movement" icon="right-arrow">
+		Use WASD or Arrow Keys to navigate the battlefield and dodge enemy attacks.
+	</Card>
+	<Card title="Combat" icon="rocket">
+		Left Click or Space to attack. Time your strikes carefully to maximize damage.
+	</Card>
+	<Card title="Special Abilities" icon="star">
+		Press E or Right Click to activate special abilities when available.
+	</Card>
+	<Card title="Pause Menu" icon="setting">
+		Press ESC to pause the game and access settings or return to the main menu.
+	</Card>
+</CardGrid>
+
+## Game Tips
+
+<CardGrid stagger>
+	<Card title="Stay Mobile" icon="rocket">
+		Constant movement is key to survival. Standing still makes you an easy target for swarms.
+	</Card>
+	<Card title="Prioritize Threats" icon="warning">
+		Focus on the most dangerous enemies first. Some bugs deal more damage or move faster than others.
+	</Card>
+	<Card title="Manage Resources" icon="star">
+		Use special abilities wisely. Save them for overwhelming situations or tough boss encounters.
+	</Card>
+	<Card title="Learn Patterns" icon="open-book">
+		Each wave has predictable patterns. Study enemy behavior to anticipate attacks.
+	</Card>
+</CardGrid>
+
+## System Requirements
+
+<div style="margin: 2rem 0; padding: 1.5rem; background: rgba(99, 102, 241, 0.05); border-radius: 8px; border-left: 4px solid #6366f1;">
+
+### Recommended Specifications
+
+- **Browser**: Latest version of Chrome, Firefox, Edge, or Safari
+- **WebGL**: WebGL 2.0 support required
+- **RAM**: 4GB or more recommended
+- **Internet**: Stable broadband connection for initial load
+- **Display**: 1280x720 resolution or higher
+
+### Performance Notes
+
+For the best experience, close unnecessary browser tabs and ensure hardware acceleration is enabled in your browser settings.
+
+</div>
+
+## Community & Support
+
+<CardGrid stagger>
+	<Card title="Report Issues" icon="warning">
+		Found a bug? Report it on our GitHub issues page to help improve the game.
+	</Card>
+	<Card title="Share Strategies" icon="comment">
+		Join the community to share your best survival strategies and high scores.
+	</Card>
+	<Card title="Stay Updated" icon="information">
+		Follow development progress and get notified when new features and updates are released.
+	</Card>
+</CardGrid>
+
+---
+
+<div style="text-align: center; margin-top: 3rem; padding: 2rem; background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(249, 115, 22, 0.1) 100%); border-radius: 12px;">
+	<h3 style="margin-bottom: 0.5rem;">Ready to Fight?</h3>
+	<p style="color: #94a3b8;">The bugs are waiting. Show them what you're made of.</p>
+</div>
