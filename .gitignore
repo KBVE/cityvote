@@ -130,3 +130,7 @@ out/
 
 # Debug symbols
 *.dSYM/
+
+## Rust 
+
+/axum/target/**
