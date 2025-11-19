@@ -144,45 +144,13 @@ jobs:
           mkdir -v -p builds/web
           cd cat
           godot -v --headless --export-release "Web" ../builds/web/index.html
-      #   - name: Inject Supabase into index.html
-      #     run: |
-      #       # Find the closing </body> tag and inject scripts before it
-      #       # Use a simple sed approach - find last </body> and insert before it
 
-      #       # First, create a temporary file with our injection
-      #     #   echo '<script>' > /tmp/supabase_scripts.txt
-      #   cat afk/scripts/supabase.min.js >> /tmp/supabase_scripts.txt
-      #   echo '</script>' >> /tmp/supabase_scripts.txt
-      #   echo '<script>' >> /tmp/supabase_scripts.txt
-      #   cat afk/scripts/supabase-config.js >> /tmp/supabase_scripts.txt
-      #   echo '</script>' >> /tmp/supabase_scripts.txt
-
-      # Use sed to insert before the closing </body> tag
-      #sed -i 's|</body>|SUPABASE_INJECTION_MARKER\n</body>|' builds/web/index.html
-
-      # Replace the marker with actual content using awk
-      #   awk '/SUPABASE_INJECTION_MARKER/ {system("cat /tmp/supabase_scripts.txt"); next}1' builds/web/index.html > /tmp/index_with_supabase.html
-      #   mv /tmp/index_with_supabase.html builds/web/index.html
-
-      #   echo "Supabase scripts injected into index.html"
-
-      # Verify injection
-      # grep -q "createClient" builds/web/index.html && echo "✓ Supabase client found in index.html" || echo "✗ Supabase injection may have failed"
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: web
           path: builds/web
           retention-days: 1
-      # Installing rsync is needed in order to deploy to GitHub Pages. Without it, the build will fail.
-      # - name: Install rsync 📚
-      #   run: |
-      #     apt-get update && apt-get install -y rsync
-      # #   - name: Deploy to GitHub Pages 🚀
-      #     uses: JamesIves/github-pages-deploy-action@releases/v4
-      #     with:
-      #       BRANCH: gh-pages # The branch the action should deploy to.
-      #       FOLDER: builds/web # The folder the action should deploy.
       - name: Zip Folder
         run: zip -r itch.zip builds/web
       - name: Deploy to itch.io
@@ -414,13 +382,13 @@ jobs:
           VERSION=${{ needs.extract-version.outputs.version }}
           MANIFEST_FILE="apps/kube/cityvote/manifest/cityvote-deployment.yaml"
 
-          echo "Updating image tag to: ghcr.io/kbve/afk:${VERSION}"
+          echo "Updating image tag to: ghcr.io/kbve/cityvote:${VERSION}"
 
           # Update the image tag in the deployment manifest
-          sed -i "s|image: ghcr.io/kbve/afk:.*|image: ghcr.io/kbve/afk:${VERSION}|g" "$MANIFEST_FILE"
+          sed -i "s|image: ghcr.io/kbve/cityvote:.*|image: ghcr.io/kbve/cityvote:${VERSION}|g" "$MANIFEST_FILE"
 
           echo "Updated manifest:"
-          grep "image: ghcr.io/kbve/afk" "$MANIFEST_FILE"
+          grep "image: ghcr.io/kbve/cityvote" "$MANIFEST_FILE"
 
       - name: Create Pull Request
         id: create-pr
@@ -438,7 +406,7 @@ jobs:
 
             **Changes:**
             - Updated `apps/kube/cityvote/manifest/cityvote-deployment.yaml`
-            - New image tag: `ghcr.io/kbve/afk:${{ needs.extract-version.outputs.version }}`
+            - New image tag: `ghcr.io/kbve/cityvote:${{ needs.extract-version.outputs.version }}`
 
             **Tracking Issue:** #${{ needs.check-version.outputs.issue_number }}
 
@@ -503,7 +471,7 @@ jobs:
 
             **Pull Request:** #${prNumber}
             **Branch:** \`cityvote-deploy-${version}\`
-            **Changes:** Updated \`apps/kube/cityvote/manifest/cityvote-deployment.yaml\` to use \`ghcr.io/kbve/afk:${version}\`
+            **Changes:** Updated \`apps/kube/cityvote/manifest/cityvote-deployment.yaml\` to use \`ghcr.io/kbve/cityvote:${version}\`
 
             Please review and merge the PR to complete the deployment.`
             });

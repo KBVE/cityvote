@@ -1,7 +1,7 @@
 [package]
 name = "kbve-cityvote"
 authors = ["kbve", "h0lybyte", "richie911", "fudster"]
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 publish = false
 
