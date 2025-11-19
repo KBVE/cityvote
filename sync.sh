@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_NAME=${IMAGE_NAME:-myapp}
+IMAGE_NAME=${IMAGE_NAME:-cityvote}
 PORT=${PORT:-4321}
 
 log() {
