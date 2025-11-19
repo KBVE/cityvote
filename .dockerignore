@@ -1,0 +1,106 @@
+# Git files
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+COMMAND.md
+STRUCTURES.md
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs.txt
+logs_archive.txt
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.stackdump
+
+# Testing
+coverage/
+*.lcov
+.nyc_output/
+test/
+tests/
+**/__tests__/
+**/*.test.js
+**/*.test.ts
+**/*.spec.js
+**/*.spec.ts
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Node.js
+node_modules/
+.pnpm-store/
+.yarn/
+.npm/
+.eslintcache
+
+# Rust build artifacts (we'll copy specific files in Dockerfile)
+rust/target/
+axum/target/
+**/target/debug/
+**/target/release/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Astro build artifacts (built fresh in Docker)
+astro/dist/
+astro/.astro/
+astro/node_modules/
+.astro/
+
+# Godot
+.godot/
+.import/
+export.cfg
+export_credentials.cfg
+*.translation
+.mono/
+data_*/
+mono_crash.*.json
+.nomedia
+cat/
+
+# Docker
+.docker/
+Dockerfile.dev
+docker-compose.dev.yml
+.dockerignore
+
+# Misc
+*.bak
+*.swp
+*~
