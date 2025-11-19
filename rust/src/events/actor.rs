@@ -346,7 +346,7 @@ impl GameActor {
                     self.consumers.retain(|(u, _, _, _)| u != &ulid);
                 }
 
-                GameRequest::RegisterEntityStats { ulid, player_ulid, entity_type, terrain_type, position, combat_type, projectile_type, combat_range } => {
+                GameRequest::RegisterEntityStats { ulid, player_ulid, entity_type, terrain_type, position, combat_type, projectile_type, combat_range, aggro_range } => {
                     use crate::npc::entity::{EntityStats, TerrainType as EntityTerrainType, StatType, ENTITY_STATS, CombatType, ProjectileType};
 
                     // Store player_ulid for team detection
@@ -411,6 +411,7 @@ impl GameActor {
                         entity_data.combat_type = ct;
                         entity_data.projectile_type = pt;
                         entity_data.combat_range = combat_range;
+                        entity_data.aggro_range = aggro_range;
 
                         self.entities.insert(entity_data.ulid.clone(), entity_data);
                     }
@@ -899,6 +900,11 @@ impl GameActor {
                         defender_ulid,
                     });
                 }
+                CombatWorkResult::AttackExecuted { attacker_ulid } => {
+                    // ATTACKING state will be managed in GDScript via animation system
+                    // GDScript entities listen for DamageDealt events and manage ATTACKING/HURT states with timers
+                    // This keeps state management close to the animation logic
+                }
                 CombatWorkResult::DamageDealt { attacker_ulid, defender_ulid, damage } => {
                     // CRITICAL: Apply damage to entity_stats (Actor owns this state)
                     if let Some(mut stats) = self.entity_stats.get_mut(&defender_ulid) {
@@ -934,6 +940,9 @@ impl GameActor {
                             });
                         }
                     }
+
+                    // HURT state will be managed in GDScript when EntityDamaged event is received
+                    // GDScript entities will set HURT state, play hurt animation, then clear it after animation completes
 
                     // Also emit combat event for visual feedback
                     let _ = self.event_tx.send(GameEvent::DamageDealt {
@@ -972,6 +981,11 @@ impl GameActor {
                     projectile_type,
                     damage,
                 } => {
+                    godot_print!(
+                        "[Rust Actor] Received SpawnProjectile work result, sending event: type={}, damage={}",
+                        projectile_type,
+                        damage
+                    );
                     // Emit projectile spawn event for GDScript to handle visual
                     let _ = self.event_tx.send(GameEvent::SpawnProjectile {
                         attacker_ulid,
@@ -981,6 +995,76 @@ impl GameActor {
                         projectile_type,
                         damage,
                     });
+                }
+                CombatWorkResult::ManaConsumed {
+                    entity_ulid,
+                    mana_cost,
+                    new_mana,
+                } => {
+                    // Update entity mana in Actor's entity_stats (Actor owns HP/Mana state)
+                    if let Some(mut stats) = self.entity_stats.get_mut(&entity_ulid) {
+                        use crate::npc::entity::{StatType, ENTITY_STATS};
+                        stats.value_mut().set(StatType::Mana, new_mana as f32);
+
+                        // Emit StatChanged event for GDScript UI to update mana bar
+                        let _ = self.event_tx.send(GameEvent::StatChanged {
+                            ulid: entity_ulid.clone(),
+                            stat_type: StatType::Mana as i64,
+                            new_value: new_mana as f32,
+                        });
+                    }
+                }
+                CombatWorkResult::KiteAway {
+                    entity_ulid,
+                    enemy_position,
+                    ideal_distance,
+                } => {
+                    // KiteAway handles both kiting (positive ideal_distance) and chasing (negative ideal_distance)
+                    if let Some(entity_entry) = self.entities.get(&entity_ulid) {
+                        let entity_data = entity_entry.value();
+                        let entity_pos = entity_data.position;
+
+                        // Convert entity::TerrainType to terrain_cache::TerrainType
+                        use crate::npc::entity::TerrainType as EntityTerrainType;
+                        use crate::npc::terrain_cache::TerrainType as CacheTerrainType;
+                        let cache_terrain = match entity_data.terrain_type {
+                            EntityTerrainType::Water => CacheTerrainType::Water,
+                            EntityTerrainType::Land => CacheTerrainType::Land,
+                        };
+
+                        let target_pos = if ideal_distance < 0 {
+                            // Negative ideal_distance = chase toward enemy (melee units)
+                            // Pathfind directly to enemy position
+                            enemy_position
+                        } else {
+                            // Positive ideal_distance = kite away from enemy (ranged units)
+                            // Calculate escape direction (away from enemy)
+                            let dx = entity_pos.0 - enemy_position.0;
+                            let dy = entity_pos.1 - enemy_position.1;
+
+                            // Normalize and scale to ideal distance
+                            let distance = ((dx * dx + dy * dy) as f32).sqrt();
+                            if distance > 0.0 {
+                                let norm_x = (dx as f32 / distance * ideal_distance as f32) as i32;
+                                let norm_y = (dy as f32 / distance * ideal_distance as f32) as i32;
+                                (entity_pos.0 + norm_x, entity_pos.1 + norm_y)
+                            } else {
+                                entity_pos // Can't escape, stay put
+                            }
+                        };
+
+                        // Send pathfinding request to worker
+                        let work = PathWorkRequest {
+                            ulid: entity_ulid.clone(),
+                            terrain_type: cache_terrain,
+                            start: entity_pos,
+                            goal: target_pos,
+                            avoid_entities: false, // Prioritize combat movement over collision avoidance
+                            entity_positions: None,
+                        };
+
+                        let _ = self.path_tx.send(work);
+                    }
                 }
             }
         }
@@ -1260,6 +1344,10 @@ impl GameActor {
                     let hp_f32 = stats.value().get(StatType::HP);
                     let hp_ceiled = if hp_f32 > 0.0 { hp_f32.ceil() as i32 } else { 0 };
 
+                    // Same for mana - ceil to ensure fractional mana is still available
+                    let mana_f32 = stats.value().get(StatType::Mana);
+                    let mana_ceiled = if mana_f32 > 0.0 { mana_f32.ceil() as i32 } else { 0 };
+
                     Some(CombatEntitySnapshot {
                         ulid: ulid.clone(),
                         player_ulid,
@@ -1267,12 +1355,15 @@ impl GameActor {
                         terrain_type: cache_terrain,
                         hp: hp_ceiled,
                         max_hp: stats.value().get(StatType::MaxHP) as i32,
+                        mana: mana_ceiled,
+                        max_mana: stats.value().get(StatType::MaxMana) as i32,
                         attack: stats.value().get(StatType::Attack) as i32,
                         defense: stats.value().get(StatType::Defense) as i32,
                         range: stats.value().get(StatType::Range) as i32,
                         combat_type: entity.combat_type.to_u8(),
                         projectile_type: entity.projectile_type.to_u8(),
                         combat_range: entity.combat_range,
+                        aggro_range: entity.aggro_range,
                     })
                 } else {
                     None

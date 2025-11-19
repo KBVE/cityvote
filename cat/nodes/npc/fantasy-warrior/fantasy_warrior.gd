@@ -64,6 +64,7 @@ func _ready():
 	combat_type = CombatType.MELEE
 	projectile_type = ProjectileType.NONE
 	combat_range = 1  # Melee range (1 hex)
+	aggro_range = 10  # Melee units need larger aggro range to detect enemies and pathfind toward them
 
 	super._ready()  # Call parent NPC _ready
 
@@ -131,11 +132,8 @@ func _process(delta: float):
 	# Update sprite flipping based on movement direction
 	_update_sprite_flip()
 
-	# Handle animation state based on movement
-	if has_state(State.MOVING) and shader_animation == AnimType.IDLE:
-		play_animation(AnimType.RUN, true)
-	elif not has_state(State.MOVING) and shader_animation == AnimType.RUN:
-		play_animation(AnimType.IDLE, true)
+	# Auto-select animations based on state
+	_auto_select_animation()
 
 	if not shader_animation_playing or not shader_material:
 		return
@@ -159,6 +157,30 @@ func _process(delta: float):
 	shader_material.set_shader_parameter("frame_index", int(shader_frame))
 	shader_material.set_shader_parameter("animation_row", shader_animation)
 	shader_material.set_shader_parameter("frames_per_row", frame_count)
+
+func _auto_select_animation():
+	# Automatically select animation based on NPC state (from Rust)
+	# Priority: Dead > Hurt > Attacking > Combat > Moving > Idle
+	if has_state(State.DEAD) or shader_animation == AnimType.DEATH:
+		if shader_animation != AnimType.DEATH:
+			play_animation(AnimType.DEATH, false)
+	elif has_state(State.HURT):
+		if shader_animation != AnimType.TAKE_HIT:
+			play_animation(AnimType.TAKE_HIT, false)
+	elif has_state(State.ATTACKING):
+		# Use ATTACK1 as primary attack animation
+		if shader_animation != AnimType.ATTACK1 and shader_animation != AnimType.ATTACK2 and shader_animation != AnimType.ATTACK3:
+			play_animation(AnimType.ATTACK1, false)
+	elif has_state(State.IN_COMBAT):
+		# Combat ready stance (not actively attacking) - use idle animation
+		if shader_animation != AnimType.IDLE:
+			play_animation(AnimType.IDLE, true)
+	elif has_state(State.MOVING):
+		if shader_animation != AnimType.RUN:
+			play_animation(AnimType.RUN, true)
+	elif has_state(State.IDLE):
+		if shader_animation != AnimType.IDLE:
+			play_animation(AnimType.IDLE, true)
 
 func _update_sprite_flip():
 	# Flip sprite based on movement direction

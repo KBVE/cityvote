@@ -246,6 +246,7 @@ pub enum GameRequest {
         combat_type: u8,       // CombatType bitwise flags
         projectile_type: u8,   // ProjectileType enum value
         combat_range: i32,     // Attack range in hexes
+        aggro_range: i32,      // Detection/aggro range in hexes
     },
     GetStat {
         ulid: Vec<u8>,
@@ -349,12 +350,15 @@ pub struct CombatEntitySnapshot {
     pub terrain_type: TerrainType,
     pub hp: i32,
     pub max_hp: i32,
+    pub mana: i32,             // Current mana (for magic attacks)
+    pub max_mana: i32,         // Maximum mana
     pub attack: i32,
     pub defense: i32,
     pub range: i32,
     pub combat_type: u8,       // CombatType bitwise flags
     pub projectile_type: u8,   // ProjectileType enum value
     pub combat_range: i32,     // Attack range in hexes
+    pub aggro_range: i32,      // Detection/aggro range in hexes
 }
 
 /// Work request sent from Actor to Combat Worker
@@ -369,6 +373,10 @@ pub enum CombatWorkResult {
     CombatStarted {
         attacker_ulid: Vec<u8>,
         defender_ulid: Vec<u8>,
+    },
+    /// Attack animation should play (sets ATTACKING state)
+    AttackExecuted {
+        attacker_ulid: Vec<u8>,
     },
     DamageDealt {
         attacker_ulid: Vec<u8>,
@@ -390,5 +398,17 @@ pub enum CombatWorkResult {
         target_position: (i32, i32),
         projectile_type: u8,  // ProjectileType enum value
         damage: i32,          // Pre-calculated damage
+    },
+    /// Mana consumed from attacker (for magic attacks)
+    ManaConsumed {
+        entity_ulid: Vec<u8>,
+        mana_cost: i32,
+        new_mana: i32,
+    },
+    /// Ranged unit should kite away from enemy (move to ideal distance)
+    KiteAway {
+        entity_ulid: Vec<u8>,
+        enemy_position: (i32, i32),
+        ideal_distance: i32,
     },
 }

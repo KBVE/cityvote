@@ -14,22 +14,24 @@ pub enum StatType {
     Speed = 4,        // Movement/action speed
 
     // Resource stats
-    Energy = 5,       // Current energy points
+    Energy = 5,       // Current energy points (for physical actions)
     MaxEnergy = 6,    // Maximum energy points
+    Mana = 7,         // Current mana points (for magic)
+    MaxMana = 8,      // Maximum mana points
 
     // Secondary stats
-    Range = 7,        // Attack/vision range
-    Morale = 8,       // Unit morale (affects combat)
-    Experience = 9,   // XP for leveling
-    Level = 10,       // Current level
+    Range = 9,        // Attack/vision range
+    Morale = 10,      // Unit morale (affects combat)
+    Experience = 11,  // XP for leveling
+    Level = 12,       // Current level
 
     // Resource production (for structures)
-    ProductionRate = 11,   // Production efficiency
-    StorageCapacity = 12, // Resource storage
+    ProductionRate = 13,   // Production efficiency
+    StorageCapacity = 14,  // Resource storage
 
     // Special stats
-    Luck = 13,        // Critical hit chance modifier
-    Evasion = 14,     // Dodge chance
+    Luck = 15,        // Critical hit chance modifier
+    Evasion = 16,     // Dodge chance
 }
 
 impl StatType {
@@ -42,14 +44,16 @@ impl StatType {
             4 => Some(StatType::Speed),
             5 => Some(StatType::Energy),
             6 => Some(StatType::MaxEnergy),
-            7 => Some(StatType::Range),
-            8 => Some(StatType::Morale),
-            9 => Some(StatType::Experience),
-            10 => Some(StatType::Level),
-            11 => Some(StatType::ProductionRate),
-            12 => Some(StatType::StorageCapacity),
-            13 => Some(StatType::Luck),
-            14 => Some(StatType::Evasion),
+            7 => Some(StatType::Mana),
+            8 => Some(StatType::MaxMana),
+            9 => Some(StatType::Range),
+            10 => Some(StatType::Morale),
+            11 => Some(StatType::Experience),
+            12 => Some(StatType::Level),
+            13 => Some(StatType::ProductionRate),
+            14 => Some(StatType::StorageCapacity),
+            15 => Some(StatType::Luck),
+            16 => Some(StatType::Evasion),
             _ => None,
         }
     }
@@ -75,6 +79,8 @@ impl EntityStats {
         stats.set(StatType::MaxHP, 100.0);
         stats.set(StatType::Energy, 100.0);
         stats.set(StatType::MaxEnergy, 100.0);
+        stats.set(StatType::Mana, 0.0);  // Ships don't use mana
+        stats.set(StatType::MaxMana, 0.0);
         stats.set(StatType::Attack, 10.0);
         stats.set(StatType::Defense, 5.0);
         stats.set(StatType::Speed, 1.0);
@@ -91,6 +97,8 @@ impl EntityStats {
         stats.set(StatType::MaxHP, 50.0);
         stats.set(StatType::Energy, 100.0);
         stats.set(StatType::MaxEnergy, 100.0);
+        stats.set(StatType::Mana, 50.0);  // Default mana for NPCs
+        stats.set(StatType::MaxMana, 50.0);
         stats.set(StatType::Attack, 5.0);
         stats.set(StatType::Defense, 2.0);
         stats.set(StatType::Speed, 1.5);
@@ -177,13 +185,15 @@ impl TerrainType {
 /// Allows multiple states to be active simultaneously (e.g., MOVING | IN_COMBAT)
 /// Uses i64 for Godot compatibility
 pub mod entity_state_flags {
-    pub const IDLE: i64 = 0b0001;           // 1 - Entity is idle
-    pub const MOVING: i64 = 0b0010;         // 2 - Entity is moving
-    pub const PATHFINDING: i64 = 0b0100;    // 4 - Pathfinding in progress
-    pub const BLOCKED: i64 = 0b1000;        // 8 - Entity is blocked
-    pub const INTERACTING: i64 = 0b10000;   // 16 - Entity is interacting
-    pub const DEAD: i64 = 0b100000;         // 32 - Entity is dead
-    pub const IN_COMBAT: i64 = 0b1000000;   // 64 - Entity is in combat
+    pub const IDLE: i64 = 1 << 0;           // 1 - Entity is idle
+    pub const MOVING: i64 = 1 << 1;         // 2 - Entity is moving
+    pub const PATHFINDING: i64 = 1 << 2;    // 4 - Pathfinding in progress
+    pub const BLOCKED: i64 = 1 << 3;        // 8 - Entity is blocked
+    pub const INTERACTING: i64 = 1 << 4;    // 16 - Entity is interacting
+    pub const DEAD: i64 = 1 << 5;           // 32 - Entity is dead
+    pub const IN_COMBAT: i64 = 1 << 6;      // 64 - Entity is in combat
+    pub const ATTACKING: i64 = 1 << 7;      // 128 - Entity is attacking (playing attack animation)
+    pub const HURT: i64 = 1 << 8;           // 256 - Entity is hurt (playing hurt animation)
 }
 
 /// Legacy enum for backward compatibility (deprecated - use EntityStateFlags instead)
@@ -250,19 +260,19 @@ pub type NpcState = EntityState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CombatType {
-    Melee = 0b0001,   // Close combat (1 hex range)
-    Ranged = 0b0010,  // Ranged physical attacks (bow, spear, etc.)
-    Bow = 0b0100,     // Bow/crossbow - uses ARROW/SPEAR projectiles
-    Magic = 0b1000,   // Magic attacks - uses spell projectiles
+    Melee = 1 << 0,   // 1 - Close combat (1 hex range)
+    Ranged = 1 << 1,  // 2 - Ranged physical attacks (bow, spear, etc.)
+    Bow = 1 << 2,     // 4 - Bow/crossbow - uses ARROW/SPEAR projectiles
+    Magic = 1 << 3,   // 8 - Magic attacks - uses spell projectiles
 }
 
 impl CombatType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0b0001 => Some(CombatType::Melee),
-            0b0010 => Some(CombatType::Ranged),
-            0b0100 => Some(CombatType::Bow),
-            0b1000 => Some(CombatType::Magic),
+            1 => Some(CombatType::Melee),      // 1 << 0
+            2 => Some(CombatType::Ranged),     // 1 << 1
+            4 => Some(CombatType::Bow),        // 1 << 2
+            8 => Some(CombatType::Magic),      // 1 << 3
             _ => None,
         }
     }
@@ -352,6 +362,7 @@ pub struct EntityData {
     pub combat_type: CombatType,           // Combat behavior (melee, ranged, bow, magic)
     pub projectile_type: ProjectileType,   // Projectile type for BOW/MAGIC
     pub combat_range: i32,                 // Attack range in hexes
+    pub aggro_range: i32,                  // Detection/aggro range in hexes (typically larger than combat_range)
 }
 
 impl EntityData {
@@ -366,6 +377,7 @@ impl EntityData {
         // Default combat type is melee
         let combat_type = CombatType::Melee;
         let combat_range = combat_type.default_range();
+        let aggro_range = 8;  // Default aggro range: 8 hexes (units can detect enemies from this distance)
 
         Self {
             ulid,
@@ -381,6 +393,7 @@ impl EntityData {
             combat_type,
             projectile_type: ProjectileType::None,
             combat_range,
+            aggro_range,
         }
     }
 

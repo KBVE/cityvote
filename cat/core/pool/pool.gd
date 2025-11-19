@@ -19,8 +19,15 @@ func _ready():
 
 # Grow the pool by creating more instances
 func _grow_pool(count: int):
+	if not packed_scene:
+		push_error("Pool: packed_scene is null, cannot grow pool")
+		return
+
 	for i in range(count):
 		var instance = packed_scene.instantiate()
+		if not instance:
+			push_error("Pool: Failed to instantiate from packed_scene")
+			continue
 		instance.set_process(false)
 		instance.set_physics_process(false)
 		instance.hide()

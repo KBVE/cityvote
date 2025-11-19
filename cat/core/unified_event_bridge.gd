@@ -201,11 +201,11 @@ func remove_consumer(ulid: PackedByteArray) -> void:
 # ============================================================================
 
 ## Register entity stats (called when entity spawns)
-func register_entity_stats(ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: String, terrain_type: int, q: int, r: int, combat_type: int, projectile_type: int, combat_range: int) -> void:
+func register_entity_stats(ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: String, terrain_type: int, q: int, r: int, combat_type: int, projectile_type: int, combat_range: int, aggro_range: int) -> void:
 	if not event_bridge:
 		return
 
-	event_bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, q, r, combat_type, projectile_type, combat_range)
+	event_bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, q, r, combat_type, projectile_type, combat_range, aggro_range)
 
 ## Set a stat value for an entity
 func set_stat(ulid: PackedByteArray, stat_type: int, value: float) -> void:

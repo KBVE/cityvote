@@ -213,6 +213,12 @@ if [ "$BUILD_WASM" = true ]; then
                 cp "$WASM_DEBUG_PATH" "$PLUGIN_DIR/bin/debug/"
                 echo "  ✓ Copied: godo.wasm (debug)"
             fi
+        else
+            # Use WASM release for both debug and release (debug WASM is too large)
+            if [ -f "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" ]; then
+                cp "$TARGET_DIR/wasm32-unknown-emscripten/release/godo.wasm" "$PLUGIN_DIR/bin/debug/"
+                echo "  ✓ Copied: godo.wasm (debug - using release build)"
+            fi
         fi
 
         # WASM Release (always built)

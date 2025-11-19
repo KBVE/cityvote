@@ -291,7 +291,7 @@ impl UnifiedEventBridge {
 
     /// Register entity stats (called when entity spawns)
     #[func]
-    fn register_entity_stats(&mut self, ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: GString, terrain_type: i32, q: i32, r: i32, combat_type: i32, projectile_type: i32, combat_range: i32) {
+    fn register_entity_stats(&mut self, ulid: PackedByteArray, player_ulid: PackedByteArray, entity_type: GString, terrain_type: i32, q: i32, r: i32, combat_type: i32, projectile_type: i32, combat_range: i32, aggro_range: i32) {
         let _ = CHANNELS.request_tx.send(GameRequest::RegisterEntityStats {
             ulid: ulid.to_vec(),
             player_ulid: player_ulid.to_vec(),
@@ -301,6 +301,7 @@ impl UnifiedEventBridge {
             combat_type: combat_type as u8,
             projectile_type: projectile_type as u8,
             combat_range,
+            aggro_range,
         });
     }
 
@@ -480,6 +481,8 @@ impl UnifiedEventBridge {
             dict.insert(StatType::Speed as i64, stats.get(StatType::Speed));
             dict.insert(StatType::Energy as i64, stats.get(StatType::Energy));
             dict.insert(StatType::MaxEnergy as i64, stats.get(StatType::MaxEnergy));
+            dict.insert(StatType::Mana as i64, stats.get(StatType::Mana));
+            dict.insert(StatType::MaxMana as i64, stats.get(StatType::MaxMana));
             dict.insert(StatType::Range as i64, stats.get(StatType::Range));
             dict.insert(StatType::Morale as i64, stats.get(StatType::Morale));
             dict.insert(StatType::Experience as i64, stats.get(StatType::Experience));
@@ -841,6 +844,15 @@ impl UnifiedEventBridge {
                 projectile_type,
                 damage,
             } => {
+                godot_print!(
+                    "[Rust Bridge] Emitting spawn_projectile signal: type={}, damage={}, pos=({},{})->({},{})",
+                    projectile_type,
+                    damage,
+                    attacker_position.0,
+                    attacker_position.1,
+                    target_position.0,
+                    target_position.1
+                );
                 self.base_mut().emit_signal(
                     "spawn_projectile",
                     &[

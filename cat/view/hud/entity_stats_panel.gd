@@ -14,12 +14,14 @@ const STAT_DEFENSE = 3
 const STAT_SPEED = 4
 const STAT_ENERGY = 5
 const STAT_MAX_ENERGY = 6
-const STAT_RANGE = 7
-const STAT_MORALE = 8
-const STAT_EXPERIENCE = 9
-const STAT_LEVEL = 10
-const STAT_PRODUCTION_RATE = 11
-const STAT_STORAGE_CAPACITY = 12
+const STAT_MANA = 7
+const STAT_MAX_MANA = 8
+const STAT_RANGE = 9
+const STAT_MORALE = 10
+const STAT_EXPERIENCE = 11
+const STAT_LEVEL = 12
+const STAT_PRODUCTION_RATE = 13
+const STAT_STORAGE_CAPACITY = 14
 
 # Currently displayed entity
 var current_entity_ulid: PackedByteArray = PackedByteArray()
@@ -145,13 +147,20 @@ func _display_stats_from_ulid(ulid: PackedByteArray) -> void:
 			player_id_hex = "N/A"
 		_update_stat_text("Player ID", player_id_hex, Color(0.6, 0.8, 0.9))
 
+	# Display State (if entity has current_state property) - Rust is source of truth
+	if current_entity_node != null and "current_state" in current_entity_node:
+		var state_text = _decode_state_flags(current_entity_node.current_state)
+		var state_color = _get_state_color(current_entity_node.current_state)
+		_update_stat_text("State", state_text, state_color)
+
 	# Update stat displays (creates labels on first call, reuses thereafter)
 	_update_stat(I18n.translate("stat.health") + " (HP)", all_stats.get(STAT_HP, 0), all_stats.get(STAT_MAX_HP, 0), Color(0.9, 0.3, 0.3))  # Red
-	_update_stat(I18n.translate("ui.stats.energy") + " (EP)", all_stats.get(STAT_ENERGY, 0), all_stats.get(STAT_MAX_ENERGY, 0), Color(0.2, 0.6, 0.9))  # Blue
+	_update_stat(I18n.translate("ui.stats.energy") + " (EP)", all_stats.get(STAT_ENERGY, 0), all_stats.get(STAT_MAX_ENERGY, 0), Color(0.9, 0.9, 0.2))  # Yellow
+	_update_stat(I18n.translate("ui.stats.mana") + " (MP)", all_stats.get(STAT_MANA, 0), all_stats.get(STAT_MAX_MANA, 0), Color(0.2, 0.6, 0.9))  # Blue
 	_update_stat(I18n.translate("stat.attack") + " (ATK)", all_stats.get(STAT_ATTACK, 0), -1, Color(1.0, 0.6, 0.2))  # Orange
-	_update_stat(I18n.translate("stat.defense") + " (DEF)", all_stats.get(STAT_DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Blue
+	_update_stat(I18n.translate("stat.defense") + " (DEF)", all_stats.get(STAT_DEFENSE, 0), -1, Color(0.4, 0.7, 1.0))  # Light Blue
 	_update_stat(I18n.translate("stat.speed") + " (SPD)", all_stats.get(STAT_SPEED, 0), -1, Color(0.5, 1.0, 0.5))  # Green
-	_update_stat(I18n.translate("stat.range") + " (RNG)", all_stats.get(STAT_RANGE, 0), -1, Color(0.9, 0.9, 0.5))  # Yellow
+	_update_stat(I18n.translate("stat.range") + " (RNG)", all_stats.get(STAT_RANGE, 0), -1, Color(0.9, 0.7, 0.5))  # Tan
 	_update_stat(I18n.translate("stat.morale") + " (MOR)", all_stats.get(STAT_MORALE, 0), -1, Color(0.8, 0.5, 1.0))  # Purple
 	_update_stat(I18n.translate("stat.level") + " (LVL)", all_stats.get(STAT_LEVEL, 0), -1, Color(1.0, 0.8, 0.3))  # Gold
 
@@ -471,3 +480,52 @@ func _clear_entity_preview() -> void:
 		preview_pool_key = ""
 	elif preview_instance:
 		push_error("EntityStatsPanel: Preview instance exists but missing container or pool_key")
+
+## Decode state flags into human-readable text (matches NPC.State enum using bit shifts)
+func _decode_state_flags(state: int) -> String:
+	var state_parts: Array[String] = []
+
+	# Check each state flag (priority order: most important first)
+	if state & (1 << 5):  # DEAD
+		state_parts.append("DEAD")
+	if state & (1 << 8):  # HURT
+		state_parts.append("HURT")
+	if state & (1 << 7):  # ATTACKING
+		state_parts.append("ATTACKING")
+	if state & (1 << 6):  # IN_COMBAT
+		state_parts.append("IN_COMBAT")
+	if state & (1 << 4):  # INTERACTING
+		state_parts.append("INTERACTING")
+	if state & (1 << 3):  # BLOCKED
+		state_parts.append("BLOCKED")
+	if state & (1 << 2):  # PATHFINDING
+		state_parts.append("PATHFINDING")
+	if state & (1 << 1):  # MOVING
+		state_parts.append("MOVING")
+	if state & (1 << 0):  # IDLE
+		state_parts.append("IDLE")
+
+	# If no flags set, return "UNKNOWN"
+	if state_parts.is_empty():
+		return "UNKNOWN (0x%X)" % state
+
+	return " | ".join(state_parts)
+
+## Get color for state display based on priority
+func _get_state_color(state: int) -> Color:
+	# Priority-based coloring (highest priority wins)
+	if state & (1 << 5):  # DEAD
+		return Color(0.5, 0.5, 0.5)  # Gray
+	if state & (1 << 8):  # HURT
+		return Color(1.0, 0.3, 0.3)  # Red
+	if state & (1 << 7):  # ATTACKING
+		return Color(1.0, 0.5, 0.2)  # Orange
+	if state & (1 << 6):  # IN_COMBAT
+		return Color(1.0, 0.7, 0.2)  # Yellow-orange
+	if state & (1 << 1):  # MOVING
+		return Color(0.5, 1.0, 0.5)  # Green
+	if state & (1 << 0):  # IDLE
+		return Color(0.7, 0.7, 0.9)  # Light blue
+
+	# Default
+	return Color(0.8, 0.8, 0.8)  # Light gray

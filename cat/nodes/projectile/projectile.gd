@@ -172,6 +172,8 @@ func fire(
 	area_radius: float = 64.0,  # AOE radius in pixels
 	custom_behaviors: int = 0  # Custom behavior flags (0 = use defaults)
 ) -> void:
+	print("[Projectile] fire() called: from=%s, to=%s, type=%d, speed=%f, arc=%f" % [from, to, type, projectile_speed, arc])
+
 	# Set configuration
 	source_pos = from
 	projectile_type = type
@@ -237,6 +239,15 @@ func fire(
 	# Enable processing
 	set_process(true)
 	visible = true
+
+	print("[Projectile] Projectile initialized: type=%d, source=%s, target=%s, travel_distance=%f, visible=%s, active=%s" % [
+		projectile_type,
+		source_pos,
+		target_pos,
+		travel_distance,
+		visible,
+		is_active
+	])
 
 ## Update projectile sprite based on type and current frame
 func _update_sprite() -> void:

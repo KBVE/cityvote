@@ -49,9 +49,9 @@ const ANIMATION_FRAMES = {
 	AnimationType.ATTACK1: 6,   # 6 frames
 	AnimationType.ATTACK2: 6,   # 6 frames
 	AnimationType.TAKE_HIT: 4,  # 4 frames
-	AnimationType.DEATH: 10,    # 10 frames
-	AnimationType.JUMP: 2,      # 2 frames
-	AnimationType.FALL: 2       # 2 frames
+	AnimationType.DEATH: 6,     # 6 frames (was 10, corrected to match atlas)
+	AnimationType.JUMP: 4,      # 4 frames (was 2, corrected to match atlas)
+	AnimationType.FALL: 4       # 4 frames (was 2, corrected to match atlas)
 }
 
 # Atlas layout (1600x1600, each frame is 200x200)
@@ -72,21 +72,23 @@ enum TerrainType {
 
 # NPC State enum (matches Rust bitwise flags pattern)
 enum State {
-	IDLE = 0b0001,           # NPC is idle, can accept commands
-	MOVING = 0b0010,         # NPC is moving along a path
-	PATHFINDING = 0b0100,    # Pathfinding request in progress
-	BLOCKED = 0b1000,        # NPC is blocked (cannot move)
-	INTERACTING = 0b10000,   # NPC is interacting with object/player
-	DEAD = 0b100000,         # NPC is dead (no longer active)
-	IN_COMBAT = 0b1000000,   # NPC is in combat (0x40)
+	IDLE = 1 << 0,           # 1 - NPC is idle, can accept commands
+	MOVING = 1 << 1,         # 2 - NPC is moving along a path
+	PATHFINDING = 1 << 2,    # 4 - Pathfinding request in progress
+	BLOCKED = 1 << 3,        # 8 - NPC is blocked (cannot move)
+	INTERACTING = 1 << 4,    # 16 - NPC is interacting with object/player
+	DEAD = 1 << 5,           # 32 - NPC is dead (no longer active)
+	IN_COMBAT = 1 << 6,      # 64 - NPC is in combat
+	ATTACKING = 1 << 7,      # 128 - NPC is attacking (playing attack animation)
+	HURT = 1 << 8,           # 256 - NPC is hurt (playing hurt animation)
 }
 
 # Combat Type enum (matches Rust bitwise flags pattern)
 enum CombatType {
-	MELEE = 0b0001,   # Close combat (1 hex range)
-	RANGED = 0b0010,  # Ranged physical attacks (bow, spear, etc.)
-	BOW = 0b0100,     # Bow/crossbow - uses ARROW/SPEAR projectiles
-	MAGIC = 0b1000,   # Magic attacks - uses spell projectiles (FIRE_BOLT, SHADOW_BOLT, etc.)
+	MELEE = 1 << 0,   # 1 - Close combat (1 hex range)
+	RANGED = 1 << 1,  # 2 - Ranged physical attacks (bow, spear, etc.)
+	BOW = 1 << 2,     # 4 - Bow/crossbow - uses ARROW/SPEAR projectiles
+	MAGIC = 1 << 3,   # 8 - Magic attacks - uses spell projectiles (FIRE_BOLT, SHADOW_BOLT, etc.)
 }
 
 # Projectile Type enum (for BOW and MAGIC combat types)
@@ -112,6 +114,7 @@ var terrain_type: int = TerrainType.LAND  # Default to land
 var combat_type: int = CombatType.MELEE  # Default to melee
 var projectile_type: int = ProjectileType.NONE  # Set if using BOW or MAGIC
 var combat_range: int = 1  # Attack range in hexes (1 for melee, higher for ranged/bow/magic)
+var aggro_range: int = 8  # Detection/aggro range in hexes (how far unit can detect enemies)
 
 # Reference to EntityManagerBridge (Rust source of truth)
 var entity_manager: Node = null
@@ -418,29 +421,24 @@ static func _get_atlas_position(animation_type: AnimationType, frame: int) -> Ve
 		AnimationType.RUN:
 			row = 1
 			col = frame  # 0-7
-		AnimationType.ATTACK1:
+		AnimationType.JUMP:
 			row = 2
+			col = frame  # 0-3
+		AnimationType.FALL:
+			row = 3
+			col = frame  # 0-3
+		AnimationType.ATTACK1:
+			row = 4
 			col = frame  # 0-5
 		AnimationType.ATTACK2:
-			row = 3
+			row = 5
 			col = frame  # 0-5
 		AnimationType.TAKE_HIT:
-			row = 4
+			row = 6
 			col = frame  # 0-3
 		AnimationType.DEATH:
-			# Death has 10 frames, wraps across rows 5 and 6
-			if frame < 8:
-				row = 5
-				col = frame  # 0-7
-			else:
-				row = 6
-				col = frame - 8  # 8-9 -> 0-1
-		AnimationType.JUMP:
 			row = 7
-			col = frame  # 0-1
-		AnimationType.FALL:
-			row = 7
-			col = frame + 2  # 0-1 -> 2-3 (after jump frames)
+			col = frame  # 0-5
 
 	return Vector2i(col, row)
 
@@ -450,16 +448,19 @@ static func get_frame_count(animation_type: AnimationType) -> int:
 
 ## Map game state to animation type
 static func state_to_animation(state: int, is_damaged: bool = false) -> AnimationType:
-	# State enum: IDLE = 0b0001, MOVING = 0b0010, IN_COMBAT = 0b1000000
+	# State enum: IDLE = 1<<0, MOVING = 1<<1, IN_COMBAT = 1<<6, ATTACKING = 1<<7, HURT = 1<<8
 
-	# Priority order: Damaged > Combat > Moving > Idle
-	if is_damaged:
+	# Priority order: Hurt > Attacking > Combat > Moving > Idle
+	if state & State.HURT:
 		return AnimationType.TAKE_HIT
 
-	if state & 0b1000000:  # IN_COMBAT
+	if state & State.ATTACKING:
 		return AnimationType.ATTACK1
 
-	if state & 0b0010:  # MOVING
+	if state & State.IN_COMBAT:  # Combat ready stance (not actively attacking)
+		return AnimationType.IDLE
+
+	if state & State.MOVING:
 		return AnimationType.RUN
 
 	# Default to idle
@@ -925,8 +926,9 @@ func _process(delta):
 			add_state(State.BLOCKED)
 			pathfinding_timer = 0.0
 
-	# Pause movement if in combat
-	if current_state & State.IN_COMBAT:
+	# Pause movement ONLY when actively attacking or hurt (not just IN_COMBAT)
+	# Entities should be able to move while IN_COMBAT to chase enemies or reposition
+	if has_state(State.ATTACKING) or has_state(State.HURT):
 		# Stop any ongoing movement
 		if has_state(State.MOVING):
 			remove_state(State.MOVING)
@@ -1056,17 +1058,8 @@ func _register_stats() -> void:
 	# Determine entity type based on terrain
 	var entity_type = "ship" if terrain_type == TerrainType.WATER else "npc"
 
-	# Get current hex position
-	var hex_pos: Vector2i
-	if Cache and Cache.tile_map:
-		hex_pos = Cache.tile_map.local_to_map(position)
-	else:
-		hex_pos = Vector2i(int(position.x / 128.0), int(position.y / 128.0))
-
-	# Register entity stats with Actor (including player_ulid for team detection and combat info)
-	bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y, combat_type, projectile_type, combat_range)
-
-	# Connect to stat change signals to update health bar
+	# CRITICAL: Connect to signals BEFORE registering stats
+	# This ensures we receive the initial stat values that Rust emits during registration
 	if not bridge.stat_changed.is_connected(_on_stat_changed):
 		bridge.stat_changed.connect(_on_stat_changed)
 	if not bridge.entity_died.is_connected(_on_entity_died):
@@ -1075,6 +1068,23 @@ func _register_stats() -> void:
 		bridge.entity_damaged.connect(_on_entity_damaged)
 	if not bridge.entity_healed.is_connected(_on_entity_healed):
 		bridge.entity_healed.connect(_on_entity_healed)
+	if not bridge.damage_dealt.is_connected(_on_damage_dealt):
+		bridge.damage_dealt.connect(_on_damage_dealt)
+	if not bridge.combat_started.is_connected(_on_combat_started):
+		bridge.combat_started.connect(_on_combat_started)
+	if not bridge.combat_ended.is_connected(_on_combat_ended):
+		bridge.combat_ended.connect(_on_combat_ended)
+
+	# Get current hex position
+	var hex_pos: Vector2i
+	if Cache and Cache.tile_map:
+		hex_pos = Cache.tile_map.local_to_map(position)
+	else:
+		hex_pos = Vector2i(int(position.x / 128.0), int(position.y / 128.0))
+
+	# Register entity stats with Actor (including player_ulid for team detection and combat info)
+	# This will trigger Rust to emit StatChanged events for all initial stat values
+	bridge.register_entity_stats(ulid, player_ulid, entity_type, terrain_type, hex_pos.x, hex_pos.y, combat_type, projectile_type, combat_range, aggro_range)
 
 # NOTE: Combat registration removed - now automatic through stats registration
 # The UnifiedEventBridge Actor tracks combat-relevant entities automatically
@@ -1174,17 +1184,27 @@ func _on_stat_changed(entity_ulid: PackedByteArray, stat_type: int, new_value: f
 		return
 
 	# Handle HP stat changes (includes initial registration values)
-	# StatType enum from Rust: HP = 0, MaxHP = 1
+	# StatType enum from Rust: HP = 0, MaxHP = 1, Mana = 7, MaxMana = 8
 	const STAT_HP = 0
 	const STAT_MAX_HP = 1
+	const STAT_MANA = 7
+	const STAT_MAX_MANA = 8
 
 	if stat_type == STAT_MAX_HP:
 		# Update cached max HP for health bar
 		cached_max_hp = new_value
+		# Validate: MaxHP should never be 0 on spawn
+		if new_value <= 0:
+			var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
+			push_error("[NPC] Entity %s (ULID: %s) spawned with invalid MaxHP: %f" % [entity_type_for_animation, ulid_hex, new_value])
 		# Update health bar if it exists
 		if health_bar and is_instance_valid(health_bar):
 			health_bar.max_health = new_value
 	elif stat_type == STAT_HP:
+		# Validate: HP should never be 0 on initial spawn (unless entity is dead)
+		if new_value <= 0 and not has_state(State.DEAD):
+			var ulid_hex = UlidManager.to_hex(ulid) if not ulid.is_empty() else "NO_ULID"
+			push_error("[NPC] Entity %s (ULID: %s) has 0 HP but is not marked DEAD (cached_max_hp: %f)" % [entity_type_for_animation, ulid_hex, cached_max_hp])
 		# Update current HP in health bar
 		if health_bar and is_instance_valid(health_bar):
 			health_bar.set_health_values(new_value, cached_max_hp)
@@ -1246,9 +1266,88 @@ func _on_entity_damaged(entity_ulid: PackedByteArray, damage: float, new_hp: flo
 	if use_animation_mesh:
 		is_damaged = true
 
+	# Remove mutually exclusive states before adding HURT
+	# Entity cannot be ATTACKING, MOVING, IDLE, or PATHFINDING while hurt
+	remove_state(State.ATTACKING)
+	remove_state(State.MOVING)
+	remove_state(State.IDLE)
+	remove_state(State.PATHFINDING)
+
+	# Add HURT state for shader-based animation entities (like Jezza)
+	add_state(State.HURT)
+
+	# Clear HURT state after hurt animation duration (~0.5s for most entities)
+	var hurt_duration = 0.5
+	await get_tree().create_timer(hurt_duration).timeout
+	if is_instance_valid(self):
+		remove_state(State.HURT)
+		# After hurt animation completes, entity returns to IN_COMBAT (if still in combat)
+		# The IN_COMBAT state is already set by Rust, so we don't need to add it
+
 	# Update health bar if it exists
 	if health_bar and is_instance_valid(health_bar):
 		health_bar.set_health_values(new_hp, cached_max_hp)
+
+# Handle combat started event (sets IN_COMBAT state)
+func _on_combat_started(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray) -> void:
+	# Check if this entity is involved in combat (as attacker or defender)
+	if attacker_ulid != ulid and defender_ulid != ulid:
+		return
+
+	# CRITICAL: Validate entity still valid
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# Add IN_COMBAT state
+	add_state(State.IN_COMBAT)
+
+# Handle combat ended event (clears IN_COMBAT state and returns to IDLE)
+func _on_combat_ended(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray) -> void:
+	# Check if this entity was involved in combat (as attacker or defender)
+	if attacker_ulid != ulid and defender_ulid != ulid:
+		return
+
+	# CRITICAL: Validate entity still valid
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# Remove IN_COMBAT state
+	remove_state(State.IN_COMBAT)
+
+	# Clear any lingering ATTACKING or HURT states
+	remove_state(State.ATTACKING)
+	remove_state(State.HURT)
+
+	# Return to IDLE state (Rust source of truth will maintain this)
+	add_state(State.IDLE)
+
+# Handle damage dealt event (for ATTACKING state management)
+func _on_damage_dealt(attacker_ulid: PackedByteArray, defender_ulid: PackedByteArray, damage: int) -> void:
+	# Check if this entity is the attacker
+	if attacker_ulid != ulid:
+		return
+
+	# CRITICAL: Validate entity still valid
+	if not is_instance_valid(self) or is_queued_for_deletion() or not is_inside_tree():
+		return
+
+	# Remove mutually exclusive states before adding ATTACKING
+	# Entity cannot be MOVING, IDLE, or PATHFINDING while attacking
+	remove_state(State.MOVING)
+	remove_state(State.IDLE)
+	remove_state(State.PATHFINDING)
+
+	# Add ATTACKING state to trigger attack animation
+	add_state(State.ATTACKING)
+
+	# Clear ATTACKING state after attack animation duration
+	# Duration varies by entity - for Jezza bite is 10 frames @ 10fps = 1.0s
+	var attack_duration = 1.0
+	await get_tree().create_timer(attack_duration).timeout
+	if is_instance_valid(self):
+		remove_state(State.ATTACKING)
+		# After attack completes, entity returns to IN_COMBAT (idle combat stance)
+		# The IN_COMBAT state is already set by combat_started event
 
 # Handle entity being healed
 func _on_entity_healed(entity_ulid: PackedByteArray, heal_amount: float, new_hp: float) -> void:

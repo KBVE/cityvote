@@ -96,6 +96,14 @@ var translations: Dictionary = {
 		Language.SPANISH: "Energía",
 		Language.FRENCH: "Énergie"
 	},
+	"ui.stats.mana": {
+		Language.ENGLISH: "Mana",
+		Language.JAPANESE: "マナ",
+		Language.CHINESE: "法力",
+		Language.HINDI: "मना",
+		Language.SPANISH: "Maná",
+		Language.FRENCH: "Mana"
+	},
 
 	# UI - Hand/Cards
 	"ui.hand.swap": {

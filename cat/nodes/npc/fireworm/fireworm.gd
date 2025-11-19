@@ -49,6 +49,7 @@ func _ready():
 	combat_type = CombatType.MAGIC
 	projectile_type = ProjectileType.FIRE_BOLT
 	combat_range = 6  # Magic range (6 hexes)
+	aggro_range = 8  # Magic units can use their combat_range for aggro (6-8 hexes is good)
 
 	super._ready()  # Call parent NPC _ready
 
@@ -116,11 +117,8 @@ func _process(delta: float):
 	# Update sprite flipping based on movement direction
 	_update_sprite_flip()
 
-	# Handle animation state based on movement
-	if has_state(State.MOVING) and shader_animation == AnimType.IDLE:
-		play_animation(AnimType.WALK, true)
-	elif not has_state(State.MOVING) and shader_animation == AnimType.WALK:
-		play_animation(AnimType.IDLE, true)
+	# Auto-select animations based on state
+	_auto_select_animation()
 
 	if not shader_animation_playing or not shader_material:
 		return
@@ -144,6 +142,29 @@ func _process(delta: float):
 	shader_material.set_shader_parameter("frame_index", int(shader_frame))
 	shader_material.set_shader_parameter("animation_row", shader_animation)
 	shader_material.set_shader_parameter("frames_per_row", frame_count)
+
+func _auto_select_animation():
+	# Automatically select animation based on NPC state (from Rust)
+	# Priority: Dead > Hurt > Attacking > Combat > Moving > Idle
+	if has_state(State.DEAD) or shader_animation == AnimType.DEATH:
+		if shader_animation != AnimType.DEATH:
+			play_animation(AnimType.DEATH, false)
+	elif has_state(State.HURT):
+		if shader_animation != AnimType.TAKE_HIT:
+			play_animation(AnimType.TAKE_HIT, false)
+	elif has_state(State.ATTACKING):
+		if shader_animation != AnimType.ATTACK:
+			play_animation(AnimType.ATTACK, false)
+	elif has_state(State.IN_COMBAT):
+		# Combat ready stance (not actively attacking) - use idle animation
+		if shader_animation != AnimType.IDLE:
+			play_animation(AnimType.IDLE, true)
+	elif has_state(State.MOVING):
+		if shader_animation != AnimType.WALK:
+			play_animation(AnimType.WALK, true)
+	elif has_state(State.IDLE):
+		if shader_animation != AnimType.IDLE:
+			play_animation(AnimType.IDLE, true)
 
 func _update_sprite_flip():
 	# Flip sprite based on movement direction

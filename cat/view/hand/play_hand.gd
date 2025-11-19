@@ -1035,7 +1035,21 @@ func _remove_combo_highlights(combo_data: Dictionary) -> void:
 ## Cards NOT in the combo remain on the board
 func _clear_combo_cards(combo_data: Dictionary) -> void:
 	var positions = combo_data.get("positions", [])
+	var rng = RandomNumberGenerator.new()
+	var burn_duration = 5.0  # Slower burn for better visibility (adjust later)
 
+	# First, remove combo highlights from all cards
+	for pos in positions:
+		var tile_coords = Vector2i(pos["x"], pos["y"])
+		var card_info = hex_map.card_data.get(tile_coords)
+		if card_info:
+			var card_sprite = card_info.get("sprite")
+			if card_sprite is PooledCard:
+				# Remove highlight shader to prepare for burn shader
+				card_sprite.material = null
+
+	# Collect cards to burn and spawn joker entities
+	var cards_to_burn: Array = []
 	for pos in positions:
 		# pos is a Dictionary with "x" and "y" keys from Rust
 		var tile_coords = Vector2i(pos["x"], pos["y"])
@@ -1047,6 +1061,27 @@ func _clear_combo_cards(combo_data: Dictionary) -> void:
 			# Check if this is a joker card (custom card) - spawn its entity before removing!
 			if card_sprite is PooledCard and card_sprite.is_custom:
 				_spawn_joker_entity(card_sprite.card_id, tile_coords)
+
+			# Collect cards to burn
+			if card_sprite is PooledCard:
+				cards_to_burn.append({
+					"sprite": card_sprite,
+					"direction": rng.randf_range(0.0, 360.0)
+				})
+
+	# Start all burn animations in parallel using helper function
+	_start_burn_animations(cards_to_burn, burn_duration)
+
+	# Wait for burn duration to complete (all animations run in parallel)
+	await get_tree().create_timer(burn_duration).timeout
+
+	# Now remove all the cards after burn animation completes
+	for pos in positions:
+		var tile_coords = Vector2i(pos["x"], pos["y"])
+		var card_info = hex_map.card_data.get(tile_coords)
+
+		if card_info:
+			var card_sprite = card_info.get("sprite")
 
 			# Remove from hex_map visual state
 			hex_map.card_data.erase(tile_coords)
@@ -1065,6 +1100,15 @@ func _clear_combo_cards(combo_data: Dictionary) -> void:
 				else:
 					# Fallback: free if not a pooled card
 					card_sprite.queue_free()
+
+## Helper function to start burn animations in parallel
+func _start_burn_animations(cards_data: Array, duration: float) -> void:
+	for card_data in cards_data:
+		var sprite = card_data.get("sprite")
+		var direction = card_data.get("direction", 180.0)
+		if sprite is PooledCard:
+			# Start burn animation without awaiting (runs in parallel)
+			sprite.burn_card(direction, duration)
 
 ## Spawn entity from joker card activation
 ## Each joker card spawns 3 entities
@@ -1085,14 +1129,14 @@ func _spawn_joker_entity(card_id: int, tile_coords: Vector2i) -> void:
 
 	var entity_type: String = ""
 
-	# Map card_id to entity type
+	# Map card_id to entity type (pool keys in Cluster)
 	match card_id:
 		52:  # CARD_VIKINGS - spawn viking ship
 			entity_type = "viking"
 		53:  # CARD_DINO (Jezza) - spawn dino
 			entity_type = "jezza"
-		54:  # CARD_BARON - spawn baron
-			entity_type = "baron"
+		54:  # CARD_BARON - spawn king (pool registered as "king")
+			entity_type = "king"
 		55:  # CARD_SKULL_WIZARD - spawn skull wizard
 			entity_type = "skull_wizard"
 		56:  # CARD_WARRIOR - spawn fantasy warrior

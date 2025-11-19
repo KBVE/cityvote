@@ -1,11 +1,10 @@
 [gd_scene load_steps=3 format=3 uid="uid://b2lan7m3xqw5t"]
 
-[ext_resource type="Script" path="res://view/hud/pointer/hint_panel.gd" id="1_hint_panel"]
+[ext_resource type="Script" uid="uid://cgxxwgaoghjga" path="res://view/hud/pointer/hint_panel.gd" id="1_hint_panel"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hint_panel"]
 bg_color = Color(0.12, 0.12, 0.15, 0.95)
 border_width_left = 1
-border_width_top = 0
 border_width_right = 1
 border_width_bottom = 2
 border_color = Color(0.8, 0.6, 0.2, 0.8)
@@ -20,7 +19,6 @@ script = ExtResource("1_hint_panel")
 custom_minimum_size = Vector2(300, 4)
 offset_right = 300.0
 offset_bottom = 4.0
-mouse_filter = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_hint_panel")
 
 [node name="MarginContainer" type="MarginContainer" parent="PanelContainer"]

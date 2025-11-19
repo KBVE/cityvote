@@ -88,3 +88,63 @@ func get_card_name() -> String:
 		return CardAtlas.get_card_name_from_id(card_id)
 	else:
 		return CardAtlas.get_card_name(suit, value)
+
+## Burn card animation (used when card is consumed in combo)
+## Returns true when animation completes
+func burn_card(direction_degrees: float = 180.0, duration: float = 1.0) -> void:
+	# Always create a new burn shader material (cards are static by default with null material)
+	var burn_shader = load("res://shader/burn_object.gdshader")
+	if not burn_shader:
+		push_error("PooledCard: Failed to load burn_object.gdshader")
+		return
+
+	var shader_material = ShaderMaterial.new()
+	shader_material.shader = burn_shader
+
+	# Set shader parameters - adjusted for better fire effect
+	shader_material.set_shader_parameter("progress", -1.5)
+	shader_material.set_shader_parameter("direction", direction_degrees)
+	shader_material.set_shader_parameter("noiseForce", 0.35)  # More irregular burn pattern
+	shader_material.set_shader_parameter("burnColor", Color(1.0, 0.75, 0.25, 1.0))  # Bright yellow-orange hot flame
+	shader_material.set_shader_parameter("borderWidth", 0.18)  # Wider to see more burn effect
+
+	# Generate procedural noise texture for burn effect
+	var noise_texture = _generate_noise_texture()
+	if noise_texture:
+		shader_material.set_shader_parameter("noiseTexture", noise_texture)
+	else:
+		push_error("PooledCard: Failed to generate noise texture for burn effect")
+
+	# Apply the shader material
+	material = shader_material
+
+	# Wait one frame for material to be applied
+	await get_tree().process_frame
+
+	# Animate the burn effect
+	if material and material is ShaderMaterial:
+		var tween = create_tween()
+		tween.tween_method(_update_burn_progress, -1.5, 1.5, duration)
+		await tween.finished
+	else:
+		push_error("PooledCard: Material is not a ShaderMaterial after assignment!")
+
+## Generate a procedural noise texture for burn effect
+func _generate_noise_texture() -> NoiseTexture2D:
+	var noise = FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.frequency = 0.05
+	noise.fractal_octaves = 3
+
+	var noise_texture = NoiseTexture2D.new()
+	noise_texture.noise = noise
+	noise_texture.width = 128
+	noise_texture.height = 128
+	noise_texture.seamless = true
+
+	return noise_texture
+
+## Helper to update burn progress (called by tween)
+func _update_burn_progress(value: float) -> void:
+	if material and material is ShaderMaterial:
+		material.set_shader_parameter("progress", value)

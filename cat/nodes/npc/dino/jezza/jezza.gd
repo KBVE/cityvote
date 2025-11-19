@@ -79,6 +79,7 @@ func _ready():
 	combat_type = CombatType.MELEE
 	projectile_type = ProjectileType.NONE
 	combat_range = 1  # Melee range (1 hex) - bites and pounces
+	aggro_range = 10  # Melee units need larger aggro range to detect enemies and pathfind toward them
 
 	super._ready()  # Call parent NPC _ready
 
@@ -162,7 +163,8 @@ func is_animation_playing() -> bool:
 	return shader_animation_playing
 
 func _process(delta):
-	super._process(delta)  # Call parent NPC _process for movement
+	# Call parent NPC _process for movement and state handling
+	super._process(delta)
 
 	# Update sprite flipping based on movement direction
 	_update_sprite_flip()
@@ -200,10 +202,23 @@ func _update_jezza_animation(delta: float):
 		shader_material.set_shader_parameter("animation_row", shader_animation)
 
 func _auto_select_animation():
-	# Automatically select animation based on NPC state
+	# Automatically select animation based on NPC state (from Rust)
+	# Priority: Dead > Hurt > Attacking > Combat > Moving > Idle
 	if has_state(State.DEAD) or shader_animation == AnimType.DEAD:
 		if shader_animation != AnimType.DEAD:
 			play_animation(AnimType.DEAD, false)
+	elif has_state(State.HURT):
+		# Play hurt animation when taking damage
+		if shader_animation != AnimType.ON_HIT:
+			play_animation(AnimType.ON_HIT, false)
+	elif has_state(State.ATTACKING):
+		# Play bite attack animation when actively attacking
+		if shader_animation != AnimType.BITE:
+			play_animation(AnimType.BITE, false)
+	elif has_state(State.IN_COMBAT):
+		# Combat ready stance (not actively attacking) - use scanning/alert animation
+		if shader_animation != AnimType.SCANNING and shader_animation != AnimType.ROAR:
+			play_animation(AnimType.SCANNING, true)
 	elif has_state(State.INTERACTING):
 		# Could be roaring, biting, etc.
 		pass  # Manual control

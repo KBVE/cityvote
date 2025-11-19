@@ -4,6 +4,7 @@
 use crossbeam_channel::{Receiver, Sender};
 use std::thread;
 use std::collections::HashMap;
+use godot::prelude::*;
 
 use crate::npc::terrain_cache::TerrainType;
 
@@ -276,28 +277,54 @@ fn process_combat_tick(
 
         // Check if already in combat
         if let Some(combat) = active_combats.get_mut(&attacker.ulid) {
-            // Combat exists - check if can attack
-            if combat.can_attack() {
-                // Verify defender still valid and alive
-                let defender_alive = entity_map
-                    .get(&combat.defender_ulid)
-                    .map(|d| d.hp > 0)
-                    .unwrap_or(false);
+            // Combat exists - check if defender still valid
+            if let Some(defender) = entity_map.get(&combat.defender_ulid) {
+                let defender_alive = defender.hp > 0;
 
-                if defender_alive {
-                    // Execute attack
-                    if let Some(defender) = entity_map.get(&combat.defender_ulid) {
-                        execute_attack(attacker, defender, tx);
-                        combat.reset_attack_timer();
-                    }
-                } else {
-                    // Defender died, end combat
+                if !defender_alive {
+                    // Defender died - end combat
                     let _ = tx.send(CombatWorkResult::CombatEnded {
                         attacker_ulid: attacker.ulid.clone(),
                         defender_ulid: combat.defender_ulid.clone(),
                     });
                     // Remove from active combats (will happen after loop)
+                } else {
+                    // Check if still in range (entities might have moved)
+                    let distance = hex_distance(attacker.position, defender.position);
+                    let in_range = distance <= attacker.combat_range;
+
+                    // Check combat type for chase vs disengage behavior
+                    const MELEE: u8 = 1 << 0;
+                    let is_melee = attacker.combat_type & MELEE != 0;
+
+                    if in_range && combat.can_attack() {
+                        // In range and can attack - execute attack
+                        execute_attack(attacker, defender, tx);
+                        combat.reset_attack_timer();
+                    } else if !in_range {
+                        // Out of range behavior depends on combat type
+                        if is_melee {
+                            // Melee units chase their target (pathfind toward enemy)
+                            let _ = tx.send(CombatWorkResult::KiteAway {
+                                entity_ulid: attacker.ulid.clone(),
+                                enemy_position: defender.position,
+                                ideal_distance: -1, // Negative = chase toward (not away)
+                            });
+                        } else {
+                            // Ranged units disengage when out of range
+                            let _ = tx.send(CombatWorkResult::CombatEnded {
+                                attacker_ulid: attacker.ulid.clone(),
+                                defender_ulid: combat.defender_ulid.clone(),
+                            });
+                        }
+                    }
                 }
+            } else {
+                // Defender no longer exists - end combat
+                let _ = tx.send(CombatWorkResult::CombatEnded {
+                    attacker_ulid: attacker.ulid.clone(),
+                    defender_ulid: combat.defender_ulid.clone(),
+                });
             }
         } else {
             // Not in combat - search for targets
@@ -315,12 +342,23 @@ fn process_combat_tick(
         }
     }
 
-    // Clean up combats where defender is dead
-    active_combats.retain(|_attacker_ulid, combat| {
-        entity_map
-            .get(&combat.defender_ulid)
-            .map(|d| d.hp > 0)
-            .unwrap_or(false)
+    // Clean up combats where defender is dead or out of range
+    // This removes the combat instance after CombatEnded events have been sent
+    active_combats.retain(|attacker_ulid, combat| {
+        // Find attacker and defender
+        let attacker_opt = entity_map.get(attacker_ulid);
+        let defender_opt = entity_map.get(&combat.defender_ulid);
+
+        // Keep combat only if both exist, defender is alive, and in range
+        if let (Some(attacker), Some(defender)) = (attacker_opt, defender_opt) {
+            if defender.hp <= 0 {
+                return false; // Defender dead
+            }
+            let distance = hex_distance(attacker.position, defender.position);
+            distance <= attacker.combat_range // Keep only if in range
+        } else {
+            false // Either attacker or defender missing
+        }
     });
 }
 
@@ -359,9 +397,10 @@ fn find_closest_enemy(
             continue;
         }
 
-        // Check if in range (use combat_range for combat-specific range)
+        // Check if in aggro range (use aggro_range for enemy detection, not combat_range)
+        // combat_range is used for actual attacking, aggro_range is for detecting enemies
         let distance = hex_distance(attacker.position, defender.position);
-        if distance > attacker.combat_range {
+        if distance > attacker.aggro_range {
             continue;
         }
 
@@ -385,22 +424,54 @@ fn execute_attack(
     defender: &CombatEntitySnapshot,
     tx: &Sender<CombatWorkResult>,
 ) {
-    // Calculate damage (simple: attack - defense, min 1)
-    let raw_damage = attacker.attack - defender.defense;
-    let damage = raw_damage.max(1);
+    // CombatType flags (using bit shifts for readability)
+    const MELEE: u8 = 1 << 0;   // 1
+    const BOW: u8 = 1 << 2;     // 4
+    const MAGIC: u8 = 1 << 3;   // 8
 
-    // CombatType flags
-    const MELEE: u8 = 0b0001;
-    const BOW: u8 = 0b0100;
-    const MAGIC: u8 = 0b1000;
+    // Mana cost for magic attacks
+    const MAGIC_MANA_COST: i32 = 15;
 
     // Check combat type
     let is_melee = attacker.combat_type & MELEE != 0;
     let is_bow = attacker.combat_type & BOW != 0;
     let is_magic = attacker.combat_type & MAGIC != 0;
 
+    // Check mana availability for magic attacks
+    if is_magic && attacker.mana < MAGIC_MANA_COST {
+        // Not enough mana - attack fails silently
+        // Could emit a "NotEnoughMana" event in the future
+        return;
+    }
+
+    // Calculate damage (simple: attack - defense, min 1)
+    let raw_damage = attacker.attack - defender.defense;
+    let damage = raw_damage.max(1);
+
+    // Consume mana for magic attacks
+    if is_magic {
+        let new_mana = attacker.mana - MAGIC_MANA_COST;
+        let _ = tx.send(CombatWorkResult::ManaConsumed {
+            entity_ulid: attacker.ulid.clone(),
+            mana_cost: MAGIC_MANA_COST,
+            new_mana,
+        });
+    }
+
+    // Notify that attacker is executing attack animation
+    let _ = tx.send(CombatWorkResult::AttackExecuted {
+        attacker_ulid: attacker.ulid.clone(),
+    });
+
     // For ranged combat (BOW or MAGIC), spawn projectile instead of instant damage
     if is_bow || is_magic {
+        godot_print!(
+            "[Rust Combat] Spawning projectile: attacker={:02x?}, target={:02x?}, type={}, damage={}",
+            &attacker.ulid[..8],
+            &defender.ulid[..8],
+            attacker.projectile_type,
+            damage
+        );
         let _ = tx.send(CombatWorkResult::SpawnProjectile {
             attacker_ulid: attacker.ulid.clone(),
             attacker_position: attacker.position,
@@ -409,6 +480,21 @@ fn execute_attack(
             projectile_type: attacker.projectile_type,
             damage,
         });
+
+        // Kiting behavior: If enemy is too close, move away to ideal distance
+        // Ideal distance for ranged units: 60% of max range (allows flexibility)
+        let distance = hex_distance(attacker.position, defender.position);
+        let ideal_distance = (attacker.combat_range as f32 * 0.6).ceil() as i32;
+        let min_safe_distance = (attacker.combat_range as f32 * 0.4).ceil() as i32;
+
+        if distance < min_safe_distance {
+            // Too close - kite away
+            let _ = tx.send(CombatWorkResult::KiteAway {
+                entity_ulid: attacker.ulid.clone(),
+                enemy_position: defender.position,
+                ideal_distance,
+            });
+        }
     } else {
         // Melee combat - instant damage
         let _ = tx.send(CombatWorkResult::DamageDealt {
