@@ -1,6 +1,6 @@
 # Hero Components
 
-This directory contains hero components for the BugWars website. Hero components are large, prominent sections typically used at the top of pages to capture attention and communicate key messages.
+This directory contains hero components for the CityVote website. Hero components are large, prominent sections typically used at the top of pages to capture attention and communicate key messages.
 
 ## Structure
 
@@ -46,7 +46,7 @@ import AstroMainHero from '@/components/hero/mainhero/AstroMainHero.astro';
 ---
 
 <AstroMainHero
-  title="Welcome to BugWars"
+  title="Welcome to CityVote"
   subtitle="Epic Bug Battles"
   description="Enter the arena and fight bugs in epic multiplayer battles"
   ctaText="Play Now"
@@ -105,7 +105,7 @@ import AstroSubHero from '@/components/hero/subhero/AstroSubHero.astro';
 <AstroSubHero
   title="Our Features"
   subtitle="What We Offer"
-  description="Discover the amazing features that make BugWars unique"
+  description="Discover the amazing features that make CityVote unique"
   ctaText="Explore"
   ctaUrl="/features"
   backgroundGradient="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
@@ -247,7 +247,7 @@ The hero components are fully responsive and adapt to different screen sizes:
 
 ```astro
 <AstroMainHero
-  title="BugWars Arena"
+  title="CityVote Arena"
   subtitle="Battle Royale"
   description="Enter the ultimate bug battle arena. Fight, survive, and conquer!"
   ctaText="Start Playing"
@@ -283,7 +283,7 @@ The hero components are fully responsive and adapt to different screen sizes:
 
 ```astro
 <AstroSubHero
-  title="About BugWars"
+  title="About CityVote"
   subtitle="Our Story"
   description="Learn about our journey and mission"
   backgroundImage="/images/about-hero.jpg"
@@ -323,4 +323,4 @@ When adding new hero components or variants:
 For questions or issues with hero components, please refer to:
 - Project documentation
 - Component source code and inline comments
-- BugWars development team
+- CityVote development team

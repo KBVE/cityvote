@@ -1,26 +1,26 @@
 ---
-title: Bug Wars Dev Blog
-description: Development updates, technical insights, and behind-the-scenes stories from the Bug Wars project
+title: CityVote Dev Blog
+description: Development updates, technical insights, and behind-the-scenes stories from the CityVote project
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
 
-# Bug Wars Development Blog
+# CityVote Development Blog
 
-Welcome to the Bug Wars development blog! This is where we share updates about the game's progress, technical challenges we've overcome, design decisions, and insights into the development process.
+Welcome to the CityVote development blog! This is where we share updates about the platform's progress, technical challenges we've overcome, design decisions, and insights into the development process.
 
 ## What to Expect
 
 <CardGrid stagger>
   <Card title="Technical Deep Dives" icon="laptop">
-    Detailed explanations of the systems and technologies powering Bug Wars, from Unity architecture to gameplay mechanics.
+    Detailed explanations of the systems and technologies powering CityVote, from web architecture to voting mechanics.
   </Card>
   <Card title="Progress Updates" icon="rocket">
-    Regular updates on new features, improvements, and milestones as we build the game.
+    Regular updates on new features, improvements, and milestones as we build the platform.
   </Card>
   <Card title="Design Decisions" icon="puzzle">
-    Insights into why we made specific choices in gameplay, UI, and technical architecture.
+    Insights into why we made specific choices in user experience, UI, and technical architecture.
   </Card>
   <Card title="Lessons Learned" icon="open-book">
     Challenges we've faced, mistakes we've made, and what we learned from them.
@@ -33,27 +33,27 @@ Welcome to the Bug Wars development blog! This is where we share updates about t
 
 ## Topics We'll Cover
 
-- Unity game development best practices
-- VContainer and dependency injection patterns
-- UniTask async/await implementation
-- Combat system design and iteration
-- AI behavior and enemy design
+- Web application development best practices
+- Rust and Axum backend architecture
+- Astro frontend implementation
+- Voting system design and security
+- User authentication and authorization
 - Performance optimization techniques
-- WebGL build process and optimization
-- UI/UX design with Unity UI Toolkit
-- Sound design and audio integration
-- Testing and debugging strategies
+- Database design and optimization
+- UI/UX design for civic engagement
+- Real-time data synchronization
+- Testing and security strategies
 
 ## Follow Development
 
-Want to stay updated on Bug Wars development?
+Want to stay updated on CityVote development?
 
 <CardGrid stagger>
-  <Card title="Check the GDD" icon="document">
-    Read our comprehensive [Game Design Document](/gdd) for technical details about the game's architecture.
+  <Card title="Check the Documentation" icon="document">
+    Read our comprehensive documentation for technical details about the platform's architecture.
   </Card>
-  <Card title="Play the Game" icon="rocket">
-    Try the latest build on our [Game Page](/game) and experience the current state of development.
+  <Card title="Use the Platform" icon="rocket">
+    Try the latest version on our [Platform Page](/game) and experience the current state of development.
   </Card>
   <Card title="GitHub Repository" icon="github">
     Follow the project on GitHub to see code changes and contribute to the development.
@@ -66,11 +66,11 @@ Want to stay updated on Bug Wars development?
 import AstroMainHero from '@/components/hero/mainhero/AstroMainHero.astro';
 
 <AstroMainHero
-  title="Welcome to BugWars"
-  subtitle="Epic Bug Battles"
-  description="Enter the arena and fight bugs in epic multiplayer battles"
-  ctaText="Play Now"
-  ctaUrl="/play"
+  title="Welcome to CityVote"
+  subtitle="Empowering Democracy"
+  description="Participate in civic engagement and help shape your community's future"
+  ctaText="Vote Now"
+  ctaUrl="/game"
   secondaryCtaText="Learn More"
   secondaryCtaUrl="/about"
   backgroundImage="/images/hero-bg.jpg"

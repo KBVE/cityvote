@@ -4,7 +4,7 @@ Complete documentation for the React/TypeScript side of the Unity WebGL communic
 
 ## Overview
 
-This folder contains the React/TypeScript implementation for bi-directional communication with Unity WebGL builds. It works in conjunction with the Unity JavaScript Bridge located at `/unity/bugwars/Assets/Scripts/JavaScriptBridge/`.
+This folder contains the React/TypeScript implementation for bi-directional communication with Unity WebGL builds. It works in conjunction with the Unity JavaScript Bridge located at `/unity/cityvote/Assets/Scripts/JavaScriptBridge/`.
 
 ## Architecture
 
@@ -67,10 +67,10 @@ import AstroUnityGameContainer from '@/components/unity-react/AstroUnityGameCont
 import type { UnityConfig } from '@/components/unity-react/typeUnity';
 
 const unityConfig: UnityConfig = {
-  loaderUrl: '/UnityWebGL/Build/bugwars.loader.js',
-  dataUrl: '/UnityWebGL/Build/bugwars.data',
-  frameworkUrl: '/UnityWebGL/Build/bugwars.framework.js',
-  codeUrl: '/UnityWebGL/Build/bugwars.wasm',
+  loaderUrl: '/UnityWebGL/Build/cityvote.loader.js',
+  dataUrl: '/UnityWebGL/Build/cityvote.data',
+  frameworkUrl: '/UnityWebGL/Build/cityvote.framework.js',
+  codeUrl: '/UnityWebGL/Build/cityvote.wasm',
 };
 ---
 
@@ -578,7 +578,7 @@ unityService.onArrayData('MeshData_Vertices', (event) => {
 
 ## Next Steps
 
-1. Check Unity side documentation: `/unity/bugwars/Assets/Scripts/JavaScriptBridge/README.md`
+1. Check Unity side documentation: `/unity/cityvote/Assets/Scripts/JavaScriptBridge/README.md`
 2. See example implementations in `ExampleUsage.cs`
 3. Configure your Unity build settings for WebGL
 4. Test in both Unity Editor and WebGL build

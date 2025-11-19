@@ -1,15 +1,15 @@
 ---
-title: Bug Wars - Game Design Document
-description: Comprehensive technical documentation for the Bug Wars Unity game project
+title: CityVote - Technical Design Document
+description: Comprehensive technical documentation for the CityVote platform project
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-# Bug Wars - Game Design Document
+# CityVote - Technical Design Document
 
 ## Game Overview
 
-**Bug Wars** is a survival action game built in Unity where players face off against relentless waves of insects and creatures from the natural world. 
+**CityVote** is a survival action game built in Unity where players face off against relentless waves of insects and creatures from the natural world. 
 The game features intense combat mechanics, strategic resource management, and progressive difficulty scaling.
 Players must adapt to different bug types, each with unique behaviors and attack patterns, while managing limited resources and upgrading their defensive capabilities.
 
@@ -22,10 +22,10 @@ The core architecture emphasizes modularity, testability, and clean separation o
 
 [VContainer GitHub Repository](https://github.com/hadashiA/VContainer)
 
-VContainer is the fastest and most lightweight dependency injection (DI) framework for Unity, providing a robust foundation for managing object lifecycles and dependencies throughout Bug Wars.
+VContainer is the fastest and most lightweight dependency injection (DI) framework for Unity, providing a robust foundation for managing object lifecycles and dependencies throughout CityVote.
 Unlike traditional Unity development where components find each other using `FindObjectOfType` or singleton patterns, VContainer enables proper inversion of control (IoC) where dependencies are explicitly declared and automatically injected.
 
-In Bug Wars, VContainer serves as the backbone of our architecture through the `GameLifetimeScope` class, which orchestrates all core managers (GameManager, EventManager, InputManager, etc.). 
+In CityVote, VContainer serves as the backbone of our architecture through the `GameLifetimeScope` class, which orchestrates all core managers (GameManager, EventManager, InputManager, etc.). 
 This approach eliminates tight coupling between systems, makes testing easier through dependency mocking, and provides clear visibility into system dependencies. 
 VContainer's constructor and method injection automatically resolves dependencies when components are created, ensuring that all required references are available before a component begins its work.
 
@@ -40,14 +40,14 @@ Our implementation uses VContainer's `LifetimeScope` to manage singleton manager
 UniTask is a zero-allocation async/await framework specifically designed for Unity, replacing Unity's older Coroutine system with modern C# async/await patterns.
 Unlike standard .NET Tasks which allocate garbage on every operation, UniTask is a value-type based implementation that provides true zero-allocation asynchronous programming, making it perfect for game development where garbage collection pauses can cause frame drops.
 
-In Bug Wars, UniTask powers all asynchronous operations including scene loading, resource streaming, and complex animation sequences.
+In CityVote, UniTask powers all asynchronous operations including scene loading, resource streaming, and complex animation sequences.
 The `GameManager` uses UniTask extensively for scene management, providing clean async/await syntax instead of callback-based coroutines.
 This makes our code more readable and maintainable - for example, loading a scene with progress tracking becomes a straightforward async method rather than a complex IEnumerator with nested callbacks.
 UniTask also integrates seamlessly with Unity's lifecycle, providing PlayerLoop-based task scheduling that respects Unity's frame timing.
 
 The performance benefits of UniTask are substantial - it avoids the heap allocations associated with coroutines and standard Tasks, operates faster than Unity's coroutine system, and provides better debugging support through proper stack traces.
 UniTask also includes powerful operators for working with Unity's async operations, time-based delays, and cancellation tokens, giving us fine-grained control over asynchronous workflows.
-This is particularly important for Bug Wars' gameplay systems where we need responsive, non-blocking operations for enemy spawning, animation blending, and networked events.
+This is particularly important for CityVote' gameplay systems where we need responsive, non-blocking operations for enemy spawning, animation blending, and networked events.
 
 ### R3 - Reactive Extensions for Unity
 
@@ -74,7 +74,7 @@ R3 consolidates `OnError` and `OnCompleted` into a single `OnCompleted(Result re
 #### Core Components
 
 **Observable Streams:**
-Observables represent sequences of events over time. In Bug Wars, observables can represent:
+Observables represent sequences of events over time. In CityVote, observables can represent:
 - Player input events (button presses, movement input)
 - Health value changes
 - Enemy spawn triggers
@@ -226,7 +226,7 @@ this.OnCollisionEnterAsObservable()
     .Subscribe(collision => HandleCollision(collision));
 ```
 
-#### Use Cases in Bug Wars
+#### Use Cases in CityVote
 
 **Player Input Processing:**
 ```csharp
@@ -286,7 +286,7 @@ attackInput
     .AddTo(this);
 ```
 
-#### Integration with Bug Wars Architecture
+#### Integration with CityVote Architecture
 
 R3 integrates seamlessly with our existing VContainer and EventManager architecture:
 
@@ -305,7 +305,7 @@ R3 integrates seamlessly with our existing VContainer and EventManager architect
 - UniTask operations can create observables via `Observable.FromUniTask()`
 - Combined approach enables both reactive streams and async workflows in the same codebase
 
-#### Performance Benefits for Bug Wars
+#### Performance Benefits for CityVote
 
 - **Zero Allocation**: Frame-based operators and ReactiveProperty updates produce no garbage, preventing GC spikes during gameplay
 - **Batch Processing**: Observable operators can batch operations, reducing per-frame overhead
@@ -313,7 +313,7 @@ R3 integrates seamlessly with our existing VContainer and EventManager architect
 - **Efficient Filtering**: `Where` and `Distinct` operators prevent unnecessary downstream processing
 - **Controlled Execution**: `Throttle` and `Debounce` reduce event processing frequency for performance-critical systems
 
-R3 enables Bug Wars to implement complex reactive gameplay patterns (combo systems, cooldowns, state machines, UI binding) with clean, declarative code that performs excellently even in high-intensity scenarios with hundreds of entities and continuous input processing.
+R3 enables CityVote to implement complex reactive gameplay patterns (combo systems, cooldowns, state machines, UI binding) with clean, declarative code that performs excellently even in high-intensity scenarios with hundreds of entities and continuous input processing.
 
 ### ObservableCollections - Reactive Collection System
 
@@ -504,7 +504,7 @@ enemies.ObserveAdd()
 
 This integration enables powerful reactive patterns - collections become observable event sources that can be transformed, filtered, and combined using R3's operator suite.
 
-#### Use Cases in Bug Wars
+#### Use Cases in CityVote
 
 **Enemy Management System:**
 ```csharp
@@ -688,7 +688,7 @@ public class PerformanceMonitor : MonoBehaviour
 }
 ```
 
-#### Integration with Bug Wars Architecture
+#### Integration with CityVote Architecture
 
 **With VContainer:**
 - Managers can expose `ObservableList` or other observable collections as public properties
@@ -716,7 +716,7 @@ public class PerformanceMonitor : MonoBehaviour
 - **Memory Efficiency**: Ring buffers prevent unbounded growth for history tracking
 - **Lazy Evaluation**: Views only compute when accessed, not on every source change
 
-ObservableCollections enables Bug Wars to implement complex data-driven systems (enemy management, inventory, effects, leaderboards) with automatic UI synchronization, efficient change propagation, and clean separation between data models and views - all with excellent performance characteristics suitable for real-time gameplay.
+ObservableCollections enables CityVote to implement complex data-driven systems (enemy management, inventory, effects, leaderboards) with automatic UI synchronization, efficient change propagation, and clean separation between data models and views - all with excellent performance characteristics suitable for real-time gameplay.
 
 ### Cinemachine - Procedural Camera System
 
@@ -726,20 +726,20 @@ Cinemachine is Unity's powerful procedural camera system that enables AAA-qualit
 Instead of writing custom camera controllers with follow logic, damping, and collision detection, Cinemachine provides a component-based approach where cameras are assembled from modular building blocks called Virtual Cameras.
 This shifts camera work from programming to design, allowing rapid iteration on camera feel and behavior.
 
-In Bug Wars, Cinemachine serves as the foundation for all camera systems, providing dynamic camera control that responds to gameplay situations.
+In CityVote, Cinemachine serves as the foundation for all camera systems, providing dynamic camera control that responds to gameplay situations.
 The framework's Virtual Camera concept allows us to define multiple camera perspectives (combat camera, boss fight camera, death camera) and seamlessly blend between them based on game state.
 Each Virtual Camera can have its own priority, follow target, look-at target, and behavioral components, making it trivial to create context-sensitive camera work that enhances the player experience.
 
-#### Key Features for Bug Wars:
+#### Key Features for CityVote:
 
 - **Dynamic Follow & Framing**: Cinemachine's Body components (Transposer, Framing Transposer, Orbital Transposer) provide sophisticated player-following logic with customizable damping, dead zones, and screen composition rules.
 This ensures the player character stays optimally framed even during intense combat sequences.
 
-- **Smart Aim Handling**: The Aim components manage where the camera looks, supporting hard look-at, composer-based framing, POV rotation, and more. For Bug Wars' combat scenarios, this allows the camera to intelligently frame both the player and approaching enemy threats.
+- **Smart Aim Handling**: The Aim components manage where the camera looks, supporting hard look-at, composer-based framing, POV rotation, and more. For CityVote' combat scenarios, this allows the camera to intelligently frame both the player and approaching enemy threats.
 
 - **Procedural Noise & Shake**: The CinemachineBasicMultiChannelPerlin component enables realistic camera shake for impacts, explosions, and damage feedback. Unlike manual shake implementations, Cinemachine's procedural noise is based on Perlin noise profiles, providing organic, non-repetitive camera movement that can be tuned with frequency and amplitude curves.
 
-- **Collision Detection**: Cinemachine's Collider extension automatically handles camera collision with environment geometry, preventing the camera from clipping through walls or obstacles. This is crucial for Bug Wars' varied combat arenas where maintaining visibility is essential.
+- **Collision Detection**: Cinemachine's Collider extension automatically handles camera collision with environment geometry, preventing the camera from clipping through walls or obstacles. This is crucial for CityVote' varied combat arenas where maintaining visibility is essential.
 
 - **State-Driven Cameras**: Integration with Unity's Timeline and animation system allows camera cuts and blends to be choreographed alongside gameplay events. Boss introductions, player death sequences, and victory celebrations can all leverage cinematic camera work.
 
@@ -749,15 +749,15 @@ This ensures the player character stays optimally framed even during intense com
 
 Cinemachine is designed for zero-garbage-collection camera updates, running all calculations on the same frame timeline as Unity's camera system. The framework uses a priority-based blending system where multiple Virtual Cameras can coexist, with the highest-priority camera taking control. Transitions between cameras use sophisticated blending algorithms that can interpolate position, rotation, and lens properties over time, creating smooth cinematic transitions without writing custom interpolation code.
 
-For Bug Wars' architecture, Cinemachine integrates seamlessly with our existing VContainer and UniTask infrastructure. Virtual Cameras can be activated/deactivated in response to EventManager triggers (player death, boss spawn, wave completion), and camera transitions can be awaited using UniTask for precise sequencing. The component-based design also supports dependency injection - custom Cinemachine extensions can receive injected dependencies for accessing game state when making camera decisions.
+For CityVote' architecture, Cinemachine integrates seamlessly with our existing VContainer and UniTask infrastructure. Virtual Cameras can be activated/deactivated in response to EventManager triggers (player death, boss spawn, wave completion), and camera transitions can be awaited using UniTask for precise sequencing. The component-based design also supports dependency injection - custom Cinemachine extensions can receive injected dependencies for accessing game state when making camera decisions.
 
-The separation between Virtual Cameras (what you want to shoot) and the Brain (how to execute the shot) provides excellent testability and designer iteration. Camera behaviors can be tuned in the editor without code changes, and multiple camera setups can be A/B tested simply by adjusting priorities. This design philosophy aligns perfectly with Bug Wars' emphasis on clean architecture and rapid iteration.
+The separation between Virtual Cameras (what you want to shoot) and the Brain (how to execute the shot) provides excellent testability and designer iteration. Camera behaviors can be tuned in the editor without code changes, and multiple camera setups can be A/B tested simply by adjusting priorities. This design philosophy aligns perfectly with CityVote' emphasis on clean architecture and rapid iteration.
 
 ## AI-Assisted Development with MCP
 
-Bug Wars embraces modern AI-assisted development workflows through the Model Context Protocol (MCP), enabling seamless collaboration between human developers and AI assistants directly within the Unity environment. MCP provides a standardized interface for AI tools to interact with development environments, allowing for intelligent code suggestions, automated refactoring, asset management, and context-aware assistance throughout the development process.
+CityVote embraces modern AI-assisted development workflows through the Model Context Protocol (MCP), enabling seamless collaboration between human developers and AI assistants directly within the Unity environment. MCP provides a standardized interface for AI tools to interact with development environments, allowing for intelligent code suggestions, automated refactoring, asset management, and context-aware assistance throughout the development process.
 
-By integrating MCP into our development workflow, we accelerate iteration speed, reduce repetitive tasks, and enable developers to focus on creative problem-solving and game design rather than boilerplate code generation. AI assistants can understand the project's architecture, suggest improvements aligned with our coding standards, and help maintain consistency across the codebase. This is particularly valuable for Bug Wars' complex systems involving VContainer dependency graphs, UniTask async patterns, and Cinemachine configurations.
+By integrating MCP into our development workflow, we accelerate iteration speed, reduce repetitive tasks, and enable developers to focus on creative problem-solving and game design rather than boilerplate code generation. AI assistants can understand the project's architecture, suggest improvements aligned with our coding standards, and help maintain consistency across the codebase. This is particularly valuable for CityVote' complex systems involving VContainer dependency graphs, UniTask async patterns, and Cinemachine configurations.
 
 ### Unity MCP - AI Bridge for Unity Editor
 
@@ -772,7 +772,7 @@ Unity MCP consists of two complementary components that work together:
 - **Unity Package**: Installed directly into your Unity project via Package Manager, this component exposes Unity Editor APIs and provides hooks into the project's scene hierarchy, asset database, and editor state.
 - **Python Server**: A local server that runs alongside your development environment, facilitating bidirectional communication between your AI client and the Unity Editor. The server translates natural language commands into Unity API calls and returns structured responses.
 
-#### Key Capabilities for Bug Wars Development:
+#### Key Capabilities for CityVote Development:
 
 **Asset Management**
 - Import, create, modify, and delete project resources through AI commands
@@ -794,9 +794,9 @@ Unity MCP consists of two complementary components that work together:
 - Automate testing sequences, build configurations, and deployment steps
 - Query editor state to understand current selections, active windows, and project settings
 
-#### Integration with Bug Wars Workflow:
+#### Integration with CityVote Workflow:
 
-Unity MCP enhances Bug Wars development by enabling AI assistants to:
+Unity MCP enhances CityVote development by enabling AI assistants to:
 
 - **Understand Architecture Context**: AI can analyze the VContainer dependency graphs and suggest proper injection patterns for new managers and controllers
 - **Generate Cinemachine Configurations**: Describe desired camera behaviors in natural language and have the AI configure Virtual Camera components with appropriate settings
@@ -805,14 +805,14 @@ Unity MCP enhances Bug Wars development by enabling AI assistants to:
 
 #### Setup Requirements:
 
-For developers joining the Bug Wars project, Unity MCP setup involves:
+For developers joining the CityVote project, Unity MCP setup involves:
 
 1. Install the Unity package via Package Manager (Git URL or local package)
 2. Configure the Python server with your AI client credentials
 3. Ensure Python 3.8+ is installed with required dependencies
 4. Launch the server alongside Unity Editor for active AI assistance
 
-The system supports multiple simultaneous Unity instances and integrates seamlessly with popular AI coding clients, requiring minimal configuration beyond initial setup. For Bug Wars contributors, Unity MCP accelerates onboarding by allowing new developers to query the AI about architecture decisions, quickly generate boilerplate code following project conventions, and receive context-aware assistance when implementing new gameplay systems.
+The system supports multiple simultaneous Unity instances and integrates seamlessly with popular AI coding clients, requiring minimal configuration beyond initial setup. For CityVote contributors, Unity MCP accelerates onboarding by allowing new developers to query the AI about architecture decisions, quickly generate boilerplate code following project conventions, and receive context-aware assistance when implementing new gameplay systems.
 
 ### Context7 - Up-to-Date Documentation for LLMs
 
@@ -824,10 +824,10 @@ Context7 is an open-source Model Context Protocol (MCP) server that provides AI 
 
 Context7 acts as a real-time documentation bridge between AI assistants and official framework documentation. When an AI needs to reference Unity APIs, component behaviors, or implementation patterns, Context7 fetches the most recent documentation from Unity's official sources and injects it directly into the AI's context. This ensures that code suggestions, API usage examples, and architectural recommendations reflect the latest Unity version being used in the project.
 
-#### Key Benefits for Bug Wars Development:
+#### Key Benefits for CityVote Development:
 
 **Version-Specific Accuracy**
-- Ensures AI suggestions match the exact Unity version used by Bug Wars (avoiding deprecated APIs or unavailable features)
+- Ensures AI suggestions match the exact Unity version used by CityVote (avoiding deprecated APIs or unavailable features)
 - Provides accurate documentation for VContainer, UniTask, Cinemachine, and other third-party packages
 - Reduces errors caused by outdated LLM training data or generic code examples
 
@@ -846,9 +846,9 @@ Context7 acts as a real-time documentation bridge between AI assistants and offi
 - Can be combined with Unity MCP for comprehensive AI-assisted Unity development
 - Requires minimal setup - typically just installing the MCP server and configuring your AI client
 
-#### Use Cases in Bug Wars Workflow:
+#### Use Cases in CityVote Workflow:
 
-For Bug Wars contributors, Context7 enhances AI assistance in several ways:
+For CityVote contributors, Context7 enhances AI assistance in several ways:
 
 - **Learning New Systems**: When implementing new Unity features (e.g., Timeline, Shader Graph), AI can reference the latest documentation to guide developers through setup
 - **API Migration**: If Unity versions are updated, Context7 ensures AI suggestions reflect migration paths and new API patterns
@@ -856,7 +856,7 @@ For Bug Wars contributors, Context7 enhances AI assistance in several ways:
 - **Debugging Assistance**: AI can reference official docs when troubleshooting Unity-specific issues, providing more accurate diagnostic suggestions
 - **Code Review**: AI reviewers can validate that code follows current Unity best practices and uses APIs correctly
 
-#### Setup for Bug Wars Contributors:
+#### Setup for CityVote Contributors:
 
 1. Install Context7 MCP server from the [official repository](https://github.com/upstash/context7)
 2. Configure your AI client (Claude Desktop, Cursor, etc.) to use the Context7 MCP server
@@ -873,7 +873,7 @@ Context7 significantly reduces the friction of working with Unity's extensive AP
 
 **Location:** `Assets/Scripts/Core/GameLifetimeScope.cs`
 
-The `GameLifetimeScope` is the central orchestrator for Bug Wars' dependency injection container, extending VContainer's `LifetimeScope` base class. This class is responsible for bootstrapping the entire game architecture by registering all core managers in their correct dependency order and ensuring they persist across scene transitions.
+The `GameLifetimeScope` is the central orchestrator for CityVote' dependency injection container, extending VContainer's `LifetimeScope` base class. This class is responsible for bootstrapping the entire game architecture by registering all core managers in their correct dependency order and ensuring they persist across scene transitions.
 
 #### Key Responsibilities:
 
@@ -980,7 +980,7 @@ By separating global inputs from gameplay inputs, the architecture remains clean
 
 ### MainMenuManager
 
-**Location:** `Assets/BugWars/UI/MainMenu/MainMenuManager.cs`
+**Location:** `Assets/CityVote/UI/MainMenu/MainMenuManager.cs`
 
 The `MainMenuManager` controls the main menu user interface using Unity's UI Toolkit (formerly UIElements), providing a modern, performant UI system built on retained-mode rendering. It manages menu visibility, button interactions, and integration with the game's event system.
 
@@ -1006,7 +1006,7 @@ This component showcases the synergy between VContainer and UI Toolkit - depende
 
 **Location:** `Assets/Scripts/Terrain/`
 
-Bug Wars features a sophisticated procedural terrain generation system built on a chunk-based streaming architecture, providing infinite explorable worlds with optimal performance through intelligent culling and asynchronous loading.
+CityVote features a sophisticated procedural terrain generation system built on a chunk-based streaming architecture, providing infinite explorable worlds with optimal performance through intelligent culling and asynchronous loading.
 
 #### TerrainManager
 
@@ -1079,9 +1079,9 @@ TerrainChunk implements proper cleanup in `OnDestroy()`, ensuring mesh memory is
 
 ### Sprite Rendering System
 
-**Location:** `Assets/BugWars/Prefabs/Character/Samurai/`
+**Location:** `Assets/CityVote/Prefabs/Character/Samurai/`
 
-Bug Wars implements a high-performance 2D sprite rendering system in a 3D environment using a custom URP shader with GPU-based billboarding, mesh-based rendering, and frame-based animation driven by JSON sprite atlases.
+CityVote implements a high-performance 2D sprite rendering system in a 3D environment using a custom URP shader with GPU-based billboarding, mesh-based rendering, and frame-based animation driven by JSON sprite atlases.
 
 #### Architecture Overview
 
@@ -1095,7 +1095,7 @@ This approach is significantly more performant than traditional billboard system
 
 #### SamuraiAnimatedSprite_Unity6 Shader
 
-**Location:** `Assets/BugWars/Prefabs/Character/Samurai/SamuraiAnimatedSprite_Unity6.shader`
+**Location:** `Assets/CityVote/Prefabs/Character/Samurai/SamuraiAnimatedSprite_Unity6.shader`
 
 Custom URP-compatible shader implementing GPU-based billboarding with sprite sheet animation support.
 
@@ -1124,7 +1124,7 @@ The shader's vertex function calculates billboard rotation by constructing world
 
 #### Sprite Atlas System
 
-**Location:** `Assets/BugWars/Prefabs/Character/Samurai/SpriteAtlasData.cs`
+**Location:** `Assets/CityVote/Prefabs/Character/Samurai/SpriteAtlasData.cs`
 
 JSON-driven sprite atlas format for defining animation frames and sequences.
 
@@ -1175,7 +1175,7 @@ JSON-driven sprite atlas format for defining animation frames and sequences.
 
 #### Samurai Character Implementation
 
-**Location:** `Assets/BugWars/Prefabs/Character/Samurai/Samurai.cs`
+**Location:** `Assets/CityVote/Prefabs/Character/Samurai/Samurai.cs`
 
 The Samurai class demonstrates the sprite rendering system's practical implementation, serving as the player character and reference implementation for future entities.
 
@@ -1256,7 +1256,7 @@ Entity defines a universal `EntityAnimationState` enum with states like `Idle`, 
 
 **Location:** `Assets/Scripts/Entity/`
 
-Bug Wars implements a unified entity system providing a common foundation for all game actors (players, enemies, NPCs) with shared functionality for health, movement, and visual representation.
+CityVote implements a unified entity system providing a common foundation for all game actors (players, enemies, NPCs) with shared functionality for health, movement, and visual representation.
 
 #### Entity (Base Class)
 
@@ -1342,7 +1342,7 @@ EntityManager caches entity references and uses efficient LINQ queries. For high
 
 **Location:** `Assets/Scripts/Core/CameraManager.cs`
 
-The `CameraManager` provides centralized control over all camera systems in Bug Wars, managing Cinemachine Virtual Cameras and providing utility methods for frustum culling and spatial queries.
+The `CameraManager` provides centralized control over all camera systems in CityVote, managing Cinemachine Virtual Cameras and providing utility methods for frustum culling and spatial queries.
 
 **Key Responsibilities:**
 
@@ -1390,7 +1390,7 @@ Registered as singleton in GameLifetimeScope, allowing any game system to receiv
 
 ### System Integration & Architecture Flow
 
-Bug Wars' systems work together through a well-orchestrated initialization and runtime interaction pattern, leveraging VContainer's dependency injection and EventManager's decoupled communication.
+CityVote' systems work together through a well-orchestrated initialization and runtime interaction pattern, leveraging VContainer's dependency injection and EventManager's decoupled communication.
 
 #### Initialization Flow
 
@@ -1496,7 +1496,7 @@ The combat system will feature:
 
 **Status:** Planned
 
-Bug Wars will implement a multi-layered progression system:
+CityVote will implement a multi-layered progression system:
 - Wave-based difficulty scaling with increasing enemy counts and types
 - Resource collection and upgrade paths
 - Persistent unlocks across play sessions
@@ -1538,7 +1538,7 @@ Each bug type will feature unique characteristics:
 
 ### Camera System (Cinemachine Virtual Cameras)
 
-Bug Wars employs a sophisticated camera system powered by Cinemachine to create dynamic, responsive camera behaviors that enhance gameplay clarity and cinematic presentation. The camera is not just a passive observer but an active participant in the game's feel and player experience.
+CityVote employs a sophisticated camera system powered by Cinemachine to create dynamic, responsive camera behaviors that enhance gameplay clarity and cinematic presentation. The camera is not just a passive observer but an active participant in the game's feel and player experience.
 
 The CameraManager (detailed above) provides the programmatic interface, while Cinemachine Virtual Cameras define the actual camera behaviors and compositions.
 
@@ -1575,7 +1575,7 @@ The CameraManager (detailed above) provides the programmatic interface, while Ci
 
 #### Integration with Game Systems:
 
-The camera system integrates with Bug Wars' event-driven architecture through EventManager subscriptions:
+The camera system integrates with CityVote' event-driven architecture through EventManager subscriptions:
 - `OnGamePaused` → Reduces camera update rate and locks position
 - `OnGameResumed` → Restores normal camera behavior
 - `OnPlayerHealthChanged` → Triggers intensity-based FOV changes and trauma shake
@@ -1692,7 +1692,7 @@ Camera state changes can be sequenced with UniTask for precise timing - for exam
 
 ## Game Advertising Strategy
 
-Bug Wars' success depends not only on solid development but also on effective marketing and community outreach. This section outlines our advertising strategy across multiple platforms and details the visual assets required to support these campaigns.
+CityVote' success depends not only on solid development but also on effective marketing and community outreach. This section outlines our advertising strategy across multiple platforms and details the visual assets required to support these campaigns.
 
 ### Target Advertising Platforms
 
@@ -1701,7 +1701,7 @@ Bug Wars' success depends not only on solid development but also on effective ma
 [Itch.io](https://itch.io) is a premier indie game distribution platform with a vibrant community of indie game enthusiasts, developers, and players who actively seek out unique gaming experiences.
 
 **Platform Strategy:**
-- **Game Page Optimization**: Create a compelling game page with rich media (screenshots, GIFs, gameplay videos) showcasing Bug Wars' unique mechanics
+- **Game Page Optimization**: Create a compelling game page with rich media (screenshots, GIFs, gameplay videos) showcasing CityVote' unique mechanics
 - **Tag Strategy**: Utilize relevant tags such as `action`, `survival`, `waves`, `unity`, `arcade`, `singleplayer`, `insects`, `combat`
 - **Devlog Series**: Regular development updates with behind-the-scenes content about VContainer architecture, Cinemachine camera work, and AI behavior implementation
 - **Demo Release**: Launch a free demo version (WebGL build) to reduce friction for player acquisition and gather early feedback
@@ -1724,7 +1724,7 @@ Bug Wars' success depends not only on solid development but also on effective ma
 - **Architecture Articles**: Write blog posts about solving technical challenges (e.g., "Building a Zero-Allocation Game Architecture with VContainer and UniTask")
 - **Open Source Contributions**: If appropriate, open-source non-core systems (camera utilities, event manager patterns) and share them with the community
 - **Timing**: Post during high-traffic periods (weekday mornings US EST, around 8-10 AM)
-- **Title Crafting**: Focus on technical value - "Bug Wars: Building a Unity Game with Dependency Injection and Zero-Allocation Async" performs better than "Check out my new game"
+- **Title Crafting**: Focus on technical value - "CityVote: Building a Unity Game with Dependency Injection and Zero-Allocation Async" performs better than "Check out my new game"
 - **Comment Engagement**: Be prepared to answer technical questions and engage in architectural discussions
 
 **Best Practices:**
@@ -1746,7 +1746,7 @@ Bug Wars' success depends not only on solid development but also on effective ma
 - **University Outreach**: Post in college town Craigslist sites targeting computer science and game design student communities
 
 **Post Structure:**
-- Clear, concise title: "Free Indie Action Game: Bug Wars - Beta Testers Wanted" or "New Unity Game Launch - Bug-Themed Survival Action"
+- Clear, concise title: "Free Indie Action Game: CityVote - Beta Testers Wanted" or "New Unity Game Launch - Bug-Themed Survival Action"
 - Brief description with bullet points highlighting key features
 - Call-to-action with direct download/play links
 - Optional: Include local gaming community Discord/meetup information
@@ -1773,7 +1773,7 @@ Bug Wars' success depends not only on solid development but also on effective ma
 **Post Structure Best Practices:**
 - **Engaging Title**: "I built a survival action game with Unity where you fight waves of insects - 6 months of nights/weekends"
 - **Opening Hook**: Lead with the most interesting aspect (technical achievement, unique gameplay mechanic, development story)
-- **Project Summary**: Clear explanation of what Bug Wars is and what makes it unique
+- **Project Summary**: Clear explanation of what CityVote is and what makes it unique
 - **Technical Stack**: r/sideproject appreciates technical details - mention Unity, VContainer, UniTask, WebGL deployment
 - **Call to Action**: Direct link to play (itch.io WebGL build ideal) and request for specific feedback
 - **Development Stats**: Include interesting metrics (lines of code, hours invested, iterations, etc.)
@@ -1799,7 +1799,7 @@ Bug Wars' success depends not only on solid development but also on effective ma
 
 ### Visual Assets & Infographics Strategy
 
-Effective game advertising requires a comprehensive suite of visual assets optimized for different platforms and use cases. This section details the infographics and image assets needed to maximize Bug Wars' marketing impact.
+Effective game advertising requires a comprehensive suite of visual assets optimized for different platforms and use cases. This section details the infographics and image assets needed to maximize CityVote' marketing impact.
 
 #### Core Visual Asset Types
 
@@ -1844,7 +1844,7 @@ Effective game advertising requires a comprehensive suite of visual assets optim
   - White version for dark backgrounds (PNG, 2048x2048px)
   - Black version for light backgrounds (PNG, 2048x2048px)
   - Favicon (256x256px, 64x64px, 32x32px, 16x16px)
-- **Typography**: Document primary font choices for "Bug Wars" wordmark
+- **Typography**: Document primary font choices for "CityVote" wordmark
 - **Color Palette**: Define primary brand colors (hex codes) for consistent visual identity
 - **Use Cases**: Website favicon, social media avatars, watermarks, press kit
 
@@ -1873,7 +1873,7 @@ Effective game advertising requires a comprehensive suite of visual assets optim
 
 **Development Tech Stack Infographic**
 - **Dimensions**: 1200x1200px (square for social media)
-- **Content**: Visual representation of Bug Wars' technical architecture:
+- **Content**: Visual representation of CityVote' technical architecture:
   - Unity Engine (central node)
   - VContainer (dependency injection layer)
   - UniTask (async operations)
@@ -1927,25 +1927,25 @@ Effective game advertising requires a comprehensive suite of visual assets optim
 
 **Press Kit Structure**
 ```
-BugWars_PressKit/
+CityVote_PressKit/
 ├── Images/
 │   ├── KeyArt/
-│   │   ├── BugWars_KeyArt_4K.png
-│   │   └── BugWars_KeyArt_1080p.png
+│   │   ├── CityVote_KeyArt_4K.png
+│   │   └── CityVote_KeyArt_1080p.png
 │   ├── Screenshots/
-│   │   ├── BugWars_Screenshot_01.png
+│   │   ├── CityVote_Screenshot_01.png
 │   │   └── ... (6-8 total)
 │   ├── Logos/
-│   │   ├── BugWars_Logo_Color.png
-│   │   ├── BugWars_Logo_White.png
-│   │   └── BugWars_Logo_Black.png
+│   │   ├── CityVote_Logo_Color.png
+│   │   ├── CityVote_Logo_White.png
+│   │   └── CityVote_Logo_Black.png
 │   └── Social/
 │       ├── TwitterCard_1200x675.png
 │       ├── OpenGraph_1200x630.png
 │       └── Square_1080x1080.png
 ├── Videos/
-│   ├── BugWars_LaunchTrailer_1080p60.mp4
-│   └── BugWars_LaunchTrailer_4K60.mp4
+│   ├── CityVote_LaunchTrailer_1080p60.mp4
+│   └── CityVote_LaunchTrailer_4K60.mp4
 ├── GIFs/
 │   ├── Combat_Loop.gif
 │   ├── Boss_Encounter.gif
@@ -1953,7 +1953,7 @@ BugWars_PressKit/
 ├── Infographics/
 │   ├── GameFeatures_Infographic.png
 │   └── TechStack_Infographic.png
-└── BugWars_FactSheet.pdf
+└── CityVote_FactSheet.pdf
 ```
 
 **Fact Sheet Contents**
@@ -2009,4 +2009,4 @@ BugWars_PressKit/
 
 ---
 
-*Last Updated: 2025-11-18 - Added comprehensive documentation for R3 (Reactive Extensions) and ObservableCollections, including core concepts, Unity integration, practical code examples, and Bug Wars-specific use cases*
+*Last Updated: 2025-11-18 - Added comprehensive documentation for R3 (Reactive Extensions) and ObservableCollections, including core concepts, Unity integration, practical code examples, and CityVote-specific use cases*
