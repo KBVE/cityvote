@@ -9,18 +9,18 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app/astro
 
 # Copy dependency files first for better layer caching
-COPY website/astro/package.json website/astro/pnpm-lock.yaml ./
+COPY astro/package.json astro/pnpm-lock.yaml ./
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Copy config files
-COPY website/astro/astro.config.mjs website/astro/tsconfig.json website/astro/tailwind.config.mjs website/astro/postcss.config.cjs ./
+COPY astro/astro.config.mjs astro/tsconfig.json astro/tailwind.config.mjs astro/postcss.config.cjs ./
 
 # Copy source directories
-COPY website/astro/src ./src
-COPY website/astro/public ./public
-COPY website/astro/scripts ./scripts
+COPY astro/src ./src
+COPY astro/public ./public
+COPY astro/scripts ./scripts
 
 # Install runtime dependencies for build scripts
 RUN apk add --no-cache bash curl unzip
@@ -71,8 +71,8 @@ WORKDIR /app
 FROM rust-base AS planner
 
 # Copy all source files needed for cargo chef to analyze
-COPY website/axum/Cargo.toml website/axum/Cargo.lock ./
-COPY website/axum/src ./src
+COPY axum/Cargo.toml axum/Cargo.lock ./
+COPY axum/src ./src
 
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -100,11 +100,11 @@ COPY --from=builder-deps /usr/local/cargo /usr/local/cargo
 COPY --from=astro-builder /app/astro/dist /app/templates/dist
 
 # Copy Askama templates (uncompressed, for server-side rendering)
-COPY website/axum/templates/askama /app/templates/askama
+COPY axum/templates/askama /app/templates/askama
 
 # Copy Axum source code
-COPY website/axum/src ./src
-COPY website/axum/Cargo.toml website/axum/Cargo.lock ./
+COPY axum/src ./src
+COPY axum/Cargo.toml axum/Cargo.lock ./
 
 # Build the Rust binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
