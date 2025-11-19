@@ -5,38 +5,38 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 :root {
-  --sl-color-accent-low: #f7fee7;
-  --sl-color-accent: #84cc16;
-  --sl-color-accent-high: #4d7c0f;
-  --sl-color-text-accent: #65a30d;
-  --sl-color-link: #84cc16;
-  --sl-color-link-hover: #a3e635;
-  --sl-color-bg-accent: #ecfccb;
-  --sl-color-code-bg: #1a2e05;
-  --sl-color-border: #d9f99d;
+  --sl-color-accent-low: #ecfeff;
+  --sl-color-accent: #06b6d4;
+  --sl-color-accent-high: #0e7490;
+  --sl-color-text-accent: #0891b2;
+  --sl-color-link: #06b6d4;
+  --sl-color-link-hover: #22d3ee;
+  --sl-color-bg-accent: #cffafe;
+  --sl-color-code-bg: #083344;
+  --sl-color-border: #a5f3fc;
 }
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #1a2e05;
-  --sl-color-accent: #84cc16;
-  --sl-color-accent-high: #d9f99d;
-  --sl-color-text-accent: #a3e635;
-  --sl-color-link: #a3e635;
-  --sl-color-link-hover: #bef264;
-  --sl-color-bg-accent: #365314;
-  --sl-color-code-bg: #1a2e05;
-  --sl-color-border: #3f6212;
+  --sl-color-accent-low: #083344;
+  --sl-color-accent: #06b6d4;
+  --sl-color-accent-high: #a5f3fc;
+  --sl-color-text-accent: #22d3ee;
+  --sl-color-link: #22d3ee;
+  --sl-color-link-hover: #67e8f9;
+  --sl-color-bg-accent: #164e63;
+  --sl-color-code-bg: #083344;
+  --sl-color-border: #155e75;
 }
 
 @layer utilities {
   .focus-ring {
-    @apply ring-lime-500 ring-offset-2 focus:outline-none focus-visible:ring-2;
+    @apply ring-cyan-500 ring-offset-2 focus:outline-none focus-visible:ring-2;
   }
 }
 @layer components {
   .sl-link-button {
-    @apply bg-lime-600 hover:bg-lime-700 text-white;
+    @apply bg-cyan-600 hover:bg-cyan-700 text-white;
   }
   .sl-markdown-content a {
-    @apply text-lime-600 hover:text-lime-700 dark:text-lime-400 dark:hover:text-lime-300;
+    @apply text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300;
   }
 }
