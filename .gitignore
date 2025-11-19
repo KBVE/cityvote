@@ -53,3 +53,22 @@ rust/target/debug/deps/
 rust/target/debug/examples/
 rust/target/debug/incremental/
 rust/target/debug/.cargo-lock
+
+# Ignore all Rust build outputs by default
+/rust/target/**
+
+# Node.js dependencies
+node_modules/
+**/node_modules/
+
+axum/templates/dist/**
+astro/dist/**
+astro/.astro/**
+astro/public/assets/game/**
+astro/public/version.json
+
+# Visual Studio cache directory
+.vs/
+
+# Gradle cache directory
+.gradle/
