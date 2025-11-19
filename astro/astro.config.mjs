@@ -16,7 +16,7 @@ export default defineConfig({
     worker(),
     starlight({
       plugins: [starlightThemeGalaxy()],
-      title: "BugWars",
+      title: "CityVote",
       defaultLocale: "root",
       locales: {
         root: {

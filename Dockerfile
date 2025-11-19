@@ -110,7 +110,7 @@ COPY axum/Cargo.toml axum/Cargo.lock ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release && \
-    strip target/release/kbve-bugwars
+    strip target/release/kbve-cityvote
 
 # ============================================================================
 # [STAGE F] - Chisel Ubuntu Base (Minimal Runtime)
@@ -167,7 +167,7 @@ COPY --from=jemalloc /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 /usr/lib/x86_64-
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/kbve-bugwars /app/kbve-bugwars
+COPY --from=builder /app/target/release/kbve-cityvote /app/kbve-cityvote
 
 # Copy Astro static files (precompressed)
 COPY --from=builder /app/templates/dist /app/templates/dist
@@ -186,4 +186,4 @@ ENV RUST_LOG=info
 EXPOSE 4321
 
 # Run the application
-ENTRYPOINT ["/app/kbve-bugwars"]
+ENTRYPOINT ["/app/kbve-cityvote"]
