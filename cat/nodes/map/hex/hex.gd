@@ -460,11 +460,14 @@ func place_card_on_tile(tile_coords: Vector2i, card_sprite: Node2D, suit: int, v
 		push_error("Hex: UnifiedEventBridge not found! Cannot register card with Actor.")
 		return false
 
-	# Store ONLY the sprite reference for visual management
-	# Actor owns the actual card data
+	# Store sprite reference and card info for visual management (e.g., tile info display)
+	# Actor owns the authoritative card data
 	card_data[tile_coords] = {
 		"sprite": card_sprite,
-		"ulid": ulid  # Keep ULID for removal operations
+		"ulid": ulid,  # Keep ULID for removal operations
+		"card_id": card_id,  # For preview rendering
+		"suit": suit,  # For card name display
+		"value": value  # For card name display
 	}
 
 	return true
